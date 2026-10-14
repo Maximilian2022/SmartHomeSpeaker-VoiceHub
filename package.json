@@ -1,22 +1,26 @@
 {
-  "name": "google-home-voicetext",
-  "version": "1.0.0",
-  "description": "",
-  "main": "google-home-voicetext.js",
+  "name": "google-home-speaker",
+  "version": "2.0.0",
+  "description": "Google Home / Nest TTS announcement platform with Edge TTS, Web GUI, and Scheduler",
+  "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
   },
-  "author": "TAKAHASHI Taro",
+  "keywords": [
+    "google-home",
+    "chromecast",
+    "edge-tts",
+    "text-to-speech",
+    "smart-home"
+  ],
+  "author": "TAKAHASHI Taro (Updated for Edge TTS & Modern Web GUI)",
   "license": "MIT",
   "dependencies": {
-    "body-parser": "^1.18.3",
-    "castv2-client": "^1.1.2",
-    "date-utils": "^1.2.21",
-    "express": "^4.16.4",
-    "firebase-admin": "^7.1.1",
-    "fs": "0.0.1-security",
-    "mdns": "^2.3.3",
-    "os": "^0.1.1",
-    "voicetext": "0.0.7"
+    "castv2-client": "^1.2.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "node-edge-tts": "^1.2.11"
   }
 }

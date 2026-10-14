@@ -1,157 +1,84 @@
-# google-home-voicetext
-Google Homeに任意の音声を喋らせる仕組みです。
+# Google Home Speaker (Edge TTS & Web GUI Edition)
 
-google-home-notifierをベースに、音声合成部分をVoiceTextに置き換えました。
+Google Home / Nest に高品質な日本語音声を喋らせるシステムです。
+従来の `google-home-voicetext` を大幅に刷新し、Microsoft Edge TTS、洗練された Web GUI、スケジュール管理機能、Cloudflare Tunnel 対応を備えています。
 
-Node.jsバージョン11で動作確認を行っています。
+## 主な特徴
+- **高品質・無料の音声合成 (Edge TTS)**: APIキー不要で、Microsoft Edge の自然な日本語音声（Nanami, Keita 等）を利用。
+- **直感的な Web GUI**: ブラウザから即時発言、ブラウザ試聴プレビュー、送信先スピーカーの選択が可能。
+- **スケジュール管理**: 定期アナウンス（毎朝の挨拶、ゴミ出しリマインダーなど）を GUI から登録・管理可能。
+- **マルチデバイス対応**: 宅内にある複数の Google Home / Nest デバイス（部屋、書斎、リビング、寝室等）を自動検出し、個別または一括指定可能。
+- **外部 Webhook & Cloudflare Tunnel 対応**: curl や Home Assistant、IFTTT 等から外部経由で呼び出し可能。トークン認証で外部公開時も安全。
+- **1ポート統合アーキテクチャ**: ポート 8080 のみで Web GUI、Webhook、音声ホスティングの全てが動作。
 
-google-home-voicetextが動くDocker環境は以下のURLを参照してください。
+---
 
-https://github.com/sikkimtemi/google-home-voicetext-docker
+## 宅内デバイス設定 (デフォルト)
+- **サーバーIP**: `192.168.11.244` (Port: `8080`)
+- **デフォルトスピーカー**: 部屋 (`192.168.11.97`)
 
-# 事前準備
-## VoiceTextのAPIキーを取得する
-以下のページで無料利用登録を行ってAPIキーを取得してください。
+---
 
-https://cloud.voicetext.jp/webapi
+## 起動方法
 
-取得したAPIキーは環境変数 `VOICETEXT_API_KEY` に設定してください。
-
+### 1. ホストで直接起動
 ```bash
-$ export VOICETEXT_API_KEY={取得したAPIキー}
+# 依存関係インストール
+npm install
+
+# サーバー起動 (ポート 8080)
+npm start
 ```
 
-## サーバーのIPアドレスを確認する
-`google-home-voicetext`は音声ファイルをホストし、そのURLをGoogle Homeにキャストすることで音声を再生しています。
+ブラウザで `http://192.168.11.244:8080` または `http://localhost:8080` を開きます。
 
-Google Homeがアクセス可能なURLを生成するため、`google-home-voicetext`が稼働しているサーバーのIPアドレスを設定する必要があります。
-
-`check-ip-addr.js`を実行すると、通信モジュール名とIPアドレスが表示されます。
-
+### 2. Docker Compose で起動
 ```bash
-$ node check-ip-addr.js
-lo0
-127.0.0.1
-en0
-192.168.20.140
-en3
-192.168.0.17
+docker compose up -d
 ```
 
-Google Homeからアクセス可能なIPアドレスを選んで環境変数 `WIRELESS_IP` に設定してください。
+---
 
+## Webhook API の使い方
+
+### 1. テキストを発声させる (推奨)
 ```bash
-$ export WIRELESS_IP=192.168.20.140
+curl -X POST http://192.168.11.244:8080/api/say \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "こんにちは！テスト送信です。",
+    "device": "部屋",
+    "voice": "ja-JP-NanamiNeural"
+  }'
 ```
 
-もしIPアドレスが頻繁に変動する場合は、通信モジュール名（`en0`など）を環境変数 `WIRELESS_MODULE_NAME` に設定してください。
+#### パラメータ一覧 (JSON または Form-Data)
+| パラメータ | 必須 | 説明 | 例 |
+|---|---|---|---|
+| `text` | ○ | 喋らせたい文言 | `"ご飯ができましたよ"` |
+| `device` または `deviceIp` | - | 送信先スピーカー名またはIP | `"部屋"`, `"192.168.11.97"` |
+| `voice` | - | 話者名 | `"ja-JP-NanamiNeural"` (女性), `"ja-JP-KeitaNeural"` (男性) |
+| `rate` | - | 話速 (パーセント) | `"+0%"`, `"+10%"` |
+| `pitch` | - | 音高 (ヘルツ) | `"+0Hz"`, `"-5Hz"` |
 
+### 2. 従来のエンドポイント互換 (google-home-voicetext)
 ```bash
-$ export WIRELESS_MODULE_NAME=en0
+curl -X POST -d "text=こんにちは、Googleです。" http://192.168.11.244:8080/google-home-voicetext
 ```
 
-## Firebaseの秘密鍵を取得する
-この作業は任意です。インターネット側からGoogle Homeを喋らせたい場合のみ実施してください。
+---
 
-Firebaseのコンソールで`設定（歯車アイコン）->プロジェクトの設定->サービスアカウント`を表示し、`新しい秘密鍵の生成`をクリックしてください。
+## Cloudflare Tunnel 経由での利用 (インターネット越しの発言)
 
-ダウンロードされたJSONファイルを適当なディレクトリに配置し、ファイルパスを環境変数 `FIREBASE_SECRET_KEY_PATH` に設定してください。
-
-```bash
-$ export FIREBASE_SECRET_KEY_PATH={JSONファイルのファイルパス}
-```
-
-更に同じページの`Admin SDK 構成スニペット`内に表示された`databaseURL`の値を環境変数 `FIREBASE_DATABASE_URL` に設定してください。
-
-```bash
-$ export FIREBASE_DATABASE_URL={`databaseURL`の値}
-```
-
-Cloud Firestoreで`コレクションを追加`をクリックし、以下の設定で保存してください。
-
-| 項目 | 値 |
-| -------- | -------- |
-| コレクションID | `googlehome` |
-| ドキュメントID | `chant` |
-| フィールド | `message` |
-
-セキュリティルールはロックモードにしてください。
-
-```Javascript
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}
-```
-
-# 使い方
-
-## インストール
-```bash
-$ git clone https://github.com/sikkimtemi/google-home-voicetext.git
-$ cd google-home-voicetext
-$ npm install
-```
-
-## file-server.js
-```bash
-$ node file-server.js
-```
-
-`file-server.js`は音声ファイルをホストしてGoogle Homeがアクセスできるようにします。デフォルトでは8888ポートを使用します。
-
-## api-server.js
-```bash
-$ node api-server.js
-```
-
-`api-server.js`はPOSTを受信して、任意のテキストをGoogle Homeに喋らせます。デフォルトでは8080ポートを使用します。
-
-下記のように呼び出します。
-
-```bash
-$ curl -X POST -d "text=こんにちは、Googleです。" http://{サーバーのIPアドレス}:8080/google-home-voicetext
-```
-
-## firestore.js
-```bash
-$ node firestore.js
-```
-
-`firestore.js`はFirebaseのCloud Firestore上の`googlehome/chant/message`というフィールドを常時監視します。
-
-`googlehome/chant/message`にメッセージが書き込まれると`firestore.js`はGoogle Homeにそのメッセージを喋らせた後、メッセージを削除します。
-
-安全のため、Firestoreのセキュリティルールはロックモードで運用することを推奨します。
-
-# その他の機能
-## 話者を変える
-デフォルトの話者は`HIKARI`という女性です。環境変数 `VOICETEXT_SPEAKER` を設定すると話者を変更することが出来ます。話者は以下の中から選択することが出来ます。
-
-| `VOICETEXT_SPEAKER`の値 | 説明 |
-|:-----------|:------------|
-| `BEAR` | 凶暴なクマ |
-| `HARUKA` | `HIKARI`よりも落ち着いた女性の声 |
-| `SANTA` | 浮かれたサンタクロース |
-| `SHOW` | 「モヤモヤさまぁ～ず」のナレーター |
-| `TAKERU` | 落ち着いた男性の声 |
-
-# トラブルシューティングガイド
-## mdns_patch
-DockerやRaspberry Piで`google-home-voicetext`を動かす場合は`node_modules/mdns/lib/browser.js`を修正する必要があります。
-
-以下のコマンドを実施すると自動で修正が行われます。
-
-```bash
-$ patch -u node_modules/mdns/lib/browser.js < mdns_patch/browser.js.patch
-```
-
-## Google HomeのIPアドレスを指定する
-`google-home-voicetext`がGoogle Homeを名前で見つけられない場合や複数のGoogle Homeを運用していて特定の機器だけを指定したい場合は、Google HomeのIPアドレスを直接指定することが出来ます。
-
-```bash
-$ export GOOGLE_HOME_IP={Google HomeのIPアドレス}
-```
+1. `.my.env` に任意のセキュリティトークンを設定します：
+   ```env
+   WEBHOOK_TOKEN=your-super-secret-token
+   ```
+2. `docker-compose.yml` 内の `cloudflared` サービスのコメントアウトを解除し、Cloudflare Dashboard から取得したトンネルトークンを設定します。
+3. インターネットから Webhook を叩く際は、ヘッダーにトークンを付与します：
+   ```bash
+   curl -X POST https://your-domain.example.com/api/say \
+     -H "Authorization: Bearer your-super-secret-token" \
+     -H "Content-Type: application/json" \
+     -d '{"text": "外出先からの通知です。"}'
+   ```

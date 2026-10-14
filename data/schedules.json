@@ -1,0 +1,24 @@
+[
+  {
+    "id": "sample_morning",
+    "name": "毎朝のおはようアナウンス",
+    "enabled": false,
+    "cron": "0 7 * * *",
+    "description": "毎朝 7:00 にアナウンス",
+    "text": "おはようございます。今日も一日がんばりましょう！",
+    "deviceIp": "default",
+    "voice": "ja-JP-NanamiNeural",
+    "createdAt": "2026-10-14T23:25:16.964Z"
+  },
+  {
+    "id": "sample_garbage",
+    "name": "ゴミ出しリマインダー (火・金)",
+    "enabled": false,
+    "cron": "30 7 * * 2,5",
+    "description": "毎週火・金 7:30 にアナウンス",
+    "text": "おはようございます。今日はゴミ出しの日です。準備を忘れずに！",
+    "deviceIp": "default",
+    "voice": "ja-JP-KeitaNeural",
+    "createdAt": "2026-10-14T23:25:16.964Z"
+  }
+]

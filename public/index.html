@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Home Speaker | Edge TTS Voice Controller</title>
+  <meta name="description" content="Google Home / Nest 音声通知・Edge TTSコントローラー・スケジュール管理プラットフォーム">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-background"></div>
+
+  <div class="app-container">
+    <!-- ヘッダー -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" x2="12" y1="19" y2="22"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Google Home Speaker</h1>
+          <span class="badge-tech">Edge TTS Powered</span>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <div class="status-chip" id="serverStatusChip">
+          <span class="status-dot"></span>
+          <span id="serverStatusText">接続中...</span>
+        </div>
+        <div class="status-chip-sub" id="defaultDeviceChip">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <rect width="18" height="18" x="3" y="3" rx="2"/>
+            <path d="M9 9h6v6H9z"/>
+          </svg>
+          <span id="defaultDeviceText">部屋 (192.168.11.97)</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- タブナビゲーション -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="tab-say" id="btnTabSay">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        即時発言
+      </button>
+      <button class="tab-btn" data-tab="tab-schedule" id="btnTabSchedule">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        スケジュール管理
+      </button>
+      <button class="tab-btn" data-tab="tab-devices" id="btnTabDevices">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+        接続デバイス
+      </button>
+      <button class="tab-btn" data-tab="tab-webhook" id="btnTabWebhook">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Webhook / Tunnel
+      </button>
+    </nav>
+
+    <!-- メインコンテンツ -->
+    <main class="app-main">
+      <!-- 1. 即時発言パネル -->
+      <section id="tab-say" class="tab-pane active">
+        <div class="grid-layout">
+          <!-- 入力カード -->
+          <div class="card glass-card">
+            <div class="card-header">
+              <h2>読み上げメッセージ</h2>
+              <span class="card-sub">入力したテキストを高音質Edge TTSでリアルタイムに再生します</span>
+            </div>
+
+            <div class="card-body">
+              <div class="form-group">
+                <textarea id="sayTextInput" class="form-textarea" rows="4" placeholder="喋らせたいテキストを入力してください (例: ご飯ができましたよ。リビングに来てください。)"></textarea>
+              </div>
+
+              <!-- クイックプリセット -->
+              <div class="quick-presets">
+                <span class="preset-label">クイック選択:</span>
+                <button type="button" class="preset-btn" data-text="おはようございます！今日も一日がんばりましょう。">朝の挨拶</button>
+                <button type="button" class="preset-btn" data-text="ご飯ができましたよ！">ご飯</button>
+                <button type="button" class="preset-btn" data-text="お風呂が沸きました。">お風呂</button>
+                <button type="button" class="preset-btn" data-text="ピンポーン。来客です。玄関を確認してください。">来客</button>
+                <button type="button" class="preset-btn" data-text="そろそろ就寝の時間です。おやすみなさい。">おやすみ</button>
+              </div>
+
+              <div class="settings-grid">
+                <!-- 送信先デバイス -->
+                <div class="form-group">
+                  <label for="sayDeviceSelect" class="form-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/></svg>
+                    送信先スピーカー
+                  </label>
+                  <select id="sayDeviceSelect" class="form-select">
+                    <option value="192.168.11.97" selected>部屋 (192.168.11.97) - デフォルト</option>
+                  </select>
+                </div>
+
+                <!-- 音声ボイス -->
+                <div class="form-group">
+                  <label for="sayVoiceSelect" class="form-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    話者 (Edge TTS)
+                  </label>
+                  <select id="sayVoiceSelect" class="form-select">
+                    <option value="ja-JP-NanamiNeural" selected>七海 (Nanami) - 女性・標準</option>
+                    <option value="ja-JP-KeitaNeural">圭太 (Keita) - 男性・標準</option>
+                    <option value="ja-JP-AoiNeural">碧 (Aoi) - 女性・落ち着いた声</option>
+                    <option value="ja-JP-DaichiNeural">大地 (Daichi) - 男性・落ち着いた声</option>
+                    <option value="ja-JP-MayuNeural">真夕 (Mayu) - 女性・明るい声</option>
+                    <option value="ja-JP-NaokiNeural">直樹 (Naoki) - 男性・アナウンス調</option>
+                    <option value="ja-JP-ShioriNeural">詩織 (Shiori) - 女性・アナウンス調</option>
+                  </select>
+                </div>
+
+                <!-- 速度・ピッチ調整 -->
+                <div class="form-group">
+                  <label for="sayRateRange" class="form-label">話速: <span id="rateValueDisplay">標準 (0%)</span></label>
+                  <input type="range" id="sayRateRange" min="-30" max="50" step="5" value="0" class="form-range">
+                </div>
+
+                <div class="form-group">
+                  <label for="sayPitchRange" class="form-label">音高: <span id="pitchValueDisplay">標準 (0Hz)</span></label>
+                  <input type="range" id="sayPitchRange" min="-20" max="20" step="2" value="0" class="form-range">
+                </div>
+              </div>
+
+              <!-- 試聴用プレイヤー (非表示/必要時表示) -->
+              <div id="audioPreviewWrapper" class="audio-preview-box" style="display: none;">
+                <span class="preview-title">ブラウザプレビュー:</span>
+                <audio id="audioPreviewPlayer" controls></audio>
+              </div>
+
+              <!-- ボタンアクション -->
+              <div class="action-btn-group">
+                <button type="button" id="btnPreviewAudio" class="btn btn-secondary">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  ブラウザで試聴
+                </button>
+                <button type="button" id="btnSpeakDirect" class="btn btn-primary">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                  Google Homeで発言
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- サイドパネル: クイックステータス & 履歴 -->
+          <div class="side-panel">
+            <div class="card glass-card">
+              <div class="card-header">
+                <h3>直近の発言履歴</h3>
+              </div>
+              <div class="card-body">
+                <ul id="recentHistoryList" class="history-list">
+                  <li class="empty-msg">履歴はまだありません</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. スケジュール管理パネル -->
+      <section id="tab-schedule" class="tab-pane">
+        <div class="card glass-card">
+          <div class="card-header flex-between">
+            <div>
+              <h2>スケジュール一覧</h2>
+              <span class="card-sub">指定した時刻や定期スケジュールで自動的に音声アナウンスを実行します</span>
+            </div>
+            <button type="button" id="btnOpenNewScheduleModal" class="btn btn-primary btn-sm">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+              新規スケジュール作成
+            </button>
+          </div>
+
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="schedule-table">
+                <thead>
+                  <tr>
+                    <th>状態</th>
+                    <th>スケジュール名</th>
+                    <th>頻度 (Cron)</th>
+                    <th>対象スピーカー</th>
+                    <th>アナウンス内容</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="scheduleTableBody">
+                  <tr>
+                    <td colspan="6" class="text-center loading-cell">スケジュールを読み込み中...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. 接続デバイスパネル -->
+      <section id="tab-devices" class="tab-pane">
+        <div class="card glass-card">
+          <div class="card-header flex-between">
+            <div>
+              <h2>宅内 Google Home / Nest デバイス一覧</h2>
+              <span class="card-sub">ネットワーク内に検出されたスマートスピーカーです</span>
+            </div>
+            <button type="button" id="btnRefreshDevices" class="btn btn-secondary btn-sm">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+              再スキャン
+            </button>
+          </div>
+
+          <div class="card-body">
+            <div id="devicesGrid" class="devices-grid">
+              <!-- JSで動的レンダリング -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Webhook / Cloudflare Tunnel ガイドパネル -->
+      <section id="tab-webhook" class="tab-pane">
+        <div class="card glass-card">
+          <div class="card-header">
+            <h2>外部連携 & Cloudflare Tunnel 連携ガイド</h2>
+            <span class="card-sub">curl、Home Assistant、IFTTT、Cloudflare Tunnel経由でGoogle Homeを発言させるAPIです</span>
+          </div>
+
+          <div class="card-body webhook-guide">
+            <div class="guide-section">
+              <h3>1. Webhook エンドポイント</h3>
+              <p>以下のURL宛に POST リクエストを送信することで、任意のテキストを発声させることができます。</p>
+              <div class="code-box">
+                <span class="http-badge post">POST</span>
+                <code id="apiEndpointUrl">http://192.168.11.244:8080/api/say</code>
+                <button type="button" class="btn-copy" data-copy-target="apiEndpointUrl">コピー</button>
+              </div>
+            </div>
+
+            <div class="guide-section">
+              <h3>2. curl コマンド例</h3>
+              <div class="code-block-wrapper">
+                <pre><code id="curlExample">curl -X POST http://192.168.11.244:8080/api/say \
+  -H "Content-Type: application/json" \
+  -d '{"text": "こんにちは！テスト送信です。", "device": "部屋", "voice": "ja-JP-NanamiNeural"}'</code></pre>
+                <button type="button" class="btn-copy" data-copy-target="curlExample">コピー</button>
+              </div>
+            </div>
+
+            <div class="guide-section">
+              <h3>3. 後方互換エンドポイント (従来の google-home-voicetext)</h3>
+              <div class="code-block-wrapper">
+                <pre><code id="legacyCurlExample">curl -X POST -d "text=こんにちは、Googleです。" http://192.168.11.244:8080/google-home-voicetext</code></pre>
+                <button type="button" class="btn-copy" data-copy-target="legacyCurlExample">コピー</button>
+              </div>
+            </div>
+
+            <div class="guide-section">
+              <h3>4. Cloudflare Tunnel 経由での利用 (インターネット越しの発言)</h3>
+              <div class="alert-info">
+                <p><strong>Cloudflare Tunnelの仕組み:</strong></p>
+                <p>ポート開放不要で、Cloudflare経由で安全にこのサーバーのポート 8080 にアクセスできます。外部に公開する際は、不正呼び出しを防ぐため <code>.my.env</code> で <code>WEBHOOK_TOKEN</code> を設定し、リクエストに <code>Authorization: Bearer &lt;TOKEN&gt;</code> または <code>X-API-KEY: &lt;TOKEN&gt;</code> を付与してください。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 新規スケジュール登録モーダル -->
+    <div id="scheduleModal" class="modal-backdrop" style="display: none;">
+      <div class="modal-content glass-card">
+        <div class="modal-header">
+          <h3 id="modalTitle">新規スケジュール登録</h3>
+          <button type="button" id="btnCloseModal" class="modal-close">&times;</button>
+        </div>
+        <form id="scheduleForm" class="modal-body">
+          <input type="hidden" id="schedEditId">
+
+          <div class="form-group">
+            <label for="schedName" class="form-label">スケジュール名 *</label>
+            <input type="text" id="schedName" class="form-input" required placeholder="例: 毎朝のおはようアナウンス">
+          </div>
+
+          <div class="form-group">
+            <label for="schedText" class="form-label">発言メッセージ *</label>
+            <textarea id="schedText" class="form-textarea" rows="3" required placeholder="例: おはようございます。今日も一日がんばりましょう！"></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="schedPreset" class="form-label">頻度プリセット</label>
+              <select id="schedPreset" class="form-select">
+                <option value="custom">カスタム Cron 式を入力</option>
+                <option value="0 7 * * *">毎日 07:00</option>
+                <option value="0 8 * * 1-5">平日 (月〜金) 08:00</option>
+                <option value="0 12 * * *">毎日 12:00 (お昼)</option>
+                <option value="0 19 * * *">毎日 19:00 (夜)</option>
+                <option value="30 7 * * 2,5">毎週 火・金 07:30 (ゴミ出し)</option>
+                <option value="0 23 * * *">毎日 23:00 (就寝前)</option>
+              </select>
+            </div>
+
+            <div class="form-group flex-1">
+              <label for="schedCron" class="form-label">Cron 式 *</label>
+              <input type="text" id="schedCron" class="form-input" required value="0 7 * * *" placeholder="分 時 日 月 曜日">
+              <small class="helper-text">例: 0 7 * * * (毎日 7:00)</small>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="schedDevice" class="form-label">対象スピーカー</label>
+              <select id="schedDevice" class="form-select">
+                <option value="default">デフォルト (部屋: 192.168.11.97)</option>
+              </select>
+            </div>
+
+            <div class="form-group flex-1">
+              <label for="schedVoice" class="form-label">話者 (声色)</label>
+              <select id="schedVoice" class="form-select">
+                <option value="ja-JP-NanamiNeural">七海 (Nanami) - 女性</option>
+                <option value="ja-JP-KeitaNeural">圭太 (Keita) - 男性</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" id="btnCancelModal" class="btn btn-secondary">キャンセル</button>
+            <button type="submit" class="btn btn-primary">保存する</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- トースト通知 -->
+    <div id="toastContainer" class="toast-container"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
