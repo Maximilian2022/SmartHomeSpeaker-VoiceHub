@@ -1,9 +1,39 @@
-node_modules
-.DS_Store
+# Dependencies
+node_modules/
+
+# Environment variables & secrets (絶対コミット禁止)
+.env
+.env.*
+.my.env
+.my.env.*
+!.my.env.sample
+*.env
+*.key
+*.pem
+firebase*.json
+*.secret
+
+# Generated audio files
 *.wav
 *.mp3
 public/voice/*
 !public/voice/.gitkeep
-.my.env
+
+# Persistent user data (スケジュール内容・履歴)
+data/*
+!data/.gitkeep
+
+# OS and Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs and scratch backups
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 *.bak
 *.patch
+test_*.mp3
