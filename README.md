@@ -13,12 +13,6 @@ Google Home / Nest に高品質な日本語音声を喋らせるシステムで�
 
 ---
 
-## 宅内デバイス設定 (デフォルト)
-- **サーバーIP**: `192.168.11.244` (Port: `8080`)
-- **デフォルトスピーカー**: 部屋 (`192.168.11.97`)
-
----
-
 ## 起動方法
 
 ### 1. ホストで直接起動
@@ -30,7 +24,7 @@ npm install
 npm start
 ```
 
-ブラウザで `http://192.168.11.244:8080` または `http://localhost:8080` を開きます。
+ブラウザで `http://localhost:8080` を開きます。
 
 ### 2. Docker Compose で起動
 ```bash
@@ -43,7 +37,7 @@ docker compose up -d
 
 ### 1. テキストを発声させる (推奨)
 ```bash
-curl -X POST http://192.168.11.244:8080/api/say \
+curl -X POST http://[IP_ADDRESS]/api/say \
   -H "Content-Type: application/json" \
   -d '{
     "text": "こんにちは！テスト送信です。",
@@ -63,7 +57,7 @@ curl -X POST http://192.168.11.244:8080/api/say \
 
 ### 2. 従来のエンドポイント互換 (google-home-voicetext)
 ```bash
-curl -X POST -d "text=こんにちは、Googleです。" http://192.168.11.244:8080/google-home-voicetext
+curl -X POST -d "text=こんにちは、Googleです。" http://[IP_ADDRESS]/google-home-voicetext
 ```
 
 ---
