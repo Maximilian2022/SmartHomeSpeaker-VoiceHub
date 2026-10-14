@@ -71,25 +71,42 @@ class TTSManager {
       }
     }
 
-    try {
-      const tts = new EdgeTTS({
-        voice,
-        rate,
-        pitch,
-        volume
-      });
+    // 生成（最大2回リトライ）
+    let lastError = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const tts = new EdgeTTS({
+          voice,
+          lang: voice.startsWith('ja') ? 'ja-JP' : 'en-US',
+          rate: (rate === '+0%' || rate === '0%') ? 'default' : rate,
+          pitch: (pitch === '+0Hz' || pitch === '0Hz') ? 'default' : pitch,
+          volume: (volume === '+0%' || volume === '0%') ? 'default' : volume,
+          timeout: 15000
+        });
 
-      await tts.ttsPromise(cleanText, filepath);
+        await tts.ttsPromise(cleanText, filepath);
 
-      return {
-        filename,
-        filepath,
-        urlPath: `/voice/${filename}`
-      };
-    } catch (err) {
-      console.error(`Edge TTS 生成エラー: ${err.message}`);
-      throw new Error(`音声生成に失敗しました: ${err.message}`);
+        if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
+          return {
+            filename,
+            filepath,
+            urlPath: `/voice/${filename}`
+          };
+        }
+      } catch (err) {
+        lastError = err;
+        console.warn(`Edge TTS 生成リトライ (${attempt}/2):`, err?.message || err);
+        // 一時ファイルが中途半端に残っていたら削除
+        if (fs.existsSync(filepath)) {
+          try { fs.unlinkSync(filepath); } catch (e) {}
+        }
+        await new Promise(r => setTimeout(r, 600));
+      }
     }
+
+    const errMsg = lastError?.message || lastError || '不明なエラー';
+    console.error(`Edge TTS 生成エラー: ${errMsg}`);
+    throw new Error(`音声生成に失敗しました: ${errMsg}`);
   }
 
   /**
