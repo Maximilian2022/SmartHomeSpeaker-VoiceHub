@@ -1122,7 +1122,7 @@ Body:
             <input type="time" id="schedTime" class="form-input" required value="07:00">
           </div>
 
-          <!-- 音声オプション (話者・速度・音高) -->
+          <!-- 音声オプション (話者・音量・速度・音高) -->
           <div class="settings-grid" style="margin-bottom: 16px;">
             <div class="form-group">
               <label for="schedVoice" class="form-label">話者 (声色)</label>
@@ -1130,6 +1130,11 @@ Body:
                 <option value="ja-JP-NanamiNeural">七海 (Nanami) - 女性</option>
                 <option value="ja-JP-KeitaNeural">圭太 (Keita) - 男性</option>
               </select>
+            </div>
+
+            <div class="form-group">
+              <label for="schedVolumeRange" class="form-label">発言音量: <span id="schedVolumeDisplay">全体設定に従う</span></label>
+              <input type="range" id="schedVolumeRange" min="0" max="100" step="5" value="0" class="form-range">
             </div>
 
             <div class="form-group">

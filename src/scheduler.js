@@ -211,11 +211,14 @@ class SchedulerManager {
 
           try {
             if (this.executor) {
+              const volStr = sched.volumeLevel !== undefined && sched.volumeLevel !== '' ? sched.volumeLevel : undefined;
+              const volumeLevel = volStr ? parseFloat(volStr) : undefined;
               await this.executor(sched.text, {
                 deviceIps: targets.map(d => (d === 'default' ? undefined : d)).filter(Boolean),
                 voice: sched.voice,
                 rate: sched.rate,
                 pitch: sched.pitch,
+                volumeLevel,
                 source: 'schedule',
                 sourceLabel: `スケジュール (${sched.name})`
               });
@@ -308,6 +311,7 @@ class SchedulerManager {
       voice: data.voice || 'ja-JP-NanamiNeural',
       rate: data.rate || '+0%',
       pitch: data.pitch || '+0Hz',
+      volumeLevel: (data.volumeLevel !== undefined && data.volumeLevel !== '') ? String(data.volumeLevel) : undefined,
       createdAt: new Date().toISOString()
     };
 
@@ -344,6 +348,10 @@ class SchedulerManager {
       ...updates,
       id
     };
+
+    if (updates.volumeLevel !== undefined) {
+      updated.volumeLevel = updates.volumeLevel !== '' ? String(updates.volumeLevel) : undefined;
+    }
 
     if (cronExpr) updated.cron = cronExpr;
     updated.readableFrequency = formatHumanReadable(updated);
@@ -391,11 +399,15 @@ class SchedulerManager {
     if (!this.executor) throw new Error('実行エンジンが初期化されていません');
     const targets = sched.deviceIps || (sched.deviceIp ? [sched.deviceIp] : ['default']);
 
+    const volStr = sched.volumeLevel !== undefined && sched.volumeLevel !== '' ? sched.volumeLevel : undefined;
+    const volumeLevel = volStr ? parseFloat(volStr) : undefined;
+
     return await this.executor(sched.text, {
       deviceIps: targets.map(d => (d === 'default' ? undefined : d)).filter(Boolean),
       voice: sched.voice,
       rate: sched.rate,
       pitch: sched.pitch,
+      volumeLevel,
       source: 'schedule',
       sourceLabel: `スケジュール (${sched.name} テスト)`
     });

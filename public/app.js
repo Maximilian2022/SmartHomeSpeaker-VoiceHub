@@ -67,6 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
     schedWeekdayChecks: document.querySelectorAll('input[name="schedDay"]'),
     schedTime: document.getElementById('schedTime'),
     schedVoice: document.getElementById('schedVoice'),
+    schedVolumeRange: document.getElementById('schedVolumeRange'),
+    schedVolumeDisplay: document.getElementById('schedVolumeDisplay'),
     schedRateRange: document.getElementById('schedRateRange'),
     schedRateValueDisplay: document.getElementById('schedRateValueDisplay'),
     schedPitchRange: document.getElementById('schedPitchRange'),
@@ -439,6 +441,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }).join(', ');
 
       const freqText = formatHumanReadableCron(sched);
+      const volBadge = sched.volumeLevel 
+        ? `<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#34d399; border-color:rgba(52,211,153,0.3); margin-left:6px;" title="個別音量: ${Math.round(parseFloat(sched.volumeLevel) * 100)}%">🔉 ${Math.round(parseFloat(sched.volumeLevel) * 100)}%</span>` 
+        : '';
 
       rowsHtml += `
         <tr>
@@ -455,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
               ${escapeHtml(freqText)}
             </span>
           </td>
-          <td><span style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(devNames)}</span></td>
+          <td><span style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(devNames)}</span>${volBadge}</td>
           <td>${escapeHtml(sched.text)}</td>
           <td>
             <div class="table-actions">
@@ -743,6 +748,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // スライダー値表示 (スケジュールモーダル)
+    el.schedVolumeRange?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      if (el.schedVolumeDisplay) {
+        el.schedVolumeDisplay.textContent = val === 0 ? '全体設定に従う' : `${val}%`;
+      }
+    });
+
     el.schedRateRange?.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       if (el.schedRateValueDisplay) {
@@ -1007,6 +1019,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const targets = sched.deviceIps || (sched.deviceIp ? [sched.deviceIp] : ['default']);
         renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', targets);
 
+        // 音量の反映
+        const volVal = sched.volumeLevel ? Math.round(parseFloat(sched.volumeLevel) * 100) : 0;
+        if (el.schedVolumeRange) el.schedVolumeRange.value = volVal;
+        if (el.schedVolumeDisplay) el.schedVolumeDisplay.textContent = volVal > 0 ? `${volVal}%` : '全体設定に従う';
+
         // 話速と音高の反映
         let rateVal = 0;
         if (sched.rate) {
@@ -1183,6 +1200,8 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('modalTitle').textContent = '新規スケジュール登録';
       el.scheduleForm.reset();
       el.schedTime.value = '07:00';
+      if (el.schedVolumeRange) el.schedVolumeRange.value = 0;
+      if (el.schedVolumeDisplay) el.schedVolumeDisplay.textContent = '全体設定に従う';
       if (el.schedRateRange) el.schedRateRange.value = 0;
       if (el.schedRateValueDisplay) el.schedRateValueDisplay.textContent = '標準 (0%)';
       if (el.schedPitchRange) el.schedPitchRange.value = 0;
@@ -1221,6 +1240,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      const volVal = parseInt(el.schedVolumeRange?.value || '0', 10);
+      const volumeLevel = volVal > 0 ? (volVal / 100).toString() : '';
       const rateVal = parseInt(el.schedRateRange?.value || '0', 10);
       const pitchVal = parseInt(el.schedPitchRange?.value || '0', 10);
       const rate = (rateVal >= 0 ? '+' : '') + rateVal + '%';
@@ -1236,6 +1257,7 @@ document.addEventListener('DOMContentLoaded', () => {
         voice: el.schedVoice.value,
         rate,
         pitch,
+        volumeLevel,
         enabled: true
       };
 
