@@ -7,6 +7,7 @@ const castManager = require('./cast');
 const deviceManager = require('./devices');
 const schedulerManager = require('./scheduler');
 const alexaManager = require('./alexa');
+const homepodManager = require('./homepod');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
@@ -124,30 +125,46 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     }
   }
 
-  // Google Home 向けと Alexa 向けを分類
-  const googleDevices = resolvedTargets.filter(d => d.type !== 'alexa' && !d.ip.startsWith('alexa:'));
+  // Google Home 向け、Alexa 向け、HomePod 向けを分類
+  const googleDevices = resolvedTargets.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod'));
   const alexaDevices = resolvedTargets.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
+  const homepodDevices = resolvedTargets.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
 
   const dispatchPromises = [];
   let audioUrl = null;
+  let sharedSpeech = null;
 
-  // Google Home デバイスがある場合、Edge TTS 音声を 1 度だけ生成
-  if (googleDevices.length > 0) {
-    const speech = await ttsManager.generateSpeech(text, {
+  // Google Home または HomePod がある場合、Edge TTS 音声を 1 度だけ生成
+  if (googleDevices.length > 0 || homepodDevices.length > 0) {
+    sharedSpeech = await ttsManager.generateSpeech(text, {
       voice: options.voice,
       rate: options.rate,
       pitch: options.pitch,
       volume: options.volume
     });
-    audioUrl = `http://${SERVER_IP}:${PORT}${speech.urlPath}`;
+    audioUrl = `http://${SERVER_IP}:${PORT}${sharedSpeech.urlPath}`;
+  }
 
-    // 各 Google Home デバイスへ並行キャスト
+  // Google Home デバイスへ並行キャスト
+  if (googleDevices.length > 0 && sharedSpeech) {
     for (const dev of googleDevices) {
       console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}`);
       dispatchPromises.push(
         castManager.playMedia(dev.ip, audioUrl, { volumeLevel: options.volumeLevel })
           .then(res => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'success', result: res }))
           .catch(err => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'error', error: err.message }))
+      );
+    }
+  }
+
+  // HomePod デバイスへ並行 AirPlay ストリーミング
+  if (homepodDevices.length > 0 && sharedSpeech) {
+    for (const dev of homepodDevices) {
+      console.log(`[Speak] HomePod 送信先: ${dev.name} (${dev.ip})`);
+      dispatchPromises.push(
+        homepodManager.playAudio(sharedSpeech.filepath, dev.ip)
+          .then(res => ({ device: dev.name, ip: dev.ip, type: 'homepod', status: 'success', result: res }))
+          .catch(err => ({ device: dev.name, ip: dev.ip, type: 'homepod', status: 'error', error: err.message }))
       );
     }
   }
@@ -372,10 +389,30 @@ app.get('/api/status', (req, res) => {
     cacheStats: ttsManager.getCacheStats(),
     alexaEnabled: alexaManager.isEnabled(),
     alexaConfigured: alexaManager.configured,
+    homepodCount: homepodManager.devicesCache.length,
     nodeVersion: process.version,
     uptime: Math.floor(process.uptime()),
-    hasWebhookToken: !!process.env.WEBHOOK_TOKEN
+    hasWebhookToken: !!process.env.WEBHOOK_TOKEN,
+    webhookToken: process.env.WEBHOOK_TOKEN || null
   });
+});
+
+// 8. HomePod 管理 API
+app.get('/api/homepod/status', async (req, res) => {
+  const devices = await homepodManager.getDevices();
+  res.json({
+    count: devices.length,
+    devices
+  });
+});
+
+app.post('/api/homepod/scan', async (req, res) => {
+  try {
+    const devices = await homepodManager.scanDevices();
+    res.json({ success: true, count: devices.length, devices });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 8. Alexa 連携 & 認証管理 API

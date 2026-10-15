@@ -1,5 +1,6 @@
 const { exec } = require('child_process');
 const alexaManager = require('./alexa');
+const homepodManager = require('./homepod');
 
 // 事前に検出確認済みのデバイス一覧（フォールバックおよび正確な日本語名マップ）
 const KNOWN_DEVICES = [
@@ -25,7 +26,7 @@ class DeviceManager {
     // スキャン実行
     this.scanDevices();
     // 10分ごとに再スキャン
-    setInterval(() => this.scanDevices(), 10 * 60 * 1000);
+    setInterval(() => this.scanDevices(), 10 * 60 * 1000).unref();
   }
 
   getDefaultDeviceIp() {
@@ -49,12 +50,36 @@ class DeviceManager {
       }
     }
 
+    // HomePod デバイスの追加
+    try {
+      const homepodDevs = await homepodManager.getDevices();
+      result.push(...homepodDevs);
+    } catch (e) {
+      console.warn('HomePod デバイス一覧取得エラー:', e.message);
+    }
+
     return result;
   }
 
   findDevice(query) {
     if (!query) return null;
     const normalized = query.trim();
+
+    // HomePod デバイス指定の場合
+    if (normalized.startsWith('homepod:') || normalized.toLowerCase().includes('homepod')) {
+      const hpTarget = normalized.startsWith('homepod:') ? normalized.slice(8) : normalized;
+      const found = homepodManager.devicesCache.find(d =>
+        d.mac === hpTarget || d.rawIp === hpTarget || d.rawName === hpTarget || d.ip === `homepod:${hpTarget}`
+      );
+      if (found) return found;
+      return {
+        id: `homepod_${hpTarget.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        name: `HomePod (${hpTarget})`,
+        ip: `homepod:${hpTarget}`,
+        model: 'Apple HomePod',
+        type: 'homepod'
+      };
+    }
 
     // Alexa デバイス指定の場合
     if (normalized.startsWith('alexa:') || normalized.toLowerCase().includes('alexa') || normalized.toLowerCase().includes('echo')) {

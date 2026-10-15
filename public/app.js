@@ -87,6 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ================= 1. 初期データ読み込み =================
   async function init() {
     setupEventListeners();
+    setupWebhookBuilder();
     await loadServerStatus();
     await Promise.all([
       loadDevices(),
@@ -104,24 +105,41 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       state.serverInfo = data;
 
-      el.serverStatusText.textContent = `稼働中 (${data.serverIp}:${data.port})`;
-      el.defaultDeviceText.textContent = `デフォルト: 部屋 (${data.defaultDeviceIp})`;
-      el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
+      if (el.serverStatusText) el.serverStatusText.textContent = `稼働中 (${data.serverIp}:${data.port})`;
+      if (el.defaultDeviceText) el.defaultDeviceText.textContent = `デフォルト: 部屋 (${data.defaultDeviceIp})`;
+      if (el.apiEndpointUrl) el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
 
       // キャッシュ容量表示
-      if (data.cacheStats) {
+      if (data.cacheStats && el.cacheStatusText) {
         el.cacheStatusText.textContent = `Cache: ${data.cacheStats.totalMB} MB / ${data.cacheStats.maxMB} MB`;
+      }
+
+      // Webhook Token の反映
+      const tokenInput = document.getElementById('txtWebhookTokenVal');
+      if (tokenInput && data.webhookToken) {
+        tokenInput.value = data.webhookToken;
       }
 
       // Cloudflare Tunnel 情報の反映
       if (data.tunnelDomain) {
-        el.tunnelDomainBanner.style.display = 'block';
-        el.tunnelDomainBadge.textContent = data.tunnelDomain;
-        el.tunnelEndpointBox.style.display = 'flex';
-        el.apiTunnelEndpointUrl.textContent = `https://${data.tunnelDomain}/api/say`;
-        el.tunnelCurlSection.style.display = 'block';
-        el.curlTunnelExample.textContent = `curl -X POST https://${data.tunnelDomain}/api/say \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer your-secret-token" \\\n  -d '{\n    "text": "外出先からの通知です。",\n    "devices": ["部屋"]\n  }'`;
+        if (el.tunnelDomainBanner) el.tunnelDomainBanner.style.display = 'block';
+        if (el.tunnelDomainBadge) el.tunnelDomainBadge.textContent = data.tunnelDomain;
+        if (el.tunnelEndpointBox) el.tunnelEndpointBox.style.display = 'flex';
+        if (el.apiTunnelEndpointUrl) el.apiTunnelEndpointUrl.textContent = `https://${data.tunnelDomain}/api/say`;
+
+        const radioTunnelWrapper = document.getElementById('builderRadioTunnelWrapper');
+        if (radioTunnelWrapper) radioTunnelWrapper.style.display = 'inline-flex';
+        const tunnelLabel = document.getElementById('builderTunnelUrlLabel');
+        if (tunnelLabel) tunnelLabel.textContent = `https://${data.tunnelDomain}/api/say`;
       }
+
+      // HomePod 台数の反映
+      const hpBadge = document.getElementById('homepodStatusBadge');
+      if (hpBadge && data.homepodCount !== undefined) {
+        hpBadge.textContent = `${data.homepodCount > 0 ? data.homepodCount - 1 : 0} 台認識済み`;
+      }
+
+      updateBuilderCode();
     } catch (err) {
       el.serverStatusText.textContent = '接続エラー';
       el.serverStatusChip.style.borderColor = 'var(--danger)';
@@ -139,6 +157,8 @@ document.addEventListener('DOMContentLoaded', () => {
       renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', ['192.168.11.97']);
       renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
       renderDevicesGrid();
+      renderBuilderSpeakers();
+      updateBuilderCode();
     } catch (err) {
       showToast('デバイス情報の取得に失敗しました', 'error');
     }
@@ -197,13 +217,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const isChecked = selectedValues.includes(dev.ip) ? 'checked' : '';
       const isDefault = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
+      const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
 
       html += `
-        <label class="speaker-chip ${isAlexa ? 'alexa-chip' : ''} ${isChecked ? 'checked' : ''}">
+        <label class="speaker-chip ${isAlexa ? 'alexa-chip' : ''} ${isHomePod ? 'homepod-chip' : ''} ${isChecked ? 'checked' : ''}">
           <input type="checkbox" name="${nameAttr}" value="${dev.ip}" ${isChecked}>
           <span class="speaker-chip-name">${escapeHtml(dev.name)}</span>
           ${isDefault ? '<span class="speaker-chip-badge">★</span>' : ''}
           ${isAlexa ? '<span class="speaker-chip-badge" style="color:var(--alexa-color);">Echo</span>' : ''}
+          ${isHomePod ? '<span class="speaker-chip-badge" style="color:#ffffff;">HomePod</span>' : ''}
         </label>
       `;
     });
@@ -237,6 +259,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     el.sayVoiceSelect.innerHTML = optionsHtml;
     el.schedVoice.innerHTML = optionsHtml;
+
+    const bVoice = document.getElementById('builderVoice');
+    if (bVoice) {
+      bVoice.innerHTML = '<option value="">デフォルト (Nanami - 女性)</option>' + optionsHtml;
+    }
   }
 
   function renderScheduleTable() {
@@ -293,13 +320,15 @@ document.addEventListener('DOMContentLoaded', () => {
     state.devices.forEach(dev => {
       const isDef = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
+      const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
 
       cardsHtml += `
-        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''}">
+        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''}">
           <div class="device-card-header">
             <span class="device-card-title">${escapeHtml(dev.name)}</span>
             ${isDef ? '<span class="device-tag">デフォルト</span>' : ''}
             ${isAlexa ? '<span class="device-tag alexa">Alexa Echo</span>' : ''}
+            ${isHomePod ? '<span class="device-tag homepod">Apple HomePod</span>' : ''}
           </div>
           <div class="device-card-info">
             <span><strong>識別子/IP:</strong> ${escapeHtml(dev.ip)}</span>
@@ -823,7 +852,274 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ================= 4. ユーティリティ =================
+  // ================= 4. Webhook ビルダー機能 =================
+  let builderSelectedTab = 'curl-post';
+
+  function renderBuilderSpeakers() {
+    const grid = document.getElementById('builderSpeakersGrid');
+    if (!grid) return;
+
+    if (!state.devices || state.devices.length === 0) {
+      grid.innerHTML = '<span class="loading-text">スピーカーが見つかりません</span>';
+      return;
+    }
+
+    let html = '';
+    state.devices.forEach(dev => {
+      const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
+      const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
+      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : 'google');
+
+      // 初期値: デフォルトまたは部屋を選択
+      const isChecked = dev.ip === '192.168.11.97' || dev.isDefault;
+
+      html += `
+        <label class="speaker-chip ${isAlexa ? 'alexa-chip' : ''} ${isHomePod ? 'homepod-chip' : ''} ${isChecked ? 'checked' : ''}">
+          <input type="checkbox" name="builderSpeaker" value="${dev.ip}" data-type="${devType}" ${isChecked ? 'checked' : ''}>
+          <span class="speaker-chip-name">${escapeHtml(dev.name)}</span>
+          ${isAlexa ? '<span class="speaker-chip-badge" style="color:var(--alexa-color);">Echo</span>' : ''}
+          ${isHomePod ? '<span class="speaker-chip-badge" style="color:#ffffff;">HomePod</span>' : ''}
+        </label>
+      `;
+    });
+
+    grid.innerHTML = html;
+
+    grid.querySelectorAll('input[type="checkbox"]').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const parent = e.target.closest('.speaker-chip');
+        if (e.target.checked) {
+          parent.classList.add('checked');
+        } else {
+          parent.classList.remove('checked');
+        }
+        updateBuilderCode();
+      });
+    });
+  }
+
+  function updateBuilderCode() {
+    const text = document.getElementById('builderText')?.value || 'ご飯ができましたよ！みんな集まってください。';
+    const checkedBoxes = Array.from(document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]:checked'));
+    const devices = checkedBoxes.map(c => c.value);
+
+    const isTunnel = document.querySelector('input[name="builderUrlType"]:checked')?.value === 'tunnel';
+    const tunnelDomain = state.serverInfo?.tunnelDomain;
+    const baseUrl = (isTunnel && tunnelDomain)
+      ? `https://${tunnelDomain}`
+      : `http://${state.serverInfo?.serverIp || '192.168.11.244'}:${state.serverInfo?.port || 8080}`;
+    const token = state.serverInfo?.webhookToken || '';
+
+    const voice = document.getElementById('builderVoice')?.value;
+    const rate = document.getElementById('builderRate')?.value;
+    const volumeLevel = document.getElementById('builderVolumeLevel')?.value;
+
+    const payloadObj = {
+      text,
+      devices: devices.length > 0 ? devices : ['部屋']
+    };
+    if (voice) payloadObj.voice = voice;
+    if (rate) payloadObj.rate = rate;
+    if (volumeLevel) payloadObj.volumeLevel = parseFloat(volumeLevel);
+
+    const codeEl = document.getElementById('builderGeneratedCode');
+    if (!codeEl) return;
+
+    if (builderSelectedTab === 'curl-post') {
+      let cmd = `curl -X POST ${baseUrl}/api/say \\\n  -H "Content-Type: application/json" \\\n`;
+      if (token) {
+        cmd += `  -H "Authorization: Bearer ${token}" \\\n`;
+      }
+      cmd += `  -d '${JSON.stringify(payloadObj, null, 2)}'`;
+      codeEl.textContent = cmd;
+    } else if (builderSelectedTab === 'curl-get') {
+      const params = new URLSearchParams();
+      params.set('text', text);
+      if (devices.length > 0) {
+        params.set('devices', devices.join(','));
+      }
+      if (voice) params.set('voice', voice);
+      if (rate) params.set('rate', rate);
+      if (token) params.set('token', token);
+      codeEl.textContent = `curl "${baseUrl}/api/say?${params.toString()}"`;
+    } else if (builderSelectedTab === 'json-body') {
+      codeEl.textContent = JSON.stringify(payloadObj, null, 2);
+    }
+  }
+
+  function setupWebhookBuilder() {
+    // フォーム入力変更リスナー
+    const textInput = document.getElementById('builderText');
+    const voiceSelect = document.getElementById('builderVoice');
+    const rateSelect = document.getElementById('builderRate');
+    const volSelect = document.getElementById('builderVolumeLevel');
+    const urlRadios = document.querySelectorAll('input[name="builderUrlType"]');
+
+    if (textInput) textInput.addEventListener('input', updateBuilderCode);
+    if (voiceSelect) voiceSelect.addEventListener('change', updateBuilderCode);
+    if (rateSelect) rateSelect.addEventListener('change', updateBuilderCode);
+    if (volSelect) volSelect.addEventListener('change', updateBuilderCode);
+    urlRadios.forEach(r => r.addEventListener('change', updateBuilderCode));
+
+    // スピーカー一括選択ボタン
+    document.getElementById('btnBuilderSelectAll')?.addEventListener('click', () => {
+      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
+        c.checked = true;
+        c.closest('.speaker-chip')?.classList.add('checked');
+      });
+      updateBuilderCode();
+    });
+    document.getElementById('btnBuilderSelectGoogle')?.addEventListener('click', () => {
+      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
+        const isMatch = c.getAttribute('data-type') === 'google';
+        c.checked = isMatch;
+        c.closest('.speaker-chip')?.classList.toggle('checked', isMatch);
+      });
+      updateBuilderCode();
+    });
+    document.getElementById('btnBuilderSelectAlexa')?.addEventListener('click', () => {
+      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
+        const isMatch = c.getAttribute('data-type') === 'alexa';
+        c.checked = isMatch;
+        c.closest('.speaker-chip')?.classList.toggle('checked', isMatch);
+      });
+      updateBuilderCode();
+    });
+    document.getElementById('btnBuilderSelectHomePod')?.addEventListener('click', () => {
+      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
+        const isMatch = c.getAttribute('data-type') === 'homepod';
+        c.checked = isMatch;
+        c.closest('.speaker-chip')?.classList.toggle('checked', isMatch);
+      });
+      updateBuilderCode();
+    });
+    document.getElementById('btnBuilderClear')?.addEventListener('click', () => {
+      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
+        c.checked = false;
+        c.closest('.speaker-chip')?.classList.remove('checked');
+      });
+      updateBuilderCode();
+    });
+
+    // タブ切り替え
+    document.querySelectorAll('.pill-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        builderSelectedTab = btn.getAttribute('data-output-tab');
+        updateBuilderCode();
+      });
+    });
+
+    // トークン表示トグル
+    const tokenInput = document.getElementById('txtWebhookTokenVal');
+    const btnToggle = document.getElementById('btnToggleTokenVisibility');
+    if (btnToggle && tokenInput) {
+      btnToggle.addEventListener('click', () => {
+        if (tokenInput.type === 'password') {
+          tokenInput.type = 'text';
+          btnToggle.textContent = '🙈';
+        } else {
+          tokenInput.type = 'password';
+          btnToggle.textContent = '👁️';
+        }
+      });
+    }
+
+    // トークンコピーボタン
+    document.getElementById('btnCopyWebhookToken')?.addEventListener('click', () => {
+      if (tokenInput && tokenInput.value) {
+        navigator.clipboard.writeText(tokenInput.value).then(() => {
+          showToast('Webhook 認証トークンをコピーしました！', 'success');
+        });
+      }
+    });
+
+    // ビルダーコードコピーボタン
+    document.getElementById('btnCopyBuilderCode')?.addEventListener('click', () => {
+      const codeEl = document.getElementById('builderGeneratedCode');
+      if (codeEl) {
+        navigator.clipboard.writeText(codeEl.textContent).then(() => {
+          showToast('コードをクリップボードにコピーしました！', 'success');
+        });
+      }
+    });
+
+    // その場でテスト送信
+    document.getElementById('btnTestWebhookNow')?.addEventListener('click', async () => {
+      const text = document.getElementById('builderText')?.value || '';
+      if (!text.trim()) {
+        return showToast('発言内容を入力してください', 'warning');
+      }
+
+      const checked = Array.from(document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]:checked')).map(c => c.value);
+      if (checked.length === 0) {
+        return showToast('少なくとも1つのスピーカーを選択してください', 'warning');
+      }
+
+      const payload = {
+        text,
+        devices: checked
+      };
+      const voice = document.getElementById('builderVoice')?.value;
+      if (voice) payload.voice = voice;
+      const rate = document.getElementById('builderRate')?.value;
+      if (rate) payload.rate = rate;
+      const volumeLevel = document.getElementById('builderVolumeLevel')?.value;
+      if (volumeLevel) payload.volumeLevel = parseFloat(volumeLevel);
+
+      const statusEl = document.getElementById('testWebhookStatus');
+      if (statusEl) {
+        statusEl.style.display = 'block';
+        statusEl.textContent = 'スピーカーへテスト送信中...';
+        statusEl.style.color = '#38bdf8';
+      }
+
+      try {
+        const res = await fetch('/api/say', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (statusEl) {
+            statusEl.textContent = `✅ テスト送信成功！(${checked.length}台のスピーカーで発話)`;
+            statusEl.style.color = 'var(--success)';
+          }
+          showToast('スピーカーへ発言リクエストを送信しました！', 'success');
+        } else {
+          throw new Error(data.error || '送信失敗');
+        }
+      } catch (err) {
+        if (statusEl) {
+          statusEl.textContent = `❌ エラー: ${err.message}`;
+          statusEl.style.color = 'var(--danger)';
+        }
+        showToast('送信エラー: ' + err.message, 'error');
+      }
+    });
+
+    // HomePod 再スキャンボタン
+    document.getElementById('btnRescanHomePod')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnRescanHomePod');
+      btn.disabled = true;
+      showToast('HomePod を再スキャンしています...');
+      try {
+        const res = await fetch('/api/homepod/scan', { method: 'POST' });
+        const data = await res.json();
+        showToast(`HomePod 再スキャン完了: ${data.count || 0} 台認識`, 'success');
+        await loadDevices();
+        await loadServerStatus();
+      } catch (e) {
+        showToast('HomePod スキャンエラー: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  // ================= 5. ユーティリティ =================
   function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
