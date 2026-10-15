@@ -434,7 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // スライダー値表示
+    // スライダー値表示 (即時発言)
     el.sayRateRange.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       el.rateValueDisplay.textContent = val === 0 ? '標準 (0%)' : (val > 0 ? `+${val}%` : `${val}%`);
@@ -443,6 +443,21 @@ document.addEventListener('DOMContentLoaded', () => {
     el.sayPitchRange.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       el.pitchValueDisplay.textContent = val === 0 ? '標準 (0Hz)' : (val > 0 ? `+${val}Hz` : `${val}Hz`);
+    });
+
+    // スライダー値表示 (スケジュールモーダル)
+    el.schedRateRange?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      if (el.schedRateValueDisplay) {
+        el.schedRateValueDisplay.textContent = val === 0 ? '標準 (0%)' : (val > 0 ? `+${val}%` : `${val}%`);
+      }
+    });
+
+    el.schedPitchRange?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      if (el.schedPitchValueDisplay) {
+        el.schedPitchValueDisplay.textContent = val === 0 ? '標準 (0Hz)' : (val > 0 ? `+${val}Hz` : `${val}Hz`);
+      }
     });
 
     // ブラウザ試聴プレビュー
@@ -627,6 +642,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const targets = sched.deviceIps || (sched.deviceIp ? [sched.deviceIp] : ['default']);
         renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', targets);
+
+        // 話速と音高の反映
+        let rateVal = 0;
+        if (sched.rate) {
+          rateVal = parseInt(sched.rate, 10) || 0;
+        }
+        if (el.schedRateRange) el.schedRateRange.value = rateVal;
+        if (el.schedRateValueDisplay) {
+          el.schedRateValueDisplay.textContent = rateVal === 0 ? '標準 (0%)' : (rateVal > 0 ? `+${rateVal}%` : `${rateVal}%`);
+        }
+
+        let pitchVal = 0;
+        if (sched.pitch) {
+          pitchVal = parseInt(sched.pitch, 10) || 0;
+        }
+        if (el.schedPitchRange) el.schedPitchRange.value = pitchVal;
+        if (el.schedPitchValueDisplay) {
+          el.schedPitchValueDisplay.textContent = pitchVal === 0 ? '標準 (0Hz)' : (pitchVal > 0 ? `+${pitchVal}Hz` : `${pitchVal}Hz`);
+        }
+
         el.scheduleModal.style.display = 'flex';
         return;
       }
@@ -677,6 +712,10 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('modalTitle').textContent = '新規スケジュール登録';
       el.scheduleForm.reset();
       el.schedTime.value = '07:00';
+      if (el.schedRateRange) el.schedRateRange.value = 0;
+      if (el.schedRateValueDisplay) el.schedRateValueDisplay.textContent = '標準 (0%)';
+      if (el.schedPitchRange) el.schedPitchRange.value = 0;
+      if (el.schedPitchValueDisplay) el.schedPitchValueDisplay.textContent = '標準 (0Hz)';
       el.schedWeekdaysWrapper.style.display = 'none';
       renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
       el.scheduleModal.style.display = 'flex';
@@ -711,6 +750,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      const rateVal = parseInt(el.schedRateRange?.value || '0', 10);
+      const pitchVal = parseInt(el.schedPitchRange?.value || '0', 10);
+      const rate = (rateVal >= 0 ? '+' : '') + rateVal + '%';
+      const pitch = (pitchVal >= 0 ? '+' : '') + pitchVal + 'Hz';
+
       const payload = {
         name: el.schedName.value.trim(),
         text: el.schedText.value.trim(),
@@ -719,6 +763,8 @@ document.addEventListener('DOMContentLoaded', () => {
         weekdays,
         deviceIps: selectedSpeakers,
         voice: el.schedVoice.value,
+        rate,
+        pitch,
         enabled: true
       };
 

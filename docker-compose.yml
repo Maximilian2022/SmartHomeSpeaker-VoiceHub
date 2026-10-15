@@ -5,13 +5,15 @@ services:
     restart: unless-stopped
     network_mode: "host"
     env_file:
-      - ./.my.env
+      - path: ./.my.env
+        required: false
     volumes:
-      - ./data:/app/data
-      - ./public/voice:/app/public/voice
+      - voice_data:/app/data
+      - voice_cache:/app/public/voice
       # ホストの D-Bus / Avahi ソケット（デバイス自動検出用）
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket:ro
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared-google-home
@@ -19,6 +21,13 @@ services:
     network_mode: "host"
     command: tunnel --no-autoupdate run
     env_file:
-      - ./.my.env
+      - path: ./.my.env
+        required: false
+
+volumes:
+  voice_data:
+    name: smart_speaker_data
+  voice_cache:
+    name: smart_speaker_cache
 
 

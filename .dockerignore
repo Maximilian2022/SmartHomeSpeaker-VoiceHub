@@ -1,0 +1,10 @@
+node_modules
+.git
+.my.env
+.my.env.*
+*.env
+*.log
+*.bak
+*.patch
+test_*.mp3
+public/voice/*.mp3

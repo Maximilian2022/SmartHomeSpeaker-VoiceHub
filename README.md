@@ -50,8 +50,25 @@ npm start
 ### 4. Docker Compose で起動する場合
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
+
+- スケジュール・設定・認証情報は永続ボリューム `smart_speaker_data` に保存されます。
+- 生成された音声キャッシュは `smart_speaker_cache` ボリュームに保持されます。
+
+### 5. Portainer で起動する場合 (Stacks / Git Repository)
+
+Portainer の Web GUI からリポジトリを指定してワンクリックでデプロイできます。
+
+1. Portainer にログインし、**「Stacks」** → **「Add stack」** を開きます。
+2. **Build method** で **「Repository」** を選択します。
+3. **Repository URL**: `https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub.git` を入力します。
+4. **Compose path**: `docker-compose.yml` (デフォルトのまま)
+5. **Environment variables** (必要に応じて):
+   - `DEFAULT_SPEAKER_IP`: メインの Google Home の IP アドレス
+   - `WEBHOOK_TOKEN`: 外部アクセス時のセキュリティトークン
+   - `TUNNEL_TOKEN`: Cloudflare Tunnel を利用する場合のトークン
+6. **「Deploy the stack」** をクリックします。自動的に Node 26 環境がビルドされ、名前付きボリューム (`smart_speaker_data`, `smart_speaker_cache`) と共に起動します。
 
 ---
 
