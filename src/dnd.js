@@ -67,28 +67,39 @@ class DndManager {
 
     // 4. カレンダー進行中予定連動 DND
     if (dndConfig.calendarEnabled && Array.isArray(calendarManager.eventsCache)) {
+      const isAllMode = dndConfig.calendarMode === 'all';
+      const includeAllDay = !!dndConfig.calendarIncludeAllDay;
       const keywords = (dndConfig.calendarKeywords || '')
         .split(',')
         .map(k => k.trim().toLowerCase())
         .filter(Boolean);
 
       const ongoingEvent = calendarManager.eventsCache.find(ev => {
-        if (ev.isAllDay) return false; // 終日予定は除外
-        if (!ev.start || !ev.end) return false;
-        if (ev.start <= now && now < ev.end) {
-          if (keywords.length === 0) return true;
-          const summary = (ev.summary || '').toLowerCase();
-          const desc = (ev.description || '').toLowerCase();
-          return keywords.some(k => summary.includes(k) || desc.includes(k));
+        if (ev.isAllDay) {
+          if (!includeAllDay || !ev.start) return false;
+          const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+          const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+          const evStart = new Date(ev.start);
+          const evEnd = ev.end ? new Date(ev.end) : new Date(evStart.getTime() + 24 * 60 * 60 * 1000);
+          if (todayEnd < evStart || todayStart >= evEnd) return false;
+        } else {
+          if (!ev.start || !ev.end) return false;
+          if (ev.start > now || now >= ev.end) return false;
         }
-        return false;
+
+        if (isAllMode) return true;
+        if (keywords.length === 0) return true;
+
+        const summary = (ev.summary || '').toLowerCase();
+        const desc = (ev.description || '').toLowerCase();
+        return keywords.some(k => summary.includes(k) || desc.includes(k));
       });
 
       if (ongoingEvent) {
         return {
           isDnd: true,
-          reason: `カレンダー予定中: ${ongoingEvent.summary || '予定あり'}`,
-          until: ongoingEvent.end ? ongoingEvent.end.toISOString() : undefined,
+          reason: `カレンダー予定中: ${ongoingEvent.summary || '予定あり'}${ongoingEvent.isAllDay ? ' (終日)' : ''}`,
+          until: ongoingEvent.isAllDay ? undefined : (ongoingEvent.end ? ongoingEvent.end.toISOString() : undefined),
           action,
           whisperVolume
         };
@@ -144,25 +155,38 @@ class DndManager {
     // 進行中のカレンダー予定があれば情報付与
     let activeCalendarEvent = null;
     if (Array.isArray(calendarManager.eventsCache)) {
+      const isAllMode = dndConfig.calendarMode === 'all';
+      const includeAllDay = !!dndConfig.calendarIncludeAllDay;
       const keywords = (dndConfig.calendarKeywords || '')
         .split(',')
         .map(k => k.trim().toLowerCase())
         .filter(Boolean);
 
       const found = calendarManager.eventsCache.find(ev => {
-        if (ev.isAllDay || !ev.start || !ev.end) return false;
-        if (ev.start <= now && now < ev.end) {
-          if (keywords.length === 0) return true;
-          const summary = (ev.summary || '').toLowerCase();
-          return keywords.some(k => summary.includes(k));
+        if (ev.isAllDay) {
+          if (!includeAllDay || !ev.start) return false;
+          const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+          const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+          const evStart = new Date(ev.start);
+          const evEnd = ev.end ? new Date(ev.end) : new Date(evStart.getTime() + 24 * 60 * 60 * 1000);
+          if (todayEnd < evStart || todayStart >= evEnd) return false;
+        } else {
+          if (!ev.start || !ev.end) return false;
+          if (ev.start > now || now >= ev.end) return false;
         }
-        return false;
+
+        if (isAllMode) return true;
+        if (keywords.length === 0) return true;
+
+        const summary = (ev.summary || '').toLowerCase();
+        return keywords.some(k => summary.includes(k));
       });
       if (found) {
         activeCalendarEvent = {
           summary: found.summary,
           start: found.start,
-          end: found.end
+          end: found.end,
+          isAllDay: found.isAllDay
         };
       }
     }

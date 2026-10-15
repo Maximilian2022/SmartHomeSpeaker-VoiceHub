@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     rateValueDisplay: document.getElementById('rateValueDisplay'),
     sayPitchRange: document.getElementById('sayPitchRange'),
     pitchValueDisplay: document.getElementById('pitchValueDisplay'),
+    sayVolumeRange: document.getElementById('sayVolumeRange'),
+    sayVolumeDisplay: document.getElementById('sayVolumeDisplay'),
     btnPreviewAudio: document.getElementById('btnPreviewAudio'),
     btnSpeakDirect: document.getElementById('btnSpeakDirect'),
     audioPreviewWrapper: document.getElementById('audioPreviewWrapper'),
@@ -569,6 +571,14 @@ document.addEventListener('DOMContentLoaded', () => {
       el.pitchValueDisplay.textContent = val === 0 ? '標準 (0Hz)' : (val > 0 ? `+${val}Hz` : `${val}Hz`);
     });
 
+    // 音量スライダー (即時発言)
+    el.sayVolumeRange?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      if (el.sayVolumeDisplay) {
+        el.sayVolumeDisplay.textContent = val === 0 ? '端末音量を維持' : `${val}%`;
+      }
+    });
+
     // スライダー値表示 (スケジュールモーダル)
     el.schedRateRange?.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
@@ -604,6 +614,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const audioUrl = `/api/preview?${params.toString()}`;
 
         el.audioPreviewPlayer.src = audioUrl;
+        const volVal = parseInt(el.sayVolumeRange?.value || '0', 10);
+        el.audioPreviewPlayer.volume = volVal > 0 ? (volVal / 100) : 1.0;
         el.audioPreviewWrapper.style.display = 'block';
         await el.audioPreviewPlayer.play();
         showToast('試聴音声を再生しました');
@@ -637,19 +649,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const rate = (parseInt(el.sayRateRange.value) >= 0 ? '+' : '') + el.sayRateRange.value + '%';
         const pitch = (parseInt(el.sayPitchRange.value) >= 0 ? '+' : '') + el.sayPitchRange.value + 'Hz';
         const urgent = document.getElementById('sayUrgentCheck')?.checked || false;
+        const volVal = parseInt(el.sayVolumeRange?.value || '0', 10);
+
+        const payload = {
+          text,
+          devices: selectedSpeakers,
+          voice,
+          rate,
+          pitch,
+          urgent,
+          bypassDnd: urgent
+        };
+        if (volVal > 0) {
+          payload.volumeLevel = volVal / 100;
+        }
 
         const res = await fetch('/api/say', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            devices: selectedSpeakers,
-            voice,
-            rate,
-            pitch,
-            urgent,
-            bypassDnd: urgent
-          })
+          body: JSON.stringify(payload)
         });
 
         if (!res.ok) {
@@ -1539,7 +1557,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 登録カレンダー一覧の描画
+  // 登録カレンダー一覧の描画 (個別設定バッジ & 編集モーダル対応)
   function renderCalendarList() {
     const container = document.getElementById('calendarListContainer');
     if (!container) return;
@@ -1547,7 +1565,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const list = state.calendarData?.calendars || [];
     if (list.length === 0) {
       container.innerHTML = `
-        <div style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px dashed var(--card-border); border-radius: var(--radius-sm); text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+        <div style="padding: 14px; background: rgba(255,255,255,0.02); border: 1px dashed var(--card-border); border-radius: var(--radius-sm); text-align: center; color: var(--text-muted); font-size: 0.85rem;">
           登録されたカレンダーはありません。「＋ カレンダーを追加」ボタンから Google カレンダーの iCal URL を登録してください。
         </div>
       `;
@@ -1557,18 +1575,52 @@ document.addEventListener('DOMContentLoaded', () => {
     let html = '';
     list.forEach((c, idx) => {
       const isChecked = c.enabled !== false ? 'checked' : '';
+
+      // 個別設定バッジ一覧
+      const badges = [];
+      if (c.remindEnabled !== false) {
+        badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px;">🔔 ${c.remindMinutesBefore || 10}分前</span>`);
+      } else {
+        badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; opacity:0.6;">🔔 リマインドOFF</span>`);
+      }
+
+      if (c.dailySummaryEnabled !== false) {
+        badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#fbbf24; border-color:rgba(245,158,11,0.3);">☀️ ${c.dailySummaryTime || '07:30'}</span>`);
+      } else {
+        badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; opacity:0.6;">☀️ 朝まとめOFF</span>`);
+      }
+
+      if (Array.isArray(c.targetDevices) && c.targetDevices.length > 0) {
+        badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#60a5fa; border-color:rgba(59,130,246,0.3);">🔊 個別スピーカー(${c.targetDevices.length})</span>`);
+      }
+
+      if (c.voice) {
+        const shortVoice = c.voice.replace('ja-JP-', '').replace('Neural', '');
+        badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px;">🗣️ ${shortVoice}</span>`);
+      }
+
+      if (c.volumeLevel) {
+        badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#34d399; border-color:rgba(52,211,153,0.3);">🔉 ${Math.round(parseFloat(c.volumeLevel) * 100)}%</span>`);
+      }
+
       html += `
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: var(--radius-sm);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: var(--radius-sm); transition: all 0.2s ease;">
           <div style="min-width: 0; flex: 1;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-main);">${escapeHtml(c.name || `カレンダー ${idx + 1}`)}</span>
-              ${c.enabled !== false ? '<span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 999px; background: rgba(99,102,241,0.15); color: #818cf8;">同期中</span>' : '<span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,0.08); color: var(--text-muted);">停止中</span>'}
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="font-size: 0.92rem; font-weight: 600; color: var(--text-main);">${escapeHtml(c.name || `カレンダー ${idx + 1}`)}</span>
+              ${c.enabled !== false ? '<span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 999px; background: rgba(99,102,241,0.15); color: #818cf8; border: 1px solid rgba(99,102,241,0.3);">同期中</span>' : '<span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,0.08); color: var(--text-muted);">停止中</span>'}
+              <div style="display: inline-flex; gap: 4px; flex-wrap: wrap;">
+                ${badges.join(' ')}
+              </div>
             </div>
-            <div style="font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px;" title="${escapeHtml(c.icalUrl)}">
+            <div style="font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 450px; margin-top: 4px;" title="${escapeHtml(c.icalUrl)}">
               ${escapeHtml(c.icalUrl)}
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+            <button type="button" class="btn btn-secondary btn-sm btn-edit-cal" data-id="${c.id}" style="font-size: 0.8rem; padding: 5px 10px;" title="このカレンダーの通知先・ボイス・リマインドを個別設定">
+              ⚙️ 個別設定
+            </button>
             <label class="switch" style="width: 36px; height: 20px;">
               <input type="checkbox" class="cal-toggle-item" data-id="${c.id}" ${isChecked}>
               <span class="slider round"></span>
@@ -1583,41 +1635,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     container.innerHTML = html;
 
-    // 共通カレンダー設定保存関数
-    async function saveCurrentCalendarConfig(shouldSync = false) {
-      const calSpeakers = getSelectedSpeakers(document.getElementById('calSpeakersContainer'));
-      const calendars = state.calendarData?.calendars || [];
-
-      const payload = {
-        calendar: {
-          enabled: document.getElementById('calEnabled')?.checked || false,
-          calendars,
-          icalUrl: calendars[0]?.icalUrl || '', // 互換性維持用
-          remindEnabled: document.getElementById('calRemindEnabled')?.checked !== false,
-          remindMinutesBefore: parseInt(document.getElementById('calRemindMinutes')?.value || '10', 10),
-          dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked !== false,
-          dailySummaryTime: document.getElementById('calDailySummaryTime')?.value || '07:30',
-          targetDevices: calSpeakers.length ? calSpeakers : ['default'],
-          voice: document.getElementById('calVoice')?.value || 'ja-JP-NanamiNeural'
-        }
-      };
-
-      try {
-        const res = await fetch('/api/settings', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) throw new Error('保存失敗');
-        if (shouldSync) {
-          await loadCalendarEvents();
-        }
-        return true;
-      } catch (err) {
-        showToast('設定保存エラー: ' + err.message, 'error');
-        return false;
-      }
-    }
+    // 個別設定編集ボタン
+    container.querySelectorAll('.btn-edit-cal').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        openCalendarModal(id);
+      });
+    });
 
     // カレンダー個別ON/OFFトグル
     container.querySelectorAll('.cal-toggle-item').forEach(chk => {
@@ -1633,7 +1657,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // カレンダー削除 (即時反映 & 保存)
+    // カレンダー削除
     container.querySelectorAll('.btn-delete-cal').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const id = btn.getAttribute('data-id');
@@ -1649,6 +1673,42 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     });
+  }
+
+  // 共通カレンダー設定保存関数 (全体設定 & 各カレンダーの個別設定を保持)
+  async function saveCurrentCalendarConfig(shouldSync = false) {
+    const calSpeakers = getSelectedSpeakers(document.getElementById('calSpeakersContainer'));
+    const calendars = state.calendarData?.calendars || [];
+
+    const payload = {
+      calendar: {
+        enabled: document.getElementById('calEnabled')?.checked || false,
+        calendars,
+        icalUrl: calendars[0]?.icalUrl || '', // 互換性維持用
+        remindEnabled: document.getElementById('calRemindEnabled')?.checked !== false,
+        remindMinutesBefore: parseInt(document.getElementById('calRemindMinutes')?.value || '10', 10),
+        dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked !== false,
+        dailySummaryTime: document.getElementById('calDailySummaryTime')?.value || '07:30',
+        targetDevices: calSpeakers.length ? calSpeakers : ['default'],
+        voice: document.getElementById('calVoice')?.value || 'ja-JP-NanamiNeural'
+      }
+    };
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('保存失敗');
+      if (shouldSync) {
+        await loadCalendarEvents();
+      }
+      return true;
+    } catch (err) {
+      showToast('設定保存エラー: ' + err.message, 'error');
+      return false;
+    }
   }
 
   async function loadCalendarEvents() {
@@ -1733,18 +1793,15 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // カレンダー追加フォームの開閉
+    // カレンダー追加ボタン (モーダルを開く)
     const btnShowAddCalForm = document.getElementById('btnShowAddCalForm');
     const addCalInlineForm = document.getElementById('addCalInlineForm');
     const btnCancelAddCal = document.getElementById('btnCancelAddCal');
     const btnAddCalConfirm = document.getElementById('btnAddCalConfirm');
 
-    if (btnShowAddCalForm && addCalInlineForm) {
+    if (btnShowAddCalForm) {
       btnShowAddCalForm.addEventListener('click', () => {
-        addCalInlineForm.style.display = addCalInlineForm.style.display === 'none' ? 'block' : 'none';
-        if (addCalInlineForm.style.display === 'block') {
-          document.getElementById('newCalName')?.focus();
-        }
+        openCalendarModal(null);
       });
     }
 
@@ -1756,7 +1813,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // カレンダー追加の確定 (即時反映 & 保存 & 自動同期)
+    // カレンダー追加の確定 (インライン簡易追加)
     if (btnAddCalConfirm) {
       btnAddCalConfirm.addEventListener('click', async () => {
         const nameInput = document.getElementById('newCalName');
@@ -1776,7 +1833,6 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        // 公開用 basic.ics 警告チェック
         if (url.includes('/public/basic.ics')) {
           const proceed = confirm('【ご注意】入力されたURLはGoogleカレンダーの「公開用」URLです。\nカレンダーを一般公開していない場合、同期時に 404 エラーとなります。\n\n非公開カレンダーの場合は、Google カレンダー設定の「非公開 URL の iCal」をコピーしてください。\n\nこのまま登録を続行しますか？');
           if (!proceed) return;
@@ -1789,15 +1845,23 @@ document.addEventListener('DOMContentLoaded', () => {
           id: 'cal_' + Date.now(),
           name,
           icalUrl: url,
-          enabled: true
+          enabled: true,
+          remindEnabled: true,
+          remindMinutesBefore: 10,
+          dailySummaryEnabled: true,
+          dailySummaryTime: '07:30',
+          targetDevices: [],
+          voice: 'ja-JP-NanamiNeural',
+          rate: '+0%',
+          pitch: '+0Hz',
+          volumeLevel: ''
         });
 
         renderCalendarList();
-        addCalInlineForm.style.display = 'none';
+        if (addCalInlineForm) addCalInlineForm.style.display = 'none';
         nameInput.value = '';
         urlInput.value = '';
 
-        // サーバーへ即時保存 & 同期
         showToast(`「${name}」を登録して同期しています...`, 'info');
         const ok = await saveCalendarConfigInternal(true);
         if (ok) {
@@ -1805,6 +1869,168 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     }
+
+    // ================= カレンダー個別設定モーダル操作 =================
+    window.openCalendarModal = function(calId = null) {
+      const modal = document.getElementById('calendarModal');
+      if (!modal) return;
+
+      const isEdit = !!calId;
+      const found = isEdit ? (state.calendarData?.calendars || []).find(c => c.id === calId) : null;
+
+      document.getElementById('editCalId').value = isEdit ? calId : '';
+      document.getElementById('calendarModalTitle').textContent = isEdit ? `「${found?.name || 'カレンダー'}」の個別設定` : '新規カレンダー登録';
+      document.getElementById('modalCalName').value = found ? (found.name || '') : '';
+      document.getElementById('modalCalUrl').value = found ? (found.icalUrl || '') : '';
+
+      // 直前リマインド
+      const remindCheck = document.getElementById('modalCalRemindEnabled');
+      if (remindCheck) remindCheck.checked = found ? (found.remindEnabled !== false) : true;
+      const remindMin = document.getElementById('modalCalRemindMinutes');
+      if (remindMin) remindMin.value = String(found ? (found.remindMinutesBefore || 10) : 10);
+
+      // 朝まとめ
+      const dailyCheck = document.getElementById('modalCalDailySummaryEnabled');
+      if (dailyCheck) dailyCheck.checked = found ? (found.dailySummaryEnabled !== false) : true;
+      const dailyTime = document.getElementById('modalCalDailySummaryTime');
+      if (dailyTime) dailyTime.value = found ? (found.dailySummaryTime || '07:30') : '07:30';
+
+      // スピーカー個別選択
+      const spkContainer = document.getElementById('modalCalSpeakersContainer');
+      if (spkContainer) {
+        const selected = found?.targetDevices || [];
+        renderSpeakersCheckboxes(spkContainer, 'modalCalSpeaker', selected);
+      }
+
+      // 音声オプション
+      const voiceSelect = document.getElementById('modalCalVoice');
+      if (voiceSelect) voiceSelect.value = found?.voice || 'ja-JP-NanamiNeural';
+
+      // 音量
+      const volRange = document.getElementById('modalCalVolumeRange');
+      const volDisplay = document.getElementById('modalCalVolumeDisplay');
+      const volVal = found?.volumeLevel ? Math.round(parseFloat(found.volumeLevel) * 100) : 0;
+      if (volRange) volRange.value = volVal;
+      if (volDisplay) volDisplay.textContent = volVal > 0 ? `${volVal}%` : '全体設定に従う';
+
+      // 話速
+      const rateRange = document.getElementById('modalCalRateRange');
+      const rateDisplay = document.getElementById('modalCalRateDisplay');
+      const rateVal = parseInt(found?.rate || '0', 10);
+      if (rateRange) rateRange.value = rateVal;
+      if (rateDisplay) rateDisplay.textContent = rateVal === 0 ? '標準 (0%)' : (rateVal > 0 ? `+${rateVal}%` : `${rateVal}%`);
+
+      // 音高
+      const pitchRange = document.getElementById('modalCalPitchRange');
+      const pitchDisplay = document.getElementById('modalCalPitchDisplay');
+      const pitchVal = parseInt(found?.pitch || '0', 10);
+      if (pitchRange) pitchRange.value = pitchVal;
+      if (pitchDisplay) pitchDisplay.textContent = pitchVal === 0 ? '標準 (0Hz)' : (pitchVal > 0 ? `+${pitchVal}Hz` : `${pitchVal}Hz`);
+
+      modal.style.display = 'flex';
+    };
+
+    window.closeCalendarModal = function() {
+      const modal = document.getElementById('calendarModal');
+      if (modal) modal.style.display = 'none';
+    };
+
+    document.getElementById('btnCloseCalModal')?.addEventListener('click', closeCalendarModal);
+    document.getElementById('btnCancelCalModal')?.addEventListener('click', closeCalendarModal);
+
+    // スライダーイベント (モーダル内)
+    document.getElementById('modalCalVolumeRange')?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      const disp = document.getElementById('modalCalVolumeDisplay');
+      if (disp) disp.textContent = val === 0 ? '全体設定に従う' : `${val}%`;
+    });
+    document.getElementById('modalCalRateRange')?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      const disp = document.getElementById('modalCalRateDisplay');
+      if (disp) disp.textContent = val === 0 ? '標準 (0%)' : (val > 0 ? `+${val}%` : `${val}%`);
+    });
+    document.getElementById('modalCalPitchRange')?.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      const disp = document.getElementById('modalCalPitchDisplay');
+      if (disp) disp.textContent = val === 0 ? '標準 (0Hz)' : (val > 0 ? `+${val}Hz` : `${val}Hz`);
+    });
+
+    // モーダル保存確定
+    document.getElementById('calendarModalForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const editId = document.getElementById('editCalId')?.value;
+      const name = document.getElementById('modalCalName')?.value.trim() || 'カレンダー';
+      const url = document.getElementById('modalCalUrl')?.value.trim() || '';
+
+      if (!url) {
+        showToast('iCal URL を入力してください', 'error');
+        return;
+      }
+
+      if (url.includes('/public/basic.ics')) {
+        const proceed = confirm('【ご注意】入力されたURLはGoogleカレンダーの「公開用」URLです。\nカレンダーを一般公開していない場合、同期時に 404 エラーとなります。\n\n非公開カレンダーの場合は、Google カレンダー設定の「非公開 URL の iCal」をコピーしてください。\n\nこのまま登録を続行しますか？');
+        if (!proceed) return;
+      }
+
+      const remindEnabled = document.getElementById('modalCalRemindEnabled')?.checked !== false;
+      const remindMinutesBefore = parseInt(document.getElementById('modalCalRemindMinutes')?.value || '10', 10);
+      const dailySummaryEnabled = document.getElementById('modalCalDailySummaryEnabled')?.checked !== false;
+      const dailySummaryTime = document.getElementById('modalCalDailySummaryTime')?.value || '07:30';
+
+      const spk = getSelectedSpeakers(document.getElementById('modalCalSpeakersContainer'));
+      const voice = document.getElementById('modalCalVoice')?.value || 'ja-JP-NanamiNeural';
+      const rateVal = parseInt(document.getElementById('modalCalRateRange')?.value || '0', 10);
+      const rate = (rateVal >= 0 ? '+' : '') + rateVal + '%';
+      const pitchVal = parseInt(document.getElementById('modalCalPitchRange')?.value || '0', 10);
+      const pitch = (pitchVal >= 0 ? '+' : '') + pitchVal + 'Hz';
+      const volVal = parseInt(document.getElementById('modalCalVolumeRange')?.value || '0', 10);
+      const volumeLevel = volVal > 0 ? (volVal / 100).toString() : '';
+
+      if (!state.calendarData) state.calendarData = { calendars: [] };
+      if (!state.calendarData.calendars) state.calendarData.calendars = [];
+
+      if (editId) {
+        const found = state.calendarData.calendars.find(c => c.id === editId);
+        if (found) {
+          found.name = name;
+          found.icalUrl = url;
+          found.remindEnabled = remindEnabled;
+          found.remindMinutesBefore = remindMinutesBefore;
+          found.dailySummaryEnabled = dailySummaryEnabled;
+          found.dailySummaryTime = dailySummaryTime;
+          found.targetDevices = spk;
+          found.voice = voice;
+          found.rate = rate;
+          found.pitch = pitch;
+          found.volumeLevel = volumeLevel;
+        }
+      } else {
+        state.calendarData.calendars.push({
+          id: 'cal_' + Date.now(),
+          name,
+          icalUrl: url,
+          enabled: true,
+          remindEnabled,
+          remindMinutesBefore,
+          dailySummaryEnabled,
+          dailySummaryTime,
+          targetDevices: spk,
+          voice,
+          rate,
+          pitch,
+          volumeLevel
+        });
+      }
+
+      closeCalendarModal();
+      renderCalendarList();
+
+      showToast(`カレンダー「${name}」を保存して同期しています...`, 'info');
+      const ok = await saveCalendarConfigInternal(true);
+      if (ok) {
+        showToast(`カレンダー「${name}」の個別設定を保存しました！`, 'success');
+      }
+    });
 
     // 内部保存ヘルパー
     async function saveCalendarConfigInternal(shouldSync = false) {
@@ -2001,6 +2227,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function updateDndActionRadioHighlight() {
+    document.querySelectorAll('.dnd-action-radio-box').forEach(box => {
+      const inp = box.querySelector('input[type="radio"]');
+      if (inp && inp.checked) {
+        box.classList.add('selected');
+      } else {
+        box.classList.remove('selected');
+      }
+    });
+  }
+
   async function loadDndSettings() {
     try {
       const res = await fetch('/api/settings');
@@ -2019,6 +2256,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const kwEl = document.getElementById('dndCalendarKeywords');
       if (kwEl) kwEl.value = dnd.calendarKeywords || '';
 
+      const calMode = dnd.calendarMode || 'keywords';
+      const calModeRadio = document.querySelector(`input[name="dndCalendarMode"][value="${calMode}"]`);
+      if (calModeRadio) calModeRadio.checked = true;
+      const kwWrapper = document.getElementById('dndCalendarKeywordsWrapper');
+      if (kwWrapper) kwWrapper.style.display = (calMode === 'all') ? 'none' : 'block';
+
+      const calAllDayEl = document.getElementById('dndCalendarIncludeAllDay');
+      if (calAllDayEl) calAllDayEl.checked = !!dnd.calendarIncludeAllDay;
+
       // スケジュール
       const schedEl = document.getElementById('dndScheduleEnabled');
       if (schedEl) schedEl.checked = !!dnd.scheduleEnabled;
@@ -2026,7 +2272,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // アクションラジオ
       const actionRadio = document.querySelector(`input[name="dndAction"][value="${dnd.action || 'skip'}"]`);
-      if (actionRadio) actionRadio.checked = true;
+      if (actionRadio) {
+        actionRadio.checked = true;
+        updateDndActionRadioHighlight();
+      }
       const whisperWrapper = document.getElementById('dndWhisperWrapper');
       if (whisperWrapper) whisperWrapper.style.display = (dnd.action === 'whisper') ? 'block' : 'none';
       const whisperVolEl = document.getElementById('dndWhisperVolume');
@@ -2063,22 +2312,27 @@ document.addEventListener('DOMContentLoaded', () => {
       const daysStr = (item.days || []).map(d => WEEKDAYS_MAP[d] || d).join('・') || '全日';
 
       html += `
-        <div class="calendar-item" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:8px; margin-bottom:8px;">
+        <div class="calendar-item dnd-sched-item">
           <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
             <label class="switch">
               <input type="checkbox" class="dnd-sched-toggle" data-id="${escapeHtml(item.id)}" ${checked}>
               <span class="slider"></span>
             </label>
             <div>
-              <strong style="font-size:0.9rem;">${escapeHtml(item.name || '定時サイレント')}</strong>
+              <strong style="font-size:0.92rem;">${escapeHtml(item.name || '定時サイレント')}</strong>
               <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">
                 毎週 ${escapeHtml(daysStr)} ｜ ${escapeHtml(item.startTime || '00:00')} 〜 ${escapeHtml(item.endTime || '23:59')}
               </div>
             </div>
           </div>
-          <button type="button" class="btn-icon danger btn-delete-dnd-sched" data-id="${escapeHtml(item.id)}" title="削除">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
+          <div class="dnd-sched-actions">
+            <button type="button" class="btn-icon-sm btn-edit-dnd-sched" data-id="${escapeHtml(item.id)}" title="編集">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button type="button" class="btn-icon-sm btn-danger btn-delete-dnd-sched" data-id="${escapeHtml(item.id)}" title="削除">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
         </div>
       `;
     });
@@ -2096,6 +2350,36 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast(`「${found.name}」の有効状態を更新しました`, 'success');
           loadDndStatus();
         }
+      });
+    });
+
+    // 編集
+    container.querySelectorAll('.btn-edit-dnd-sched').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const found = state.dndConfig.schedules.find(s => s.id === id);
+        if (!found) return;
+
+        const formEl = document.getElementById('addDndSchedInlineForm');
+        if (!formEl) return;
+
+        document.getElementById('editDndSchedId').value = found.id;
+        document.getElementById('newDndSchedName').value = found.name || '';
+        document.getElementById('newDndStartTime').value = found.startTime || '09:00';
+        document.getElementById('newDndEndTime').value = found.endTime || '18:00';
+
+        const days = Array.isArray(found.days) ? found.days.map(String) : [];
+        document.querySelectorAll('input[name="newDndDay"]').forEach(chk => {
+          chk.checked = days.includes(chk.value);
+        });
+
+        const titleEl = document.getElementById('dndSchedFormTitle');
+        if (titleEl) titleEl.textContent = '定時サイレントルールの編集';
+        const confirmBtn = document.getElementById('btnAddDndSchedConfirm');
+        if (confirmBtn) confirmBtn.textContent = 'ルールを更新';
+
+        formEl.style.display = 'block';
+        formEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       });
     });
 
@@ -2181,7 +2465,9 @@ document.addEventListener('DOMContentLoaded', () => {
       dnd: {
         enabled: document.getElementById('dndMasterEnabled')?.checked !== false,
         calendarEnabled: document.getElementById('dndCalendarEnabled')?.checked || false,
+        calendarMode: document.querySelector('input[name="dndCalendarMode"]:checked')?.value || 'keywords',
         calendarKeywords: document.getElementById('dndCalendarKeywords')?.value || '',
+        calendarIncludeAllDay: document.getElementById('dndCalendarIncludeAllDay')?.checked || false,
         scheduleEnabled: document.getElementById('dndScheduleEnabled')?.checked || false,
         schedules: dnd.schedules || [],
         action: document.querySelector('input[name="dndAction"]:checked')?.value || 'skip',
@@ -2219,6 +2505,26 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('dndCalendarEnabled')?.addEventListener('change', async () => {
       await saveDndSettingsInternal();
       showToast('カレンダー予定連動の有効状態を更新しました', 'success');
+      loadDndStatus();
+    });
+
+    // カレンダーモードラジオ (キーワードのみ vs 全予定)
+    document.querySelectorAll('input[name="dndCalendarMode"]').forEach(radio => {
+      radio.addEventListener('change', async (e) => {
+        const kwWrapper = document.getElementById('dndCalendarKeywordsWrapper');
+        if (kwWrapper) {
+          kwWrapper.style.display = (e.target.value === 'all') ? 'none' : 'block';
+        }
+        await saveDndSettingsInternal();
+        showToast(`カレンダーサイレント対象: ${e.target.value === 'all' ? 'すべての予定' : 'キーワード一致のみ'} に変更しました`, 'info');
+        loadDndStatus();
+      });
+    });
+
+    // 終日予定を含めるトグル
+    document.getElementById('dndCalendarIncludeAllDay')?.addEventListener('change', async (e) => {
+      await saveDndSettingsInternal();
+      showToast(`終日予定のサイレント対象: ${e.target.checked ? '含む' : '除外 (推奨)'} に設定しました`, 'info');
       loadDndStatus();
     });
 
@@ -2281,22 +2587,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (btnShowAdd && formEl) {
       btnShowAdd.addEventListener('click', () => {
+        document.getElementById('editDndSchedId').value = '';
+        const titleEl = document.getElementById('dndSchedFormTitle');
+        if (titleEl) titleEl.textContent = '新規定時ルール';
+        if (btnConfirmAdd) btnConfirmAdd.textContent = 'ルールを保存';
+        const nameInput = document.getElementById('newDndSchedName');
+        if (nameInput) nameInput.value = '';
+
         formEl.style.display = formEl.style.display === 'none' ? 'block' : 'none';
         if (formEl.style.display === 'block') {
-          document.getElementById('newDndSchedName')?.focus();
+          nameInput?.focus();
         }
       });
     }
 
     if (btnCancelAdd && formEl) {
       btnCancelAdd.addEventListener('click', () => {
+        document.getElementById('editDndSchedId').value = '';
         formEl.style.display = 'none';
       });
     }
 
-    // 定時サイレント追加の確定
+    // 定時サイレント追加／編集の確定
     if (btnConfirmAdd) {
       btnConfirmAdd.addEventListener('click', async () => {
+        const editId = document.getElementById('editDndSchedId')?.value;
         const name = document.getElementById('newDndSchedName')?.value.trim() || '定時サイレント';
         const sTime = document.getElementById('newDndStartTime')?.value || '09:00';
         const eTime = document.getElementById('newDndEndTime')?.value || '18:00';
@@ -2310,30 +2625,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.dndConfig) state.dndConfig = { schedules: [] };
         if (!state.dndConfig.schedules) state.dndConfig.schedules = [];
 
-        state.dndConfig.schedules.push({
-          id: 'dnd_sched_' + Date.now(),
-          name,
-          days,
-          startTime: sTime,
-          endTime: eTime,
-          enabled: true
-        });
+        if (editId) {
+          const existing = state.dndConfig.schedules.find(s => s.id === editId);
+          if (existing) {
+            existing.name = name;
+            existing.days = days;
+            existing.startTime = sTime;
+            existing.endTime = eTime;
+          }
+        } else {
+          state.dndConfig.schedules.push({
+            id: 'dnd_sched_' + Date.now(),
+            name,
+            days,
+            startTime: sTime,
+            endTime: eTime,
+            enabled: true
+          });
+        }
 
         renderDndSchedules();
         formEl.style.display = 'none';
+        document.getElementById('editDndSchedId').value = '';
         document.getElementById('newDndSchedName').value = '';
 
         const ok = await saveDndSettingsInternal();
         if (ok) {
-          showToast(`定時ルール「${name}」を追加・保存しました！`, 'success');
+          showToast(editId ? `定時ルール「${name}」を更新しました！` : `定時ルール「${name}」を追加・保存しました！`, 'success');
           loadDndStatus();
         }
       });
     }
 
-    // アクションラジオ切り替え (囁き音量スライダー連動)
+    // アクションラジオ切り替え (囁き音量スライダー連動 & ハイライト)
     document.querySelectorAll('input[name="dndAction"]').forEach(radio => {
       radio.addEventListener('change', (e) => {
+        updateDndActionRadioHighlight();
         const whisperWrapper = document.getElementById('dndWhisperWrapper');
         if (whisperWrapper) {
           whisperWrapper.style.display = (e.target.value === 'whisper') ? 'block' : 'none';
@@ -2349,6 +2676,33 @@ document.addEventListener('DOMContentLoaded', () => {
         whisperDisp.textContent = `${e.target.value}%`;
       });
     }
+
+    // 囁き音量テスト再生ボタン
+    document.getElementById('btnTestWhisperVolume')?.addEventListener('click', async () => {
+      const vol = parseInt(document.getElementById('dndWhisperVolume')?.value || '10', 10);
+      const testBtn = document.getElementById('btnTestWhisperVolume');
+      testBtn.disabled = true;
+      testBtn.textContent = '🔊 再生中...';
+
+      try {
+        const res = await fetch('/api/say', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: `これは囁き音量のテストです。現在の音量は${vol}%です。`,
+            volumeLevel: vol / 100,
+            bypassDnd: true
+          })
+        });
+        if (!res.ok) throw new Error('テスト再生に失敗しました');
+        showToast(`囁き音量 (${vol}%) でテスト音声をスピーカーへ送信しました！`, 'success');
+      } catch (err) {
+        showToast('音量テストエラー: ' + err.message, 'error');
+      } finally {
+        testBtn.disabled = false;
+        testBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> 🔊 音量テスト`;
+      }
+    });
 
     // スコープラジオ切り替え (スピーカー一覧連動)
     document.querySelectorAll('input[name="dndTargetScope"]').forEach(radio => {

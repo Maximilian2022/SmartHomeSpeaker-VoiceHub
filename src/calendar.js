@@ -137,7 +137,8 @@ class CalendarManager {
   constructor() {
     this.eventsCache = [];
     this.lastFetched = null;
-    this.notifiedReminders = new Set(); // UID_StartTime の通知済みフラグ
+    this.notifiedReminders = new Set(); // UID_StartTime_Minutes の通知済みフラグ
+    this.notifiedSummaries = new Set(); // CalID_YYYY-MM-DD の通知済みフラグ
     this.lastDailySummaryDate = null; // YYYY-MM-DD
     this.executor = null;
 
@@ -177,6 +178,7 @@ class CalendarManager {
           const evs = parseIcsEvents(icsText);
           return evs.map(e => ({
             ...e,
+            calendarId: cal.id,
             calendarName: cal.name || 'カレンダー'
           }));
         })
@@ -231,7 +233,7 @@ class CalendarManager {
   }
 
   /**
-   * 1分ごとの定期処理
+   * 1分ごとの定期処理 (カレンダーごとの個別設定に対応)
    */
   async tick() {
     const config = settingsManager.get().calendar;
@@ -244,43 +246,102 @@ class CalendarManager {
     const currentTimeStr = `${currentH}:${currentM}`;
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    // 1. 直前リマインド判定 (例: 10分前) - remindEnabled が ON の場合のみ
-    const isRemindOn = config.remindEnabled !== false;
-    const remindMinutes = parseInt(config.remindMinutesBefore || '10', 10);
-    if (isRemindOn && remindMinutes > 0 && this.executor) {
+    const cals = Array.isArray(config.calendars) ? config.calendars : [];
+    const calMap = new Map();
+    for (const c of cals) {
+      if (c && c.id) calMap.set(c.id, c);
+    }
+
+    // 1. 直前リマインド判定 (カレンダー個別の設定に対応)
+    if (this.executor) {
       for (const ev of this.eventsCache) {
         if (!ev.start || ev.isAllDay) continue;
 
+        const cal = (ev.calendarId ? calMap.get(ev.calendarId) : null) || {};
+        if (cal.enabled === false) continue;
+
+        // リマインド有効フラグ (個別設定優先、未定義時は全体設定)
+        const isRemindOn = cal.remindEnabled !== undefined ? !!cal.remindEnabled : (config.remindEnabled !== false);
+        if (!isRemindOn) continue;
+
+        const remindMinutes = parseInt(cal.remindMinutesBefore !== undefined ? cal.remindMinutesBefore : (config.remindMinutesBefore || '10'), 10);
+        if (remindMinutes <= 0) continue;
+
         const diffMinutes = (ev.start.getTime() - nowTime) / (60 * 1000);
-        // 設定分数前 〜 設定分数+1分前の範囲
         if (diffMinutes >= remindMinutes - 0.5 && diffMinutes < remindMinutes + 0.5) {
-          const reminderKey = `${ev.uid || ev.summary}_${ev.start.getTime()}_remind`;
+          const reminderKey = `${ev.uid || ev.summary}_${ev.start.getTime()}_${remindMinutes}_remind`;
           if (!this.notifiedReminders.has(reminderKey)) {
             this.notifiedReminders.add(reminderKey);
             const timeStr = `${ev.start.getHours()}時${ev.start.getMinutes() === 0 ? '' : ev.start.getMinutes() + '分'}`;
             const message = `まもなく、${timeStr}から「${ev.summary}」の時間です。`;
-            console.log(`[Calendar Reminder] 発声: ${message}`);
-            this.speakMessage(message, config);
+            console.log(`[Calendar Reminder] (${cal.name || 'カレンダー'}) 発声: ${message}`);
+            this.speakMessage(message, cal, config);
           }
         }
       }
     }
 
-    // 2. 朝のデイリーサマリー判定 (例: 07:30) - dailySummaryEnabled が ON の場合のみ
-    if (config.dailySummaryEnabled && config.dailySummaryTime === currentTimeStr && this.lastDailySummaryDate !== todayStr && this.executor) {
-      this.lastDailySummaryDate = todayStr;
-      console.log(`[Calendar Daily Summary] 朝の予定まとめ読み上げ実行 (${currentTimeStr})`);
-      await this.speakDailySummary(config);
+    // 2. 朝のデイリーサマリー判定 (カレンダー個別の放送時刻 & 有効フラグに対応)
+    if (this.executor) {
+      if (cals.length > 0) {
+        for (const cal of cals) {
+          if (cal.enabled === false) continue;
+          const isDailyOn = cal.dailySummaryEnabled !== undefined ? !!cal.dailySummaryEnabled : !!config.dailySummaryEnabled;
+          const summaryTime = cal.dailySummaryTime || config.dailySummaryTime || '07:30';
+          const sumKey = `${cal.id}_${todayStr}`;
+
+          if (isDailyOn && summaryTime === currentTimeStr && !this.notifiedSummaries.has(sumKey)) {
+            this.notifiedSummaries.add(sumKey);
+            console.log(`[Calendar Daily Summary] カレンダー「${cal.name || 'カレンダー'}」の朝の予定まとめ読み上げ実行 (${currentTimeStr})`);
+            await this.speakDailySummaryForCalendar(cal, config);
+          }
+        }
+      } else if (config.dailySummaryEnabled && config.dailySummaryTime === currentTimeStr && this.lastDailySummaryDate !== todayStr) {
+        this.lastDailySummaryDate = todayStr;
+        console.log(`[Calendar Daily Summary] 朝の予定まとめ読み上げ実行 (${currentTimeStr})`);
+        await this.speakDailySummary(config);
+      }
     }
 
-    // 古い通知済みフラグの整理 (24時間以上前)
-    if (this.notifiedReminders.size > 200) {
+    // 古い通知済みフラグの整理
+    if (this.notifiedReminders.size > 300) {
       this.notifiedReminders.clear();
+    }
+    if (this.notifiedSummaries.size > 100) {
+      this.notifiedSummaries.clear();
     }
   }
 
   /**
-   * 本日の予定サマリー発声
+   * 特定カレンダーの予定サマリー発声
+   */
+  async speakDailySummaryForCalendar(cal, globalConfig = {}) {
+    const todayEvents = this.getTodayEvents().filter(ev => ev.calendarId === cal.id);
+    let message = '';
+    const calLabel = cal.name ? `${cal.name}の` : '';
+
+    if (todayEvents.length === 0) {
+      message = `おはようございます。${calLabel}本日の予定は登録されていません。良い一日を！`;
+    } else {
+      message = `おはようございます。${calLabel}本日の予定は ${todayEvents.length} 件あります。`;
+      for (const ev of todayEvents) {
+        if (ev.isAllDay) {
+          message += ` 終日、${ev.summary}。`;
+        } else {
+          const h = ev.start.getHours();
+          const m = ev.start.getMinutes();
+          const timeStr = `${h}時${m === 0 ? '' : m + '分'}`;
+          message += ` ${timeStr}から、${ev.summary}。`;
+        }
+      }
+      message += ' 今日も一日がんばりましょう！';
+    }
+
+    return await this.speakMessage(message, cal, globalConfig);
+  }
+
+  /**
+   * 全体本日の予定サマリー発声 (テスト・手動実行・互換用)
    */
   async speakDailySummary(configOverride = null) {
     const config = configOverride || settingsManager.get().calendar;
@@ -306,19 +367,34 @@ class CalendarManager {
       message += ' 今日も一日がんばりましょう！';
     }
 
-    return await this.speakMessage(message, config);
+    return await this.speakMessage(message, {}, config);
   }
 
   /**
-   * メッセージをターゲットスピーカーへ発声
+   * メッセージをターゲットスピーカーへ発声 (個別設定を最優先、全体設定へフォールバック)
    */
-  async speakMessage(text, config) {
+  async speakMessage(text, calConfig = {}, globalConfig = {}) {
     if (!this.executor) return null;
-    const targets = Array.isArray(config.targetDevices) && config.targetDevices.length ? config.targetDevices : ['default'];
+
+    // スピーカーの決定 (カレンダー個別 > 全体設定 > デフォルト)
+    let targets = calConfig.targetDevices;
+    if (!Array.isArray(targets) || targets.length === 0) {
+      targets = globalConfig.targetDevices || ['default'];
+    }
+
+    // 音声オプションの決定
+    const voice = calConfig.voice || globalConfig.voice || 'ja-JP-NanamiNeural';
+    const rate = calConfig.rate || globalConfig.rate || '+0%';
+    const pitch = calConfig.pitch || globalConfig.pitch || '+0Hz';
+    const volStr = calConfig.volumeLevel !== undefined && calConfig.volumeLevel !== '' ? calConfig.volumeLevel : globalConfig.volumeLevel;
+    const volumeLevel = volStr ? parseFloat(volStr) : undefined;
+
     return await this.executor(text, {
       deviceIps: targets.map(d => (d === 'default' ? undefined : d)).filter(Boolean),
-      voice: config.voice || 'ja-JP-NanamiNeural',
-      volumeLevel: config.volumeLevel ? parseFloat(config.volumeLevel) : undefined
+      voice,
+      rate,
+      pitch,
+      volumeLevel
     });
   }
 }

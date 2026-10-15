@@ -21,6 +21,8 @@ const DEFAULT_SETTINGS = {
     dailySummaryTime: '07:30',
     targetDevices: ['default'],
     voice: 'ja-JP-NanamiNeural',
+    rate: '+0%',
+    pitch: '+0Hz',
     volumeLevel: ''
   },
   dnd: {
@@ -45,7 +47,9 @@ const DEFAULT_SETTINGS = {
       }
     ],
     calendarEnabled: true,
+    calendarMode: 'keywords', // 'keywords' | 'all'
     calendarKeywords: 'MTG, 会議, Zoom, Teams, Meet, 打ち合わせ, 商談, 集中',
+    calendarIncludeAllDay: false,
     manualUntil: null,
     manualReason: '',
     targetScope: 'all', // 'all' | 'specific'
