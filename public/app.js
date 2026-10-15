@@ -1440,12 +1440,29 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ================= 5. Google カレンダー連携 =================
+  // カレンダー設定の読み込み
   async function loadCalendarSettings() {
     try {
       const res = await fetch('/api/settings');
       if (!res.ok) return;
       const data = await res.json();
       const cal = data.calendar || {};
+
+      state.calendarData = {
+        calendars: Array.isArray(cal.calendars) ? [...cal.calendars] : []
+      };
+
+      // 既存の単一 icalUrl からのフォールバック
+      if (state.calendarData.calendars.length === 0 && cal.icalUrl) {
+        state.calendarData.calendars.push({
+          id: 'cal_default',
+          name: 'メインカレンダー',
+          icalUrl: cal.icalUrl,
+          enabled: true
+        });
+      }
+
+      renderCalendarList();
 
       const calEnabled = document.getElementById('calEnabled');
       const calEnabledLabel = document.getElementById('calEnabledLabel');
@@ -1454,17 +1471,31 @@ document.addEventListener('DOMContentLoaded', () => {
         if (calEnabledLabel) calEnabledLabel.textContent = cal.enabled ? '有効' : '無効';
       }
 
-      const calIcalUrl = document.getElementById('calIcalUrl');
-      if (calIcalUrl && cal.icalUrl) calIcalUrl.value = cal.icalUrl;
+      // 直前リマインドの独立スイッチ
+      const calRemindEnabled = document.getElementById('calRemindEnabled');
+      const calRemindTimingWrapper = document.getElementById('calRemindTimingWrapper');
+      if (calRemindEnabled) {
+        calRemindEnabled.checked = cal.remindEnabled !== false;
+        if (calRemindTimingWrapper) {
+          calRemindTimingWrapper.style.opacity = calRemindEnabled.checked ? '1' : '0.4';
+          calRemindTimingWrapper.style.pointerEvents = calRemindEnabled.checked ? 'auto' : 'none';
+        }
+      }
 
       const calRemindMinutes = document.getElementById('calRemindMinutes');
       if (calRemindMinutes && cal.remindMinutesBefore !== undefined) {
         calRemindMinutes.value = String(cal.remindMinutesBefore);
       }
 
+      // 朝の予定まとめの独立スイッチ
       const calDailySummaryEnabled = document.getElementById('calDailySummaryEnabled');
+      const calDailyTimingWrapper = document.getElementById('calDailyTimingWrapper');
       if (calDailySummaryEnabled) {
         calDailySummaryEnabled.checked = cal.dailySummaryEnabled !== false;
+        if (calDailyTimingWrapper) {
+          calDailyTimingWrapper.style.opacity = calDailySummaryEnabled.checked ? '1' : '0.4';
+          calDailyTimingWrapper.style.pointerEvents = calDailySummaryEnabled.checked ? 'auto' : 'none';
+        }
       }
 
       const calDailySummaryTime = document.getElementById('calDailySummaryTime');
@@ -1479,6 +1510,77 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       console.warn('カレンダー設定取得エラー:', e);
     }
+  }
+
+  // 登録カレンダー一覧の描画
+  function renderCalendarList() {
+    const container = document.getElementById('calendarListContainer');
+    if (!container) return;
+
+    const list = state.calendarData?.calendars || [];
+    if (list.length === 0) {
+      container.innerHTML = `
+        <div style="padding: 12px; background: rgba(255,255,255,0.02); border: 1px dashed var(--card-border); border-radius: var(--radius-sm); text-align: center; color: var(--text-muted); font-size: 0.85rem;">
+          登録されたカレンダーはありません。「＋ カレンダーを追加」ボタンから Google カレンダーの iCal URL を登録してください。
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    list.forEach((c, idx) => {
+      const isChecked = c.enabled !== false ? 'checked' : '';
+      html += `
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: var(--radius-sm);">
+          <div style="min-width: 0; flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-main);">${escapeHtml(c.name || `カレンダー ${idx + 1}`)}</span>
+              ${c.enabled !== false ? '<span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 999px; background: rgba(99,102,241,0.15); color: #818cf8;">同期中</span>' : '<span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 999px; background: rgba(255,255,255,0.08); color: var(--text-muted);">停止中</span>'}
+            </div>
+            <div style="font-size: 0.78rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px;" title="${escapeHtml(c.icalUrl)}">
+              ${escapeHtml(c.icalUrl)}
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+            <label class="switch" style="width: 36px; height: 20px;">
+              <input type="checkbox" class="cal-toggle-item" data-id="${c.id}" ${isChecked}>
+              <span class="slider round"></span>
+            </label>
+            <button type="button" class="btn-icon danger btn-delete-cal" data-id="${c.id}" title="このカレンダーを削除" style="width: 28px; height: 28px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+
+    // カレンダー個別ON/OFFトグル
+    container.querySelectorAll('.cal-toggle-item').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const id = e.target.getAttribute('data-id');
+        const found = state.calendarData.calendars.find(c => c.id === id);
+        if (found) {
+          found.enabled = e.target.checked;
+          renderCalendarList();
+        }
+      });
+    });
+
+    // カレンダー削除
+    container.querySelectorAll('.btn-delete-cal').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = btn.getAttribute('data-id');
+        const found = state.calendarData.calendars.find(c => c.id === id);
+        const name = found ? found.name : 'カレンダー';
+        if (confirm(`「${name}」を連携リストから削除してもよろしいですか？`)) {
+          state.calendarData.calendars = state.calendarData.calendars.filter(c => c.id !== id);
+          renderCalendarList();
+          showToast(`「${name}」を削除しました（保存ボタンを押すと確定します）`, 'info');
+        }
+      });
+    });
   }
 
   async function loadCalendarEvents() {
@@ -1522,6 +1624,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <li class="cal-event-item ${isAllDay ? 'allday' : ''}">
           <div class="cal-event-header">
             <span class="cal-event-time">${timeText}</span>
+            ${ev.calendarName ? `<span style="font-size:0.7rem; color:var(--text-muted); background:rgba(255,255,255,0.06); padding:1px 6px; border-radius:999px;">${escapeHtml(ev.calendarName)}</span>` : ''}
           </div>
           <div class="cal-event-summary">${escapeHtml(ev.summary || '（無題）')}</div>
           ${ev.location ? `<div class="cal-event-location">📍 ${escapeHtml(ev.location)}</div>` : ''}
@@ -1533,12 +1636,93 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setupCalendarHandlers() {
-    // 有効/無効スイッチ
+    // 全体有効/無効スイッチ
     const calEnabled = document.getElementById('calEnabled');
     const calEnabledLabel = document.getElementById('calEnabledLabel');
     if (calEnabled) {
       calEnabled.addEventListener('change', () => {
         if (calEnabledLabel) calEnabledLabel.textContent = calEnabled.checked ? '有効' : '無効';
+      });
+    }
+
+    // 直前リマインドスイッチ連動
+    const calRemindEnabled = document.getElementById('calRemindEnabled');
+    const calRemindTimingWrapper = document.getElementById('calRemindTimingWrapper');
+    if (calRemindEnabled && calRemindTimingWrapper) {
+      calRemindEnabled.addEventListener('change', () => {
+        calRemindTimingWrapper.style.opacity = calRemindEnabled.checked ? '1' : '0.4';
+        calRemindTimingWrapper.style.pointerEvents = calRemindEnabled.checked ? 'auto' : 'none';
+      });
+    }
+
+    // 朝まとめスイッチ連動
+    const calDailySummaryEnabled = document.getElementById('calDailySummaryEnabled');
+    const calDailyTimingWrapper = document.getElementById('calDailyTimingWrapper');
+    if (calDailySummaryEnabled && calDailyTimingWrapper) {
+      calDailySummaryEnabled.addEventListener('change', () => {
+        calDailyTimingWrapper.style.opacity = calDailySummaryEnabled.checked ? '1' : '0.4';
+        calDailyTimingWrapper.style.pointerEvents = calDailySummaryEnabled.checked ? 'auto' : 'none';
+      });
+    }
+
+    // カレンダー追加フォームの開閉
+    const btnShowAddCalForm = document.getElementById('btnShowAddCalForm');
+    const addCalInlineForm = document.getElementById('addCalInlineForm');
+    const btnCancelAddCal = document.getElementById('btnCancelAddCal');
+    const btnAddCalConfirm = document.getElementById('btnAddCalConfirm');
+
+    if (btnShowAddCalForm && addCalInlineForm) {
+      btnShowAddCalForm.addEventListener('click', () => {
+        addCalInlineForm.style.display = addCalInlineForm.style.display === 'none' ? 'block' : 'none';
+        if (addCalInlineForm.style.display === 'block') {
+          document.getElementById('newCalName')?.focus();
+        }
+      });
+    }
+
+    if (btnCancelAddCal && addCalInlineForm) {
+      btnCancelAddCal.addEventListener('click', () => {
+        addCalInlineForm.style.display = 'none';
+        document.getElementById('newCalName').value = '';
+        document.getElementById('newCalUrl').value = '';
+      });
+    }
+
+    // カレンダー追加の確定
+    if (btnAddCalConfirm) {
+      btnAddCalConfirm.addEventListener('click', () => {
+        const nameInput = document.getElementById('newCalName');
+        const urlInput = document.getElementById('newCalUrl');
+        const name = nameInput?.value.trim() || 'カレンダー';
+        const url = urlInput?.value.trim() || '';
+
+        if (!url) {
+          showToast('Google カレンダーの iCal URL を入力してください', 'error');
+          urlInput?.focus();
+          return;
+        }
+
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          showToast('URLは http:// または https:// から始まる必要があります', 'error');
+          urlInput?.focus();
+          return;
+        }
+
+        if (!state.calendarData) state.calendarData = { calendars: [] };
+        if (!state.calendarData.calendars) state.calendarData.calendars = [];
+
+        state.calendarData.calendars.push({
+          id: 'cal_' + Date.now(),
+          name,
+          icalUrl: url,
+          enabled: true
+        });
+
+        renderCalendarList();
+        addCalInlineForm.style.display = 'none';
+        nameInput.value = '';
+        urlInput.value = '';
+        showToast(`「${name}」を追加しました！「設定を保存」ボタンを押すと確定します`, 'success');
       });
     }
 
@@ -1548,12 +1732,16 @@ document.addEventListener('DOMContentLoaded', () => {
       calForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const calSpeakers = getSelectedSpeakers(document.getElementById('calSpeakersContainer'));
+        const calendars = state.calendarData?.calendars || [];
+
         const payload = {
           calendar: {
             enabled: document.getElementById('calEnabled')?.checked || false,
-            icalUrl: document.getElementById('calIcalUrl')?.value.trim() || '',
+            calendars,
+            icalUrl: calendars[0]?.icalUrl || '', // 互換性維持用
+            remindEnabled: document.getElementById('calRemindEnabled')?.checked !== false,
             remindMinutesBefore: parseInt(document.getElementById('calRemindMinutes')?.value || '10', 10),
-            dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked || false,
+            dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked !== false,
             dailySummaryTime: document.getElementById('calDailySummaryTime')?.value || '07:30',
             targetDevices: calSpeakers.length ? calSpeakers : ['default'],
             voice: document.getElementById('calVoice')?.value || 'ja-JP-NanamiNeural'
@@ -1584,7 +1772,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/calendar/sync', { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-          showToast(`カレンダー同期完了: ${data.count || 0} 件の予定を取得`, 'success');
+          showToast(`カレンダー同期完了: 合計 ${data.count || 0} 件の予定を取得`, 'success');
           await loadCalendarEvents();
         } else {
           throw new Error(data.error || '同期失敗');

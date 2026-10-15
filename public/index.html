@@ -244,40 +244,78 @@
 
             <div class="card-body">
               <form id="calendarSettingsForm">
-                <!-- iCal URL -->
+                <!-- 複数カレンダー管理セクション -->
                 <div class="form-group">
-                  <label for="calIcalUrl" class="form-label">
-                    Google カレンダー iCal (ICS) 非公開 URL *
-                  </label>
-                  <input type="url" id="calIcalUrl" class="form-input" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" required>
-                  <small class="help-text">
-                    💡 <strong>取得方法:</strong> Google カレンダーの「設定」&gt; 連携したいカレンダーを選択 &gt;「カレンダーの統合」&gt;<strong>「iCal 形式の非公開 URL」</strong>をコピーして貼り付けてください。
+                  <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
+                    <label class="form-label" style="margin: 0; font-weight: 600;">
+                      📅 登録カレンダー一覧 (複数カレンダー対応)
+                    </label>
+                    <button type="button" id="btnShowAddCalForm" class="btn btn-outline-primary btn-sm" style="font-size: 0.8rem; padding: 4px 10px;">
+                      ＋ カレンダーを追加
+                    </button>
+                  </div>
+                  
+                  <!-- カレンダー追加インラインフォーム -->
+                  <div id="addCalInlineForm" style="display: none; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--accent);">新規カレンダー登録</div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <input type="text" id="newCalName" class="form-input" placeholder="表示名 (例: メイン, 仕事, 家族)" style="flex: 1; min-width: 140px;">
+                      <input type="url" id="newCalUrl" class="form-input" placeholder="Google カレンダー iCal (ICS) 非公開 URL" style="flex: 2; min-width: 220px;">
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
+                      <button type="button" id="btnCancelAddCal" class="btn btn-secondary btn-sm">キャンセル</button>
+                      <button type="button" id="btnAddCalConfirm" class="btn btn-primary btn-sm">追加する</button>
+                    </div>
+                  </div>
+
+                  <!-- 登録済みカレンダーリスト -->
+                  <div id="calendarListContainer" style="display: flex; flex-direction: column; gap: 8px;">
+                    <!-- JSで動的レンダリング -->
+                  </div>
+
+                  <small class="help-text" style="margin-top: 8px;">
+                    💡 <strong>iCal URL の取得方法:</strong> Google カレンダーの「設定」&gt; 連携したいカレンダーを選択 &gt;「カレンダーの統合」&gt;<strong>「iCal 形式の非公開 URL」</strong>をコピーして貼り付けてください。
                   </small>
                 </div>
 
-                <!-- 通知オプション -->
-                <div class="settings-grid" style="margin-top: 16px;">
-                  <!-- 直前リマインド -->
-                  <div class="form-group">
-                    <label for="calRemindMinutes" class="form-label">開始直前リマインド</label>
-                    <select id="calRemindMinutes" class="form-select">
-                      <option value="0">リマインドなし</option>
-                      <option value="5">5分前</option>
-                      <option value="10" selected>10分前 (推奨)</option>
-                      <option value="15">15分前</option>
-                      <option value="30">30分前</option>
-                    </select>
+                <!-- 通知オプション (直前リマインド & 朝まとめの独立ON/OFF) -->
+                <div class="settings-grid" style="margin-top: 20px;">
+                  <!-- 1. 直前リマインド -->
+                  <div class="form-group" style="background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 12px;">
+                    <div class="flex-between" style="align-items: center;">
+                      <label class="form-label" style="margin: 0; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                        🔔 予定開始前の直前リマインド
+                      </label>
+                      <label class="switch">
+                        <input type="checkbox" id="calRemindEnabled" checked>
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+                    <div id="calRemindTimingWrapper" style="margin-top: 10px;">
+                      <label for="calRemindMinutes" class="form-label" style="font-size: 0.8rem; color: var(--text-muted);">通知タイミング</label>
+                      <select id="calRemindMinutes" class="form-select">
+                        <option value="5">5分前</option>
+                        <option value="10" selected>10分前 (推奨)</option>
+                        <option value="15">15分前</option>
+                        <option value="30">30分前</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <!-- 朝の予定まとめ -->
-                  <div class="form-group">
-                    <label class="form-label">朝の予定まとめアナウンス</label>
-                    <div class="flex-align-center" style="gap: 12px; margin-top: 4px;">
-                      <label class="checkbox-label">
-                        <input type="checkbox" id="calDailySummaryEnabled" checked>
-                        <span>毎朝実行</span>
+                  <!-- 2. 朝の予定まとめ -->
+                  <div class="form-group" style="background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 12px;">
+                    <div class="flex-between" style="align-items: center;">
+                      <label class="form-label" style="margin: 0; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                        ☀️ 朝の予定まとめアナウンス
                       </label>
-                      <input type="time" id="calDailySummaryTime" class="form-input" style="width: 120px;" value="07:30">
+                      <label class="switch">
+                        <input type="checkbox" id="calDailySummaryEnabled" checked>
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+                    <div id="calDailyTimingWrapper" style="margin-top: 10px;">
+                      <label for="calDailySummaryTime" class="form-label" style="font-size: 0.8rem; color: var(--text-muted);">放送時刻</label>
+                      <input type="time" id="calDailySummaryTime" class="form-input" style="width: 100%;" value="07:30">
                     </div>
                   </div>
                 </div>
@@ -605,6 +643,41 @@
                   <pre><code id="builderGeneratedCode" class="language-bash">生成中...</code></pre>
                 </div>
                 <div id="testWebhookStatus" class="test-status-msg" style="display: none; margin-top: 8px;"></div>
+              </div>
+            </div>
+
+            <!-- 🤖 各個人の Gemini / AI 連携ガイドカード -->
+            <div class="card glass-card" style="margin-top: 24px; background: rgba(66, 133, 244, 0.04); border: 1px solid rgba(66, 133, 244, 0.25);">
+              <div class="card-header flex-between" style="padding: 16px 20px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 1.3rem;">🤖</span>
+                  <div>
+                    <h3 style="font-size: 1rem; margin: 0; color: #8ab4f8;">各個人の Gemini / AI エージェントとの連携ガイド</h3>
+                    <span style="font-size: 0.78rem; color: var(--text-muted);">個人の Google カレンダーや天気を Gemini でAI要約し、自宅スピーカーから喋らせる方法</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body" style="padding: 16px 20px; font-size: 0.88rem; line-height: 1.6;">
+                <p style="margin-bottom: 12px;">
+                  サーバーに共通の API Key を置くのではなく、<strong>「各個人が使っている Gemini (Web版 / Advanced / Gems)」</strong> にカスタム指示を与えることで、自分の予定・天気に合わせたパーソナルなAI要約アナウンスを自宅スピーカーから発話させることができます。
+                </p>
+                <div style="background: rgba(0,0,0,0.3); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px;">
+                  <div style="font-weight: 600; color: var(--accent); margin-bottom: 6px;">📋 Gemini (Gems / カスタム指示) 向け プロンプト例:</div>
+                  <pre style="margin: 0; font-size: 0.8rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-all;"><code>私の Google カレンダーの今日の予定と現在の天気を参照して、朝にふさわしい明るく元気な挨拶と1日のスケジュール要約（150文字程度）を作成してください。
+作成後、以下の Webhook API に POST リクエストを送信して自宅のスピーカーで発声させてください。
+
+■ 送信先 Webhook:
+POST http://&lt;サーバーIP&gt;:8080/api/say  (または Cloudflare Tunnel の URL)
+Headers: Content-Type: application/json
+Body:
+{
+  "text": "作成したAI文章",
+  "devices": ["部屋", "書斎"]
+}</code></pre>
+                </div>
+                <small class="help-text">
+                  💡 個人のプライベートな予定やメール情報はご自身の Gemini アカウント内だけで安全に処理され、発話テキストのみがスピーカーに届きます。
+                </small>
               </div>
             </div>
           </div>

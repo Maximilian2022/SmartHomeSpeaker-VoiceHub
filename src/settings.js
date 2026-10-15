@@ -13,7 +13,9 @@ const DEFAULT_SETTINGS = {
   webhookToken: process.env.WEBHOOK_TOKEN || '',
   calendar: {
     enabled: false,
-    icalUrl: '',
+    calendars: [], // [{ id, name, icalUrl, enabled }]
+    icalUrl: '', // 互換性維持
+    remindEnabled: true,
     remindMinutesBefore: 10,
     dailySummaryEnabled: true,
     dailySummaryTime: '07:30',
@@ -42,6 +44,22 @@ class SettingsManager {
             ...(parsed.calendar || {})
           }
         };
+
+        // 複数カレンダー構造への自動マイグレーション
+        if (!Array.isArray(this.settings.calendar.calendars)) {
+          this.settings.calendar.calendars = [];
+        }
+        if (this.settings.calendar.calendars.length === 0 && this.settings.calendar.icalUrl) {
+          this.settings.calendar.calendars.push({
+            id: 'cal_default',
+            name: 'メインカレンダー',
+            icalUrl: this.settings.calendar.icalUrl,
+            enabled: true
+          });
+        }
+        if (this.settings.calendar.remindEnabled === undefined) {
+          this.settings.calendar.remindEnabled = (parseInt(this.settings.calendar.remindMinutesBefore, 10) || 0) > 0;
+        }
       } else {
         this.settings = { ...DEFAULT_SETTINGS };
         this.save();

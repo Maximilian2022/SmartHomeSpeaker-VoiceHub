@@ -153,23 +153,52 @@ class CalendarManager {
 
   async syncEvents() {
     const config = settingsManager.get().calendar;
-    if (!config || !config.enabled || !config.icalUrl) {
+    if (!config || !config.enabled) {
+      this.eventsCache = [];
+      return [];
+    }
+
+    // カレンダーリストの取得 (複数対応、後方互換対応)
+    let cals = Array.isArray(config.calendars) ? config.calendars.filter(c => c.enabled !== false && c.icalUrl) : [];
+    if (cals.length === 0 && config.icalUrl) {
+      cals = [{ id: 'cal_default', name: 'メインカレンダー', icalUrl: config.icalUrl, enabled: true }];
+    }
+
+    if (cals.length === 0) {
       this.eventsCache = [];
       return [];
     }
 
     try {
-      console.log('[Calendar] Googleカレンダー取得中:', config.icalUrl.slice(0, 40) + '...');
-      const icsText = await fetchUrl(config.icalUrl);
-      const events = parseIcsEvents(icsText);
+      console.log(`[Calendar] ${cals.length} 件のカレンダーから同期を開始します...`);
+      const results = await Promise.allSettled(
+        cals.map(async (cal) => {
+          const icsText = await fetchUrl(cal.icalUrl);
+          const evs = parseIcsEvents(icsText);
+          return evs.map(e => ({
+            ...e,
+            calendarName: cal.name || 'カレンダー'
+          }));
+        })
+      );
+
+      const allEvents = [];
+      results.forEach((r, idx) => {
+        if (r.status === 'fulfilled') {
+          allEvents.push(...r.value);
+        } else {
+          console.warn(`[Calendar] "${cals[idx].name}" の取得失敗:`, r.reason?.message);
+        }
+      });
+
       // 日付順ソート
-      events.sort((a, b) => a.start - b.start);
-      this.eventsCache = events;
+      allEvents.sort((a, b) => (a.start && b.start ? a.start - b.start : 0));
+      this.eventsCache = allEvents;
       this.lastFetched = new Date().toISOString();
-      console.log(`[Calendar] 同期完了: ${events.length} 件の予定を取得`);
-      return events;
+      console.log(`[Calendar] 同期完了: 合計 ${allEvents.length} 件の予定を取得`);
+      return allEvents;
     } catch (err) {
-      console.error('[Calendar] 同期失敗:', err.message);
+      console.error('[Calendar] 同期全体エラー:', err.message);
       return this.eventsCache;
     }
   }
@@ -206,7 +235,7 @@ class CalendarManager {
    */
   async tick() {
     const config = settingsManager.get().calendar;
-    if (!config || !config.enabled || !config.icalUrl) return;
+    if (!config || !config.enabled) return;
 
     const now = new Date();
     const nowTime = now.getTime();
@@ -215,9 +244,10 @@ class CalendarManager {
     const currentTimeStr = `${currentH}:${currentM}`;
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-    // 1. 直前リマインド判定 (例: 10分前)
+    // 1. 直前リマインド判定 (例: 10分前) - remindEnabled が ON の場合のみ
+    const isRemindOn = config.remindEnabled !== false;
     const remindMinutes = parseInt(config.remindMinutesBefore || '10', 10);
-    if (remindMinutes > 0 && this.executor) {
+    if (isRemindOn && remindMinutes > 0 && this.executor) {
       for (const ev of this.eventsCache) {
         if (!ev.start || ev.isAllDay) continue;
 
@@ -236,7 +266,7 @@ class CalendarManager {
       }
     }
 
-    // 2. 朝のデイリーサマリー判定 (例: 07:30)
+    // 2. 朝のデイリーサマリー判定 (例: 07:30) - dailySummaryEnabled が ON の場合のみ
     if (config.dailySummaryEnabled && config.dailySummaryTime === currentTimeStr && this.lastDailySummaryDate !== todayStr && this.executor) {
       this.lastDailySummaryDate = todayStr;
       console.log(`[Calendar Daily Summary] 朝の予定まとめ読み上げ実行 (${currentTimeStr})`);
