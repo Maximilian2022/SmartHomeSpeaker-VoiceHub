@@ -238,6 +238,60 @@
             <div id="devicesGrid" class="devices-grid">
               <!-- JSで動的レンダリング -->
             </div>
+
+            <!-- Amazon Alexa 連携コントロールカード -->
+            <div class="alexa-auth-card" id="alexaAuthCard">
+              <div class="alexa-card-header">
+                <div class="alexa-title-group">
+                  <span class="alexa-icon">🗣️</span>
+                  <div>
+                    <h3>Amazon Alexa / Echo 連携</h3>
+                    <p class="alexa-desc">Echo シリーズへの音声アナウンス・一括発言を有効化します</p>
+                  </div>
+                </div>
+                <div id="alexaStatusBadge" class="badge-tech">未連携</div>
+              </div>
+
+              <!-- 1. 未連携状態 -->
+              <div id="alexaStateUnlinked" class="alexa-state-box">
+                <p>Amazon アカウントと連携すると、宅内の Amazon Echo デバイスへも同時に喋らせることができるようになります。</p>
+                <button type="button" id="btnStartAlexaAuth" class="btn btn-primary">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+                  Amazon ログインを開始して Alexa と連携
+                </button>
+              </div>
+
+              <!-- 2. 認証待機中状態 (プロキシ稼働中) -->
+              <div id="alexaStateWaiting" class="alexa-state-box alert-waiting" style="display: none;">
+                <div class="waiting-header">
+                  <span class="spinner-pulse"></span>
+                  <strong>認証待機中: 手元のブラウザでログインを完了してください</strong>
+                </div>
+                <p>以下のリンクをクリックして、手元のブラウザ（PC・スマートフォン）で Amazon にログインしてください。ログインが完了すると、自動的にこの画面が切り替わります。</p>
+                <div class="auth-link-box">
+                  <a id="alexaLoginLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-success btn-lg">
+                    👉 Amazon ログイン画面を開く (<span id="alexaLoginUrlText">http://192.168.11.244:8081</span>)
+                  </a>
+                  <button type="button" id="btnCancelAlexaAuth" class="btn btn-secondary btn-sm" style="margin-left: 12px;">キャンセル</button>
+                </div>
+                <small style="color: var(--text-dim); display: block; margin-top: 8px;">※2段階認証（OTP）や画像認証が表示された場合も、そのままブラウザ上で完了させてください。</small>
+              </div>
+
+              <!-- 3. 連携済み状態 -->
+              <div id="alexaStateLinked" class="alexa-state-box alert-linked" style="display: none;">
+                <div class="flex-between">
+                  <div>
+                    <span class="badge-success">連携完了</span>
+                    <strong style="margin-left: 8px;">Amazon アカウント認証済み</strong>
+                    <p style="margin-top: 4px; color: var(--text-muted);">Echo デバイスへの発言および一括アナウンスが利用可能です。</p>
+                  </div>
+                  <div class="action-btn-group">
+                    <button type="button" id="btnRefreshAlexaDevices" class="btn btn-secondary btn-sm">デバイス再取得</button>
+                    <button type="button" id="btnLogoutAlexa" class="btn btn-danger btn-sm">連携解除</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

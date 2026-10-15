@@ -65,9 +65,22 @@ document.addEventListener('DOMContentLoaded', () => {
     tunnelCurlSection: document.getElementById('tunnelCurlSection'),
     curlTunnelExample: document.getElementById('curlTunnelExample'),
     copyBtns: document.querySelectorAll('.btn-copy'),
+    // Alexa 連携
+    alexaStatusBadge: document.getElementById('alexaStatusBadge'),
+    alexaStateUnlinked: document.getElementById('alexaStateUnlinked'),
+    alexaStateWaiting: document.getElementById('alexaStateWaiting'),
+    alexaStateLinked: document.getElementById('alexaStateLinked'),
+    btnStartAlexaAuth: document.getElementById('btnStartAlexaAuth'),
+    btnCancelAlexaAuth: document.getElementById('btnCancelAlexaAuth'),
+    alexaLoginLink: document.getElementById('alexaLoginLink'),
+    alexaLoginUrlText: document.getElementById('alexaLoginUrlText'),
+    btnRefreshAlexaDevices: document.getElementById('btnRefreshAlexaDevices'),
+    btnLogoutAlexa: document.getElementById('btnLogoutAlexa'),
     // トースト
     toastContainer: document.getElementById('toastContainer')
   };
+
+  let alexaPollTimer = null;
 
   // ================= 1. 初期データ読み込み =================
   async function init() {
@@ -76,7 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
     await Promise.all([
       loadDevices(),
       loadVoices(),
-      loadSchedules()
+      loadSchedules(),
+      loadAlexaStatus()
     ]);
   }
 
@@ -637,6 +651,144 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     });
+
+    // Alexa 認証開始ボタン
+    if (el.btnStartAlexaAuth) {
+      el.btnStartAlexaAuth.addEventListener('click', async () => {
+        try {
+          el.btnStartAlexaAuth.disabled = true;
+          el.btnStartAlexaAuth.textContent = '起動中...';
+
+          const res = await fetch('/api/alexa/auth/start', { method: 'POST' });
+          if (!res.ok) throw new Error('プロキシサーバーの起動に失敗しました');
+          const data = await res.json();
+
+          showToast('Amazon ログインページを開きました。ログインを完了してください。', 'info');
+          if (data.loginUrl) {
+            window.open(data.loginUrl, '_blank');
+          }
+          await loadAlexaStatus();
+        } catch (err) {
+          showToast('エラー: ' + err.message, 'error');
+        } finally {
+          el.btnStartAlexaAuth.disabled = false;
+          el.btnStartAlexaAuth.innerHTML = `
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+            Amazon ログインを開始して Alexa と連携
+          `;
+        }
+      });
+    }
+
+    // Alexa 認証キャンセルボタン
+    if (el.btnCancelAlexaAuth) {
+      el.btnCancelAlexaAuth.addEventListener('click', async () => {
+        try {
+          await fetch('/api/alexa/auth/stop', { method: 'POST' });
+          stopAlexaPolling();
+          await loadAlexaStatus();
+          showToast('Alexa 認証をキャンセルしました', 'info');
+        } catch (err) {
+          showToast('キャンセル失敗: ' + err.message, 'error');
+        }
+      });
+    }
+
+    // Alexa デバイス再取得ボタン
+    if (el.btnRefreshAlexaDevices) {
+      el.btnRefreshAlexaDevices.addEventListener('click', async () => {
+        await loadDevices();
+        showToast('Alexa デバイス一覧を再取得しました', 'success');
+      });
+    }
+
+    // Alexa 連携解除ボタン
+    if (el.btnLogoutAlexa) {
+      el.btnLogoutAlexa.addEventListener('click', async () => {
+        if (!window.confirm('Amazon Alexa との連携を解除しますか？')) return;
+        try {
+          await fetch('/api/alexa/logout', { method: 'POST' });
+          await loadDevices();
+          await loadAlexaStatus();
+          showToast('Alexa 連携を解除しました', 'info');
+        } catch (err) {
+          showToast('連携解除失敗: ' + err.message, 'error');
+        }
+      });
+    }
+  }
+
+  // ================= Alexa 認証ステータス管理 =================
+  async function loadAlexaStatus() {
+    try {
+      const res = await fetch('/api/alexa/status');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (data.proxyRunning) {
+        el.alexaStatusBadge.textContent = '認証待機中...';
+        el.alexaStatusBadge.style.color = '#facc15';
+        el.alexaStatusBadge.style.borderColor = 'rgba(234, 179, 8, 0.4)';
+        el.alexaStateUnlinked.style.display = 'none';
+        el.alexaStateWaiting.style.display = 'block';
+        el.alexaStateLinked.style.display = 'none';
+
+        if (data.proxyUrl) {
+          el.alexaLoginLink.href = data.proxyUrl;
+          el.alexaLoginUrlText.textContent = data.proxyUrl;
+        }
+
+        startAlexaPolling();
+      } else if (data.configured) {
+        el.alexaStatusBadge.textContent = '連携完了';
+        el.alexaStatusBadge.style.color = '#10b981';
+        el.alexaStatusBadge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+        el.alexaStateUnlinked.style.display = 'none';
+        el.alexaStateWaiting.style.display = 'none';
+        el.alexaStateLinked.style.display = 'block';
+
+        stopAlexaPolling();
+      } else {
+        el.alexaStatusBadge.textContent = '未連携';
+        el.alexaStatusBadge.style.color = 'var(--text-muted)';
+        el.alexaStatusBadge.style.borderColor = 'var(--card-border)';
+        el.alexaStateUnlinked.style.display = 'block';
+        el.alexaStateWaiting.style.display = 'none';
+        el.alexaStateLinked.style.display = 'none';
+
+        stopAlexaPolling();
+      }
+    } catch (err) {
+      console.warn('Alexa ステータス取得エラー:', err);
+    }
+  }
+
+  function startAlexaPolling() {
+    if (alexaPollTimer) return;
+    alexaPollTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/alexa/status');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.configured) {
+          stopAlexaPolling();
+          await loadAlexaStatus();
+          await loadDevices();
+          showToast('🎉 Amazon Alexa 認証が完了しました！Echo デバイスを認識しました。', 'success');
+        } else if (!data.proxyRunning) {
+          stopAlexaPolling();
+          await loadAlexaStatus();
+        }
+      } catch (e) {}
+    }, 2500);
+  }
+
+  function stopAlexaPolling() {
+    if (alexaPollTimer) {
+      clearInterval(alexaPollTimer);
+      alexaPollTimer = null;
+    }
   }
 
   // ================= 4. ユーティリティ =================

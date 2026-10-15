@@ -371,10 +371,37 @@ app.get('/api/status', (req, res) => {
     tunnelDomain: TUNNEL_DOMAIN || null,
     cacheStats: ttsManager.getCacheStats(),
     alexaEnabled: alexaManager.isEnabled(),
+    alexaConfigured: alexaManager.configured,
     nodeVersion: process.version,
     uptime: Math.floor(process.uptime()),
     hasWebhookToken: !!process.env.WEBHOOK_TOKEN
   });
+});
+
+// 8. Alexa 連携 & 認証管理 API
+app.get('/api/alexa/status', (req, res) => {
+  res.json(alexaManager.getAuthStatus(SERVER_IP));
+});
+
+app.post('/api/alexa/auth/start', async (req, res) => {
+  try {
+    const authPort = parseInt(process.env.ALEXA_PROXY_PORT || '8081', 10);
+    const result = await alexaManager.startProxyAuth(SERVER_IP, authPort);
+    res.json(result);
+  } catch (err) {
+    console.error('[Alexa Auth Start Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/alexa/auth/stop', (req, res) => {
+  alexaManager.stopProxyAuth();
+  res.json({ success: true });
+});
+
+app.post('/api/alexa/logout', (req, res) => {
+  alexaManager.logout();
+  res.json({ success: true });
 });
 
 // 起動

@@ -17,6 +17,7 @@
   "author": "TAKAHASHI Taro (Updated for Edge TTS & Modern Web GUI)",
   "license": "MIT",
   "dependencies": {
+    "alexa-cookie2": "^5.0.6",
     "castv2-client": "^1.2.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
