@@ -244,6 +244,48 @@ class AlexaManager {
   }
 
   /**
+   * Echo Auto / Echo Buds / Echo Connect や、TTS読み上げ不可デバイスの除外判定
+   */
+  isExcludedDevice(name, family = '', type = '') {
+    const n = (name || '').toLowerCase();
+    const f = (family || '').toUpperCase();
+    const t = (type || '').toUpperCase();
+
+    // 1. Echo Connect (電話連携用アダプター: family=BELL)
+    if (f === 'BELL' || n.includes('connect') || t === 'AKOAGQTKAS9YB') {
+      return true;
+    }
+
+    // 2. Echo Buds (イヤホン: family=VOX_ACCESSORY)
+    if (f === 'VOX_ACCESSORY' || n.includes('buds') || n.includes('earbuds')) {
+      return true;
+    }
+
+    // 3. Echo Auto (車載用デバイス)
+    if (
+      n.includes('echo auto') ||
+      n.includes(' auto') ||
+      t === 'A13W6HQIHKEN3Z' ||
+      t === 'A303PJF6ISQ7IC' ||
+      t === 'A15ERDAKK5HQQG'
+    ) {
+      return true;
+    }
+
+    // 4. アプリ端末・非据え置きデバイス (This Device, Alexa App for PC: family=VOX, REAVER)
+    if (f === 'VOX' || f === 'REAVER' || n === 'this device' || n.includes('alexa app')) {
+      return true;
+    }
+
+    // 5. Echo Sub (サブウーファー: 単体発声不可)
+    if (n.includes('echo sub')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * 登録済み Alexa デバイス一覧を取得
    */
   listDevices() {
@@ -254,7 +296,7 @@ class AlexaManager {
       }
 
       execFile(SCRIPT_PATH, ['-a'], { env: this.getEnvOptions(), timeout: 15000 }, (err, stdout) => {
-        if (err || !stdout) {
+        if (err && !stdout) {
           console.warn('[Alexa] デバイス一覧の取得をスキップ:', err?.message || '空の応答');
           if (this.configured) {
             this.devicesCache = [
@@ -266,14 +308,65 @@ class AlexaManager {
           return resolve(this.devicesCache);
         }
 
-        const lines = stdout.split('\n');
+        const devlistTxtPath = path.join(DATA_DIR, '.alexa.devicelist.txt');
+        const seen = new Set();
         const devices = [
           { id: 'alexa_ALL', name: 'Alexa (全室 Echo)', ip: 'alexa:ALL', model: 'Amazon Echo Group', type: 'alexa' }
         ];
 
+        // 1. .alexa.devicelist.txt が存在する場合は family や deviceType も含めて高精度にパース
+        if (fs.existsSync(devlistTxtPath)) {
+          try {
+            const lines = fs.readFileSync(devlistTxtPath, 'utf-8').split('\n');
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+              const parts = trimmed.split('=');
+              const name = parts[0];
+              const type = parts[1] || '';
+              const serial = parts[2] || '';
+              const family = parts[3] || '';
+
+              if (seen.has(name)) continue;
+              seen.add(name);
+
+              // Echo Auto, Echo Buds, Echo Connect などを除外
+              if (this.isExcludedDevice(name, family, type)) continue;
+
+              let model = 'Amazon Echo';
+              if (family === 'KNIGHT') model = 'Amazon Echo Show';
+              else if (family === 'WHA') model = 'Alexa グループ';
+              else if (family === 'FIRE_TV') model = 'Fire TV';
+              else if (family === 'TABLET') model = 'Fire タブレット';
+
+              devices.push({
+                id: `alexa_${name.replace(/\s+/g, '_')}`,
+                name: `Alexa: ${name}`,
+                ip: `alexa:${name}`,
+                model: model,
+                type: 'alexa'
+              });
+            }
+
+            this.devicesCache = devices;
+            console.log(`[Alexa] デバイス一覧を更新しました (${devices.length} 件のデバイスを認識)`);
+            return resolve(devices);
+          } catch (e) {
+            console.warn('[Alexa] devicelist.txt のパース失敗、標準出力フォールバック:', e.message);
+          }
+        }
+
+        // 2. フォールバック: 標準出力を行ごとにパース
+        const lines = (stdout || '').split('\n');
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed || trimmed.startsWith('===') || trimmed.includes('the following devices exist')) continue;
+
+          if (seen.has(trimmed)) continue;
+          seen.add(trimmed);
+
+          if (this.isExcludedDevice(trimmed)) continue;
+
           devices.push({
             id: `alexa_${trimmed.replace(/\s+/g, '_')}`,
             name: `Alexa: ${trimmed}`,
@@ -284,6 +377,7 @@ class AlexaManager {
         }
 
         this.devicesCache = devices;
+        console.log(`[Alexa] デバイス一覧を更新しました (${devices.length} 件のデバイスを認識)`);
         resolve(devices);
       });
     });
