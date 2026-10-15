@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Google Home Speaker - Modern Dark / Glassmorphism Theme
+   Google Home & Alexa Speaker - Modern Dark / Glassmorphism Theme
    ========================================================================== */
 
 :root {
@@ -14,6 +14,7 @@
   --primary-glow: rgba(99, 102, 241, 0.35);
   --accent: #06b6d4;
   --accent-glow: rgba(6, 182, 212, 0.3);
+  --alexa-color: #00caef;
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
@@ -103,6 +104,7 @@ body {
   letter-spacing: -0.02em;
   background: linear-gradient(to right, #fff, #cbd5e1);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -124,6 +126,7 @@ body {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .status-chip, .status-chip-sub {
@@ -315,6 +318,170 @@ body {
   }
 }
 
+/* ================= Speaker Checkbox Grid (Multi-select) ================= */
+.speaker-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px;
+  background: rgba(11, 15, 25, 0.5);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+}
+
+.speaker-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  user-select: none;
+}
+
+.speaker-chip:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.speaker-chip input[type="checkbox"] {
+  accent-color: var(--primary);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.speaker-chip.checked {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.speaker-chip.alexa-chip.checked {
+  background: rgba(0, 202, 239, 0.15);
+  border-color: rgba(0, 202, 239, 0.4);
+}
+
+.speaker-chip-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.speaker-chip-badge {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-sub);
+}
+
+.btn-group-sm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 2px 4px;
+}
+
+.btn-text:hover {
+  text-decoration: underline;
+}
+
+.divider {
+  color: var(--text-sub);
+}
+
+/* ================= Pill Radio Group (Schedule Frequency) ================= */
+.pill-radio-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pill-radio {
+  cursor: pointer;
+  user-select: none;
+}
+
+.pill-radio input {
+  display: none;
+}
+
+.pill-radio span {
+  display: inline-block;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.pill-radio input:checked + span {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.3);
+}
+
+/* Weekday Checkbox Group */
+.weekday-checkbox-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.weekday-chip {
+  cursor: pointer;
+  user-select: none;
+}
+
+.weekday-chip input {
+  display: none;
+}
+
+.weekday-chip span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-border);
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.weekday-chip input:checked + span {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0f19;
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
 /* ================= Presets ================= */
 .quick-presets {
   display: flex;
@@ -449,6 +616,11 @@ body {
 .history-text {
   color: var(--text-main);
   word-break: break-all;
+}
+
+.history-devices {
+  font-size: 0.76rem;
+  color: var(--accent);
 }
 
 .empty-msg {
@@ -593,6 +765,11 @@ input:checked + .slider:before {
   background: rgba(6, 182, 212, 0.05);
 }
 
+.device-card.alexa-dev {
+  border-color: rgba(0, 202, 239, 0.4);
+  background: rgba(0, 202, 239, 0.04);
+}
+
 .device-card-header {
   display: flex;
   justify-content: space-between;
@@ -612,6 +789,12 @@ input:checked + .slider:before {
   background: rgba(6, 182, 212, 0.15);
   color: var(--accent);
   border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.device-tag.alexa {
+  background: rgba(0, 202, 239, 0.15);
+  color: var(--alexa-color);
+  border-color: rgba(0, 202, 239, 0.3);
 }
 
 .device-card-info {
@@ -650,6 +833,12 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.url-label {
+  font-size: 0.75rem;
+  color: var(--text-sub);
+  margin-right: 8px;
 }
 
 .code-block-wrapper pre {
@@ -718,10 +907,13 @@ input:checked + .slider:before {
 
 .modal-content {
   width: 100%;
-  max-width: 540px;
+  max-width: 580px;
   border-radius: var(--radius-lg);
   overflow: hidden;
   animation: modalIn 0.25s ease-out;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes modalIn {
@@ -747,6 +939,7 @@ input:checked + .slider:before {
 
 .modal-body {
   padding: 24px;
+  overflow-y: auto;
 }
 
 .form-row {
@@ -756,13 +949,6 @@ input:checked + .slider:before {
 
 .flex-1 {
   flex: 1;
-}
-
-.helper-text {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-sub);
-  margin-top: 4px;
 }
 
 .modal-footer {

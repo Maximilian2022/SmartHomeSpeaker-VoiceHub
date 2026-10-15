@@ -1,5 +1,5 @@
 // ==========================================================================
-// Google Home Speaker - Frontend Logic (app.js)
+// Google Home & Alexa Speaker - Frontend Logic (app.js)
 // ==========================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,14 +17,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // ステータス
     serverStatusChip: document.getElementById('serverStatusChip'),
     serverStatusText: document.getElementById('serverStatusText'),
-    defaultDeviceChip: document.getElementById('defaultDeviceChip'),
+    cacheStatusText: document.getElementById('cacheStatusText'),
     defaultDeviceText: document.getElementById('defaultDeviceText'),
     // タブ
     tabBtns: document.querySelectorAll('.tab-btn'),
     tabPanes: document.querySelectorAll('.tab-pane'),
     // 即時発言
     sayTextInput: document.getElementById('sayTextInput'),
-    sayDeviceSelect: document.getElementById('sayDeviceSelect'),
+    saySpeakersContainer: document.getElementById('saySpeakersContainer'),
+    btnSelectAllSpeakers: document.getElementById('btnSelectAllSpeakers'),
+    btnClearSpeakers: document.getElementById('btnClearSpeakers'),
     sayVoiceSelect: document.getElementById('sayVoiceSelect'),
     sayRateRange: document.getElementById('sayRateRange'),
     rateValueDisplay: document.getElementById('rateValueDisplay'),
@@ -45,15 +47,23 @@ document.addEventListener('DOMContentLoaded', () => {
     scheduleForm: document.getElementById('scheduleForm'),
     schedName: document.getElementById('schedName'),
     schedText: document.getElementById('schedText'),
-    schedPreset: document.getElementById('schedPreset'),
-    schedCron: document.getElementById('schedCron'),
-    schedDevice: document.getElementById('schedDevice'),
+    schedFrequencyRadios: document.querySelectorAll('input[name="schedFrequency"]'),
+    schedWeekdaysWrapper: document.getElementById('schedWeekdaysWrapper'),
+    schedWeekdayChecks: document.querySelectorAll('input[name="schedDay"]'),
+    schedTime: document.getElementById('schedTime'),
     schedVoice: document.getElementById('schedVoice'),
+    schedSpeakersContainer: document.getElementById('schedSpeakersContainer'),
     // デバイス
     devicesGrid: document.getElementById('devicesGrid'),
     btnRefreshDevices: document.getElementById('btnRefreshDevices'),
-    // Webhookガイド
+    // Webhookガイド & Tunnel
     apiEndpointUrl: document.getElementById('apiEndpointUrl'),
+    tunnelDomainBanner: document.getElementById('tunnelDomainBanner'),
+    tunnelDomainBadge: document.getElementById('tunnelDomainBadge'),
+    tunnelEndpointBox: document.getElementById('tunnelEndpointBox'),
+    apiTunnelEndpointUrl: document.getElementById('apiTunnelEndpointUrl'),
+    tunnelCurlSection: document.getElementById('tunnelCurlSection'),
+    curlTunnelExample: document.getElementById('curlTunnelExample'),
     copyBtns: document.querySelectorAll('.btn-copy'),
     // トースト
     toastContainer: document.getElementById('toastContainer')
@@ -81,6 +91,21 @@ document.addEventListener('DOMContentLoaded', () => {
       el.serverStatusText.textContent = `稼働中 (${data.serverIp}:${data.port})`;
       el.defaultDeviceText.textContent = `デフォルト: 部屋 (${data.defaultDeviceIp})`;
       el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
+
+      // キャッシュ容量表示
+      if (data.cacheStats) {
+        el.cacheStatusText.textContent = `Cache: ${data.cacheStats.totalMB} MB / ${data.cacheStats.maxMB} MB`;
+      }
+
+      // Cloudflare Tunnel 情報の反映
+      if (data.tunnelDomain) {
+        el.tunnelDomainBanner.style.display = 'block';
+        el.tunnelDomainBadge.textContent = data.tunnelDomain;
+        el.tunnelEndpointBox.style.display = 'flex';
+        el.apiTunnelEndpointUrl.textContent = `https://${data.tunnelDomain}/api/say`;
+        el.tunnelCurlSection.style.display = 'block';
+        el.curlTunnelExample.textContent = `curl -X POST https://${data.tunnelDomain}/api/say \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer your-secret-token" \\\n  -d '{\n    "text": "外出先からの通知です。",\n    "devices": ["部屋"]\n  }'`;
+      }
     } catch (err) {
       el.serverStatusText.textContent = '接続エラー';
       el.serverStatusChip.style.borderColor = 'var(--danger)';
@@ -95,7 +120,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       state.devices = data.devices || [];
 
-      renderDeviceSelects();
+      renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', ['192.168.11.97']);
+      renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
       renderDevicesGrid();
     } catch (err) {
       showToast('デバイス情報の取得に失敗しました', 'error');
@@ -133,18 +159,57 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ================= 2. レンダリング =================
-  function renderDeviceSelects() {
-    // 即時発言用とモーダル用のセレクトを更新
-    const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || '192.168.11.97';
 
-    let optionsHtml = '';
+  // 複数スピーカー選択チェックボックスの描画
+  function renderSpeakersCheckboxes(container, nameAttr, selectedValues = []) {
+    const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || '192.168.11.97';
+    let html = '';
+
+    // スケジュール用: デフォルト選択肢
+    if (nameAttr === 'schedSpeaker') {
+      const isDefChecked = selectedValues.includes('default') ? 'checked' : '';
+      html += `
+        <label class="speaker-chip ${isDefChecked ? 'checked' : ''}">
+          <input type="checkbox" name="${nameAttr}" value="default" ${isDefChecked}>
+          <span class="speaker-chip-name">デフォルト (部屋)</span>
+          <span class="speaker-chip-badge">標準</span>
+        </label>
+      `;
+    }
+
     state.devices.forEach(dev => {
-      const isSelected = dev.ip === defaultIp ? 'selected' : '';
-      optionsHtml += `<option value="${dev.ip}" ${isSelected}>${dev.name} (${dev.ip}) ${dev.ip === defaultIp ? '★デフォルト' : ''}</option>`;
+      const isChecked = selectedValues.includes(dev.ip) ? 'checked' : '';
+      const isDefault = dev.ip === defaultIp;
+      const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
+
+      html += `
+        <label class="speaker-chip ${isAlexa ? 'alexa-chip' : ''} ${isChecked ? 'checked' : ''}">
+          <input type="checkbox" name="${nameAttr}" value="${dev.ip}" ${isChecked}>
+          <span class="speaker-chip-name">${escapeHtml(dev.name)}</span>
+          ${isDefault ? '<span class="speaker-chip-badge">★</span>' : ''}
+          ${isAlexa ? '<span class="speaker-chip-badge" style="color:var(--alexa-color);">Echo</span>' : ''}
+        </label>
+      `;
     });
 
-    el.sayDeviceSelect.innerHTML = optionsHtml;
-    el.schedDevice.innerHTML = `<option value="default">デフォルト (部屋: ${defaultIp})</option>` + optionsHtml;
+    container.innerHTML = html;
+
+    // チェック状態変化でスタイル反映
+    container.querySelectorAll('input[type="checkbox"]').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        const parent = e.target.closest('.speaker-chip');
+        if (e.target.checked) {
+          parent.classList.add('checked');
+        } else {
+          parent.classList.remove('checked');
+        }
+      });
+    });
+  }
+
+  function getSelectedSpeakers(container) {
+    const checked = container.querySelectorAll('input[type="checkbox"]:checked');
+    return Array.from(checked).map(c => c.value);
   }
 
   function renderVoiceSelects() {
@@ -167,7 +232,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let rowsHtml = '';
     state.schedules.forEach(sched => {
       const checked = sched.enabled ? 'checked' : '';
-      const devName = sched.deviceIp === 'default' ? '部屋 (デフォルト)' : (state.devices.find(d => d.ip === sched.deviceIp)?.name || sched.deviceIp);
+
+      // 送信先スピーカー名一覧の生成
+      const targets = sched.deviceIps || (sched.deviceIp ? [sched.deviceIp] : ['default']);
+      const devNames = targets.map(t => {
+        if (t === 'default') return '部屋 (デフォルト)';
+        const found = state.devices.find(d => d.ip === t);
+        return found ? found.name : t;
+      }).join(', ');
 
       rowsHtml += `
         <tr>
@@ -178,8 +250,8 @@ document.addEventListener('DOMContentLoaded', () => {
             </label>
           </td>
           <td><strong>${escapeHtml(sched.name)}</strong></td>
-          <td><code>${escapeHtml(sched.cron)}</code></td>
-          <td>${escapeHtml(devName)}</td>
+          <td><span class="badge-tech" style="font-size:0.82rem; text-transform:none;">${escapeHtml(sched.readableFrequency || sched.cron)}</span></td>
+          <td><span style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(devNames)}</span></td>
           <td>${escapeHtml(sched.text)}</td>
           <td>
             <div class="table-actions">
@@ -204,15 +276,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let cardsHtml = '';
     state.devices.forEach(dev => {
       const isDef = dev.ip === defaultIp;
+      const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
+
       cardsHtml += `
-        <div class="device-card ${isDef ? 'default-dev' : ''}">
+        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''}">
           <div class="device-card-header">
             <span class="device-card-title">${escapeHtml(dev.name)}</span>
             ${isDef ? '<span class="device-tag">デフォルト</span>' : ''}
+            ${isAlexa ? '<span class="device-tag alexa">Alexa Echo</span>' : ''}
           </div>
           <div class="device-card-info">
-            <span><strong>IP:</strong> ${escapeHtml(dev.ip)}</span>
-            <span><strong>モデル:</strong> ${escapeHtml(dev.model || 'Google Cast')}</span>
+            <span><strong>識別子/IP:</strong> ${escapeHtml(dev.ip)}</span>
+            <span><strong>モデル:</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
           </div>
           <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${dev.name}" style="margin-top: 6px;">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -272,6 +347,21 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    // 全室選択 / クリア
+    el.btnSelectAllSpeakers.addEventListener('click', () => {
+      el.saySpeakersContainer.querySelectorAll('input[type="checkbox"]').forEach(c => {
+        c.checked = true;
+        c.closest('.speaker-chip').classList.add('checked');
+      });
+    });
+
+    el.btnClearSpeakers.addEventListener('click', () => {
+      el.saySpeakersContainer.querySelectorAll('input[type="checkbox"]').forEach(c => {
+        c.checked = false;
+        c.closest('.speaker-chip').classList.remove('checked');
+      });
+    });
+
     // スライダー値表示
     el.sayRateRange.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
@@ -314,7 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Google Home で発言
+    // スピーカーで発言 (複数選択対応)
     el.btnSpeakDirect.addEventListener('click', async () => {
       const text = el.sayTextInput.value.trim();
       if (!text) {
@@ -322,11 +412,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      const selectedSpeakers = getSelectedSpeakers(el.saySpeakersContainer);
+      if (!selectedSpeakers.length) {
+        showToast('送信先スピーカーを1台以上選択してください', 'error');
+        return;
+      }
+
       el.btnSpeakDirect.disabled = true;
-      el.btnSpeakDirect.textContent = 'Google Homeへ送信中...';
+      el.btnSpeakDirect.textContent = 'スピーカーへ送信中...';
 
       try {
-        const deviceIp = el.sayDeviceSelect.value;
         const voice = el.sayVoiceSelect.value;
         const rate = (parseInt(el.sayRateRange.value) >= 0 ? '+' : '') + el.sayRateRange.value + '%';
         const pitch = (parseInt(el.sayPitchRange.value) >= 0 ? '+' : '') + el.sayPitchRange.value + 'Hz';
@@ -334,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/say', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, deviceIp, voice, rate, pitch })
+          body: JSON.stringify({ text, devices: selectedSpeakers, voice, rate, pitch })
         });
 
         if (!res.ok) {
@@ -343,7 +438,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const data = await res.json();
-        showToast(`Google Home (${data.deviceIp}) で再生を開始しました！`, 'success');
+        const successCount = data.results?.filter(r => r.status === 'success').length || 0;
+        showToast(`${selectedSpeakers.length} 台のスピーカーへ送信完了 (${successCount} 台成功)！`, 'success');
 
         // 履歴に追加
         state.history.unshift({
@@ -352,11 +448,13 @@ document.addEventListener('DOMContentLoaded', () => {
           timestamp: new Date().toISOString()
         });
         renderHistoryList();
+        // キャッシュ統計の再取得
+        loadServerStatus();
       } catch (err) {
         showToast(`発声エラー: ${err.message}`, 'error');
       } finally {
         el.btnSpeakDirect.disabled = false;
-        el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> Google Homeで発言`;
+        el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> スピーカーで発言`;
       }
     });
 
@@ -376,10 +474,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/say', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, deviceIp: ip })
+          body: JSON.stringify({ text, devices: [ip] })
         });
         if (!res.ok) throw new Error('送信失敗');
-        showToast(`${name} (${ip}) にテスト音声を送信しました！`, 'success');
+        showToast(`${name} にテスト音声を送信しました！`, 'success');
       } catch (err) {
         showToast(`送信エラー: ${err.message}`, 'error');
       } finally {
@@ -395,6 +493,17 @@ document.addEventListener('DOMContentLoaded', () => {
       await loadDevices();
       el.btnRefreshDevices.disabled = false;
       showToast('デバイスリストを更新しました', 'success');
+    });
+
+    // スケジュール頻度ラジオ変更 (曜日指定表示切り替え)
+    el.schedFrequencyRadios.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        if (e.target.value === 'custom_days') {
+          el.schedWeekdaysWrapper.style.display = 'block';
+        } else {
+          el.schedWeekdaysWrapper.style.display = 'none';
+        }
+      });
     });
 
     // スケジュール テーブル内操作 (イベント委譲)
@@ -451,29 +560,47 @@ document.addEventListener('DOMContentLoaded', () => {
     // モーダル操作
     el.btnOpenNewScheduleModal.addEventListener('click', () => {
       el.scheduleForm.reset();
-      el.schedCron.value = '0 7 * * *';
+      el.schedTime.value = '07:00';
+      el.schedWeekdaysWrapper.style.display = 'none';
+      renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
       el.scheduleModal.style.display = 'flex';
     });
 
     el.btnCloseModal.addEventListener('click', () => { el.scheduleModal.style.display = 'none'; });
     el.btnCancelModal.addEventListener('click', () => { el.scheduleModal.style.display = 'none'; });
 
-    // プリセット変更で Cron 入力
-    el.schedPreset.addEventListener('change', (e) => {
-      if (e.target.value !== 'custom') {
-        el.schedCron.value = e.target.value;
-      }
-    });
-
     // スケジュール保存
     el.scheduleForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
+      const freqRadio = document.querySelector('input[name="schedFrequency"]:checked');
+      const frequency = freqRadio ? freqRadio.value : 'daily';
+
+      // 選択された曜日
+      const weekdays = [];
+      if (frequency === 'custom_days') {
+        el.schedWeekdayChecks.forEach(c => {
+          if (c.checked) weekdays.push(parseInt(c.value, 10));
+        });
+        if (!weekdays.length) {
+          showToast('曜日を1つ以上選択してください', 'error');
+          return;
+        }
+      }
+
+      const selectedSpeakers = getSelectedSpeakers(el.schedSpeakersContainer);
+      if (!selectedSpeakers.length) {
+        showToast('送信先スピーカーを1つ以上選択してください', 'error');
+        return;
+      }
+
       const payload = {
         name: el.schedName.value.trim(),
         text: el.schedText.value.trim(),
-        cron: el.schedCron.value.trim(),
-        deviceIp: el.schedDevice.value,
+        frequency,
+        time: el.schedTime.value,
+        weekdays,
+        deviceIps: selectedSpeakers,
         voice: el.schedVoice.value,
         enabled: true
       };

@@ -6,9 +6,11 @@ const ttsManager = require('./tts');
 const castManager = require('./cast');
 const deviceManager = require('./devices');
 const schedulerManager = require('./scheduler');
+const alexaManager = require('./alexa');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
+const TUNNEL_DOMAIN = process.env.CLOUDFLARE_TUNNEL_DOMAIN || '';
 
 // サーバーIPの解決 (Google HomeがアクセスするURL用)
 function resolveServerIp() {
@@ -39,6 +41,9 @@ function resolveServerIp() {
 const SERVER_IP = resolveServerIp();
 console.log(`[Config] サーバーホストIP: ${SERVER_IP}, ポート: ${PORT}`);
 console.log(`[Config] デフォルトデバイスIP: ${deviceManager.getDefaultDeviceIp()}`);
+if (TUNNEL_DOMAIN) {
+  console.log(`[Config] Cloudflare Tunnel ドメイン: ${TUNNEL_DOMAIN}`);
+}
 
 // CORSミドルウェア
 app.use((req, res, next) => {
@@ -55,6 +60,32 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Cloudflare Tunnel 経由のリクエスト判定
+function isTunnelRequest(req) {
+  const host = req.headers['host'] || '';
+  const hasCfHeaders = !!req.headers['cf-ray'] || !!req.headers['cf-connecting-ip'] || !!req.headers['cf-ipcountry'];
+  const isTunnelHost = !!TUNNEL_DOMAIN && host.toLowerCase().includes(TUNNEL_DOMAIN.toLowerCase());
+  return hasCfHeaders || isTunnelHost;
+}
+
+// セキュリティフィルター: Cloudflare Tunnel からのアクセス時は Web GUI へのアクセスを遮断
+app.use((req, res, next) => {
+  if (isTunnelRequest(req)) {
+    // 許可するエンドポイント: Webhook (/api/say, /google-home-voicetext)
+    const allowedPaths = ['/api/say', '/google-home-voicetext'];
+    const isAllowed = allowedPaths.some(p => req.path.startsWith(p));
+
+    if (!isAllowed) {
+      console.warn(`[Security Block] Cloudflare Tunnel 経由での不正なアクセスを遮断: ${req.method} ${req.path} (Host: ${req.headers['host']})`);
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Web GUI および管理 API はローカルネットワーク内からのみアクセス可能です。'
+      });
+    }
+  }
+  next();
+});
+
 // 静的ファイルの提供
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
 app.use(express.static(PUBLIC_DIR));
@@ -64,65 +95,104 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
-// 音声ファイルホスティング
+// 音声ファイルホスティング (1GB LRU キャッシュ)
 const VOICE_DIR = path.resolve(__dirname, '../public/voice');
 app.use('/voice', express.static(VOICE_DIR));
 app.use('/googlehome', express.static(VOICE_DIR)); // 過去互換URL
 
-// 共通の発声ロジック
-async function speakText(text, options = {}) {
-  // 音声ファイルの生成 (Edge TTS)
-  const speech = await ttsManager.generateSpeech(text, {
-    voice: options.voice,
-    rate: options.rate,
-    pitch: options.pitch,
-    volume: options.volume
-  });
-
-  // Google Homeが取得するURL
-  const audioUrl = `http://${SERVER_IP}:${PORT}${speech.urlPath}`;
-
-  // 送信先デバイスの決定
-  let targetIp = options.deviceIp;
-  if (!targetIp && options.device) {
-    const dev = deviceManager.findDevice(options.device);
-    if (dev) targetIp = dev.ip;
-  }
-  if (!targetIp) {
-    targetIp = deviceManager.getDefaultDeviceIp();
+/**
+ * 複数デバイスへの同時発信ロジック (Google Home + Alexa)
+ * @param {string} text 喋らせる文言
+ * @param {Array<string>} targetList 送信先IPまたはデバイス名リスト
+ * @param {Object} options voice, rate, pitch, volume, volumeLevel
+ */
+async function speakToMultipleDevices(text, targetList = [], options = {}) {
+  // リストが空の場合はデフォルト
+  let targets = Array.isArray(targetList) ? targetList.filter(Boolean) : [targetList];
+  if (!targets.length) {
+    targets = [deviceManager.getDefaultDeviceIp()];
   }
 
-  console.log(`[Speak] 送信先: ${targetIp}, 音声URL: ${audioUrl}, 文言: "${text}"`);
-  
-  // Google Home にキャスト
-  const result = await castManager.playMedia(targetIp, audioUrl, {
-    volumeLevel: options.volumeLevel
-  });
+  // 重複排除とデバイス解決
+  const resolvedTargets = [];
+  for (const t of targets) {
+    const dev = deviceManager.findDevice(t);
+    if (dev) {
+      resolvedTargets.push(dev);
+    } else {
+      resolvedTargets.push({ id: t, name: t, ip: t, type: 'google' });
+    }
+  }
+
+  // Google Home 向けと Alexa 向けを分類
+  const googleDevices = resolvedTargets.filter(d => d.type !== 'alexa' && !d.ip.startsWith('alexa:'));
+  const alexaDevices = resolvedTargets.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
+
+  const dispatchPromises = [];
+  let audioUrl = null;
+
+  // Google Home デバイスがある場合、Edge TTS 音声を 1 度だけ生成
+  if (googleDevices.length > 0) {
+    const speech = await ttsManager.generateSpeech(text, {
+      voice: options.voice,
+      rate: options.rate,
+      pitch: options.pitch,
+      volume: options.volume
+    });
+    audioUrl = `http://${SERVER_IP}:${PORT}${speech.urlPath}`;
+
+    // 各 Google Home デバイスへ並行キャスト
+    for (const dev of googleDevices) {
+      console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}`);
+      dispatchPromises.push(
+        castManager.playMedia(dev.ip, audioUrl, { volumeLevel: options.volumeLevel })
+          .then(res => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'success', result: res }))
+          .catch(err => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'error', error: err.message }))
+      );
+    }
+  }
+
+  // Alexa デバイスがある場合、Alexa スクリプトを並行実行
+  if (alexaDevices.length > 0) {
+    for (const dev of alexaDevices) {
+      const alexaTarget = dev.ip.startsWith('alexa:') ? dev.ip.slice(6) : (dev.name || 'ALL');
+      console.log(`[Speak] Alexa 送信先: ${alexaTarget}`);
+      dispatchPromises.push(
+        alexaManager.speak(text, alexaTarget)
+          .then(res => ({ device: dev.name, ip: dev.ip, type: 'alexa', status: 'success', result: res }))
+          .catch(err => ({ device: dev.name, ip: dev.ip, type: 'alexa', status: 'error', error: err.message }))
+      );
+    }
+  }
+
+  // 全デバイスの完了を待機
+  const results = await Promise.allSettled(dispatchPromises);
+  const detailedResults = results.map(r => r.value || { status: 'error', error: r.reason?.message });
+
+  const hasSuccess = detailedResults.some(r => r.status === 'success');
 
   return {
-    success: true,
+    success: hasSuccess,
     text,
-    deviceIp: targetIp,
     audioUrl,
-    result
+    results: detailedResults
   };
 }
 
-// スケジューラーに実行エンジンを紐付け
+// スケジューラーにマルチデバイス実行エンジンを紐付け
 schedulerManager.setExecutor(async (text, options) => {
-  return await speakText(text, options);
+  const targets = options.deviceIps || (options.deviceIp ? [options.deviceIp] : []);
+  return await speakToMultipleDevices(text, targets, options);
 });
 
 // Webhook認証ミドルウェア (外部Cloudflare Tunnel等からのアクセス保護用)
 function requireWebhookAuth(req, res, next) {
   const token = process.env.WEBHOOK_TOKEN;
-  // トークン未設定の場合は認証なしで通過
   if (!token) return next();
 
-  // ローカルホストまたはプライベートLANからのWeb GUIアクセスは許可
+  // ローカルホストまたはプライベートLANからのWeb GUIアクセスはスキップ
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
   const isLocal = clientIp.includes('127.0.0.1') || clientIp.includes('::1') || clientIp.includes('192.168.');
-  // Referer が自サーバーなら Web GUI からの操作と判定
   const referer = req.headers['referer'] || '';
   if (isLocal && (referer.includes(`:${PORT}`) || req.headers['sec-fetch-site'] === 'same-origin')) {
     return next();
@@ -146,17 +216,33 @@ function requireWebhookAuth(req, res, next) {
 
 // ================= API エンドポイント =================
 
-// 1. 発声 API (最新)
+// 1. 発声 API (最新・複数デバイス対応)
 app.post('/api/say', requireWebhookAuth, async (req, res) => {
   const text = req.body.text || req.query.text;
   if (!text) {
     return res.status(400).json({ error: 'パラメータ "text" は必須です' });
   }
 
+  // 複数デバイスの取得・正規化
+  let targets = [];
+  if (Array.isArray(req.body.devices)) {
+    targets = req.body.devices;
+  } else if (typeof req.body.devices === 'string') {
+    targets = req.body.devices.split(',').map(s => s.trim());
+  } else if (typeof req.body.device === 'string') {
+    targets = req.body.device.split(',').map(s => s.trim());
+  } else if (Array.isArray(req.body.deviceIp)) {
+    targets = req.body.deviceIp;
+  } else if (req.body.deviceIp) {
+    targets = [req.body.deviceIp];
+  } else if (req.query.device) {
+    targets = req.query.device.split(',').map(s => s.trim());
+  } else if (req.query.deviceIp) {
+    targets = [req.query.deviceIp];
+  }
+
   try {
-    const result = await speakText(text, {
-      deviceIp: req.body.deviceIp || req.body.ip || req.query.deviceIp,
-      device: req.body.device || req.query.device,
+    const result = await speakToMultipleDevices(text, targets, {
       voice: req.body.voice || req.query.voice,
       rate: req.body.rate || req.query.rate,
       pitch: req.body.pitch || req.query.pitch,
@@ -179,10 +265,8 @@ app.post('/google-home-voicetext', requireWebhookAuth, async (req, res) => {
   }
 
   try {
-    const result = await speakText(text, {
-      deviceIp: req.body.deviceIp || req.body.ip,
-      voice: req.body.voice
-    });
+    const targets = req.body.deviceIp ? [req.body.deviceIp] : [];
+    await speakToMultipleDevices(text, targets, { voice: req.body.voice });
     res.send(`Google Home will say: ${text}\n`);
   } catch (err) {
     console.error('[Legacy API Error]:', err.message);
@@ -208,10 +292,11 @@ app.get('/api/preview', async (req, res) => {
   }
 });
 
-// 4. 利用可能な Google Home デバイス一覧
-app.get('/api/devices', (req, res) => {
+// 4. 利用可能な Google Home / Alexa デバイス一覧
+app.get('/api/devices', async (req, res) => {
+  const devices = await deviceManager.getDevices();
   res.json({
-    devices: deviceManager.getDevices(),
+    devices,
     defaultIp: deviceManager.getDefaultDeviceIp()
   });
 });
@@ -277,12 +362,15 @@ app.post('/api/schedules/:id/run', async (req, res) => {
   }
 });
 
-// 7. システム情報
+// 7. システム情報 & キャッシュ状況 & トンネルドメイン
 app.get('/api/status', (req, res) => {
   res.json({
     serverIp: SERVER_IP,
     port: PORT,
     defaultDeviceIp: deviceManager.getDefaultDeviceIp(),
+    tunnelDomain: TUNNEL_DOMAIN || null,
+    cacheStats: ttsManager.getCacheStats(),
+    alexaEnabled: alexaManager.isEnabled(),
     nodeVersion: process.version,
     uptime: Math.floor(process.uptime()),
     hasWebhookToken: !!process.env.WEBHOOK_TOKEN
@@ -292,10 +380,12 @@ app.get('/api/status', (req, res) => {
 // 起動
 app.listen(PORT, '0.0.0.0', () => {
   console.log('====================================================');
-  console.log(` Google Home TTS Platform (Edge TTS Edition) 起動完了`);
+  console.log(` Google Home & Alexa TTS Platform 起動完了`);
   console.log(` Web GUI:         http://localhost:${PORT}`);
   console.log(` LAN Web GUI:     http://${SERVER_IP}:${PORT}`);
   console.log(` Webhook URL:     http://${SERVER_IP}:${PORT}/api/say`);
-  console.log(` 互換 URL:        http://${SERVER_IP}:${PORT}/google-home-voicetext`);
+  if (TUNNEL_DOMAIN) {
+    console.log(` Tunnel Webhook:  https://${TUNNEL_DOMAIN}/api/say`);
+  }
   console.log('====================================================');
 });

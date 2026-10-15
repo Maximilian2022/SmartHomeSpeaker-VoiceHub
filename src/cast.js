@@ -60,10 +60,10 @@ class CastManager {
     });
   }
 
-  _launchAndPlay(client, mediaUrl, options, resolve, reject) {
+  _launchAndPlay(client, mediaUrl, options, cleanupAndResolve, cleanupAndReject) {
     client.launch(DefaultMediaReceiver, (launchErr, player) => {
       if (launchErr) {
-        return reject(new Error(`DefaultMediaReceiver 起動失敗: ${launchErr.message}`));
+        return cleanupAndReject(new Error(`DefaultMediaReceiver 起動失敗: ${launchErr.message}`));
       }
 
       const media = {
@@ -74,20 +74,15 @@ class CastManager {
 
       player.load(media, { autoplay: true }, (loadErr, status) => {
         if (loadErr) {
-          return reject(new Error(`メディア読み込み失敗: ${loadErr.message}`));
+          try { client.close(); } catch (e) {}
+          return cleanupAndReject(new Error(`メディア読み込み失敗: ${loadErr.message}`));
         }
 
-        // status イベントの監視
-        player.on('status', (playerStatus) => {
-          if (playerStatus.playerState === 'IDLE' && playerStatus.idleReason === 'FINISHED') {
-            resolve('Playback finished');
-          }
-        });
-
-        // 再生リクエスト完了時点で一旦通知（Google Homeがストリームを開始した）
+        // Google HomeがストリームURLを受け取って再生開始したのでセッション切断＆即座に完了通知
         setTimeout(() => {
-          resolve('Playback started');
-        }, 1500);
+          try { client.close(); } catch (e) {}
+          cleanupAndResolve('Playback started');
+        }, 800);
       });
     });
   }

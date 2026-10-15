@@ -2,9 +2,11 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# avahi-utils (avahi-browseによるGoogle Cast探索用) と tzdata をインストール
+# avahi-utils, jq, curl, tzdata をインストール (Google Cast & Alexa Remote Control 用)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     avahi-utils \
+    jq \
+    curl \
     tzdata \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -17,8 +19,9 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-# 音声ファイル用・データ用ディレクトリの準備
-RUN mkdir -p public/voice data
+# スクリプトの実行権限およびディレクトリの準備
+RUN chmod +x bin/alexa_remote_control.sh 2>/dev/null || true \
+    && mkdir -p public/voice data
 
 EXPOSE 8080
 

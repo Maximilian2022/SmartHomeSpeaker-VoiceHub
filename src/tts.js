@@ -21,12 +21,17 @@ const SUPPORTED_VOICES = [
   { id: 'ja-JP-ShioriNeural', name: '詩織 (Shiori) - 女性・アナウンス調', gender: 'Female' }
 ];
 
+// キャッシュサイズ上限: 1GB (1024 * 1024 * 1024 bytes)
+const MAX_CACHE_SIZE_BYTES = parseInt(process.env.MAX_CACHE_SIZE_MB || '1024', 10) * 1024 * 1024;
+// クリーンアップ時の目標サイズ (900MB)
+const TARGET_CACHE_SIZE_BYTES = Math.floor(MAX_CACHE_SIZE_BYTES * 0.9);
+
 class TTSManager {
   constructor() {
     this.defaultVoice = process.env.DEFAULT_VOICE || 'ja-JP-NanamiNeural';
-    this.cleanOldFiles();
-    // 1時間ごとに古いキャッシュを整理
-    setInterval(() => this.cleanOldFiles(), 60 * 60 * 1000);
+    // 起動時と1時間ごとに容量制限チェック
+    this.enforceLRUCacheLimit();
+    setInterval(() => this.enforceLRUCacheLimit(), 60 * 60 * 1000);
   }
 
   getVoices() {
@@ -34,7 +39,7 @@ class TTSManager {
   }
 
   /**
-   * テキストからMP3音声を生成（キャッシュがあれば再利用）
+   * テキストからMP3音声を生成（キャッシュがあれば再利用してmtime更新）
    * @param {string} text 読み上げテキスト
    * @param {Object} options voice, rate, pitch, volume
    * @returns {Promise<{ filename: string, filepath: string, urlPath: string }>}
@@ -59,15 +64,21 @@ class TTSManager {
     const filename = `speech_${hash}.mp3`;
     const filepath = path.join(VOICE_DIR, filename);
 
-    // キャッシュが存在しサイズが0でなければ再利用
+    // キャッシュが存在しサイズが0でなければ再利用（LRU: アクセス時刻を更新）
     if (fs.existsSync(filepath)) {
-      const stats = fs.statSync(filepath);
-      if (stats.size > 0) {
-        return {
-          filename,
-          filepath,
-          urlPath: `/voice/${filename}`
-        };
+      try {
+        const stats = fs.statSync(filepath);
+        if (stats.size > 0) {
+          const now = new Date();
+          fs.utimesSync(filepath, now, now); // アクセス時刻・更新時刻をタッチ
+          return {
+            filename,
+            filepath,
+            urlPath: `/voice/${filename}`
+          };
+        }
+      } catch (e) {
+        // stat 失敗時は再生成へ
       }
     }
 
@@ -87,6 +98,8 @@ class TTSManager {
         await tts.ttsPromise(cleanText, filepath);
 
         if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
+          // 生成後に容量チェック
+          this.enforceLRUCacheLimit();
           return {
             filename,
             filepath,
@@ -96,7 +109,6 @@ class TTSManager {
       } catch (err) {
         lastError = err;
         console.warn(`Edge TTS 生成リトライ (${attempt}/2):`, err?.message || err);
-        // 一時ファイルが中途半端に残っていたら削除
         if (fs.existsSync(filepath)) {
           try { fs.unlinkSync(filepath); } catch (e) {}
         }
@@ -110,28 +122,72 @@ class TTSManager {
   }
 
   /**
-   * 24時間以上経過した一時音声ファイルを削除
+   * LRU キャッシュ容量管理 (上限1GBを超えたら古いファイルから削除)
    */
-  cleanOldFiles() {
+  enforceLRUCacheLimit() {
     try {
-      const now = Date.now();
-      const maxAgeMs = 24 * 60 * 60 * 1000; // 24時間
-
       const files = fs.readdirSync(VOICE_DIR);
+      const fileStats = [];
+      let totalSize = 0;
+
       for (const file of files) {
         if (!file.endsWith('.mp3')) continue;
         const filePath = path.join(VOICE_DIR, file);
         try {
           const stat = fs.statSync(filePath);
-          if (now - stat.mtimeMs > maxAgeMs) {
-            fs.unlinkSync(filePath);
-          }
-        } catch (e) {
-          // ignore
+          fileStats.push({
+            path: filePath,
+            size: stat.size,
+            mtime: stat.mtimeMs
+          });
+          totalSize += stat.size;
+        } catch (e) {}
+      }
+
+      // 上限 (1GB) を超えている場合、古い順にソートして削除
+      if (totalSize > MAX_CACHE_SIZE_BYTES) {
+        console.log(`[Cache] キャッシュ容量が上限を超過 (${(totalSize / 1024 / 1024).toFixed(2)} MB / ${(MAX_CACHE_SIZE_BYTES / 1024 / 1024).toFixed(0)} MB)。古いファイルを整理します...`);
+        // 最も古い（mtimeが小さい）順
+        fileStats.sort((a, b) => a.mtime - b.mtime);
+
+        for (const item of fileStats) {
+          try {
+            fs.unlinkSync(item.path);
+            totalSize -= item.size;
+            if (totalSize <= TARGET_CACHE_SIZE_BYTES) {
+              break;
+            }
+          } catch (e) {}
         }
+        console.log(`[Cache] キャッシュ整理完了。現在容量: ${(totalSize / 1024 / 1024).toFixed(2)} MB`);
       }
     } catch (err) {
-      console.warn('古い音声ファイルのクリーンアップ中に警告:', err.message);
+      console.warn('[Cache] LRUキャッシュ容量管理中に警告:', err.message);
+    }
+  }
+
+  /**
+   * 現在のキャッシュ統計を取得
+   */
+  getCacheStats() {
+    try {
+      const files = fs.readdirSync(VOICE_DIR);
+      let count = 0;
+      let totalBytes = 0;
+      for (const file of files) {
+        if (!file.endsWith('.mp3')) continue;
+        const stat = fs.statSync(path.join(VOICE_DIR, file));
+        count++;
+        totalBytes += stat.size;
+      }
+      return {
+        count,
+        totalBytes,
+        totalMB: (totalBytes / 1024 / 1024).toFixed(2),
+        maxMB: (MAX_CACHE_SIZE_BYTES / 1024 / 1024).toFixed(0)
+      };
+    } catch (e) {
+      return { count: 0, totalBytes: 0, totalMB: '0', maxMB: '1024' };
     }
   }
 }
