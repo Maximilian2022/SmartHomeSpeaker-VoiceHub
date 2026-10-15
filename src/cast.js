@@ -4,7 +4,7 @@ class CastManager {
   /**
    * 指定した Google Cast デバイスで音声 URL を再生
    * @param {string} host Google Home / Nest の IP アドレス
-   * @param {string} mediaUrl サーバー上の音声ファイル URL (例: http://192.168.11.244:8080/voice/xxx.mp3)
+   * @param {string} mediaUrl サーバー上の音声ファイル URL (例: http://<SERVER_IP>:8080/voice/xxx.mp3)
    * @param {Object} options volume, contentType
    * @returns {Promise<string>}
    */

@@ -88,12 +88,15 @@ document.addEventListener('DOMContentLoaded', () => {
   async function init() {
     setupEventListeners();
     setupWebhookBuilder();
+    setupCalendarHandlers();
     await loadServerStatus();
     await Promise.all([
       loadDevices(),
       loadVoices(),
       loadSchedules(),
-      loadAlexaStatus()
+      loadAlexaStatus(),
+      loadCalendarSettings(),
+      loadCalendarEvents()
     ]);
   }
 
@@ -106,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.serverInfo = data;
 
       if (el.serverStatusText) el.serverStatusText.textContent = `稼働中 (${data.serverIp}:${data.port})`;
-      if (el.defaultDeviceText) el.defaultDeviceText.textContent = `デフォルト: 部屋 (${data.defaultDeviceIp})`;
+      if (el.defaultDeviceText) el.defaultDeviceText.textContent = data.defaultDeviceIp ? `デフォルト: ${data.defaultDeviceIp}` : 'デフォルト未設定';
       if (el.apiEndpointUrl) el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
 
       // キャッシュ容量表示
@@ -141,8 +144,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateBuilderCode();
     } catch (err) {
-      el.serverStatusText.textContent = '接続エラー';
-      el.serverStatusChip.style.borderColor = 'var(--danger)';
+      if (el.serverStatusText) el.serverStatusText.textContent = '接続エラー';
+      if (el.serverStatusChip) el.serverStatusChip.style.borderColor = 'var(--danger)';
     }
   }
 
@@ -154,8 +157,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       state.devices = data.devices || [];
 
-      renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', ['192.168.11.97']);
+      const initialSelected = state.serverInfo?.defaultDeviceIp
+        ? [state.serverInfo.defaultDeviceIp]
+        : (state.devices[0] ? [state.devices[0].ip] : []);
+
+      renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', initialSelected);
       renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
+      renderCalendarSpeakers();
       renderDevicesGrid();
       renderBuilderSpeakers();
       updateBuilderCode();
@@ -198,7 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 複数スピーカー選択チェックボックスの描画
   function renderSpeakersCheckboxes(container, nameAttr, selectedValues = []) {
-    const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || '192.168.11.97';
+    const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || (state.devices[0]?.ip || '');
     let html = '';
 
     // スケジュール用: デフォルト選択肢
@@ -207,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
       html += `
         <label class="speaker-chip ${isDefChecked ? 'checked' : ''}">
           <input type="checkbox" name="${nameAttr}" value="default" ${isDefChecked}>
-          <span class="speaker-chip-name">デフォルト (部屋)</span>
+          <span class="speaker-chip-name">デフォルト (標準)</span>
           <span class="speaker-chip-badge">標準</span>
         </label>
       `;
@@ -245,6 +253,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // カレンダー用スピーカーチェックボックスの描画
+  function renderCalendarSpeakers(selectedList = ['default']) {
+    const container = document.getElementById('calSpeakersContainer');
+    if (!container) return;
+    renderSpeakersCheckboxes(container, 'calSpeaker', selectedList);
+  }
+
   function getSelectedSpeakers(container) {
     const checked = container.querySelectorAll('input[type="checkbox"]:checked');
     return Array.from(checked).map(c => c.value);
@@ -259,6 +274,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     el.sayVoiceSelect.innerHTML = optionsHtml;
     el.schedVoice.innerHTML = optionsHtml;
+
+    const calVoice = document.getElementById('calVoice');
+    if (calVoice) {
+      calVoice.innerHTML = optionsHtml;
+    }
 
     const bVoice = document.getElementById('builderVoice');
     if (bVoice) {
@@ -279,7 +299,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 送信先スピーカー名一覧の生成
       const targets = sched.deviceIps || (sched.deviceIp ? [sched.deviceIp] : ['default']);
       const devNames = targets.map(t => {
-        if (t === 'default') return '部屋 (デフォルト)';
+        if (t === 'default') return 'デフォルト (標準)';
         const found = state.devices.find(d => d.ip === t);
         return found ? found.name : t;
       }).join(', ');
@@ -298,6 +318,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${escapeHtml(sched.text)}</td>
           <td>
             <div class="table-actions">
+              <button type="button" class="btn-icon btn-edit-sched" data-id="${sched.id}" title="編集">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
               <button type="button" class="btn-icon btn-run-sched" data-id="${sched.id}" title="今すぐ実行">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               </button>
@@ -314,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderDevicesGrid() {
-    const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || '192.168.11.97';
+    const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || (state.devices[0]?.ip || '');
 
     let cardsHtml = '';
     state.devices.forEach(dev => {
@@ -569,6 +592,41 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     el.scheduleTableBody.addEventListener('click', async (e) => {
+      // 編集ボタン
+      const editBtn = e.target.closest('.btn-edit-sched');
+      if (editBtn) {
+        const id = editBtn.getAttribute('data-id');
+        const sched = state.schedules.find(s => s.id === id);
+        if (!sched) return;
+
+        document.getElementById('schedEditId').value = sched.id;
+        document.getElementById('modalTitle').textContent = 'スケジュール編集';
+        el.schedName.value = sched.name || '';
+        el.schedText.value = sched.text || '';
+        el.schedTime.value = sched.time || '07:00';
+        el.schedVoice.value = sched.voice || 'ja-JP-NanamiNeural';
+
+        const freq = sched.frequency || 'daily';
+        el.schedFrequencyRadios.forEach(r => {
+          r.checked = r.value === freq;
+        });
+
+        if (freq === 'custom_days') {
+          el.schedWeekdaysWrapper.style.display = 'block';
+          const wDays = sched.weekdays || [];
+          el.schedWeekdayChecks.forEach(c => {
+            c.checked = wDays.includes(parseInt(c.value, 10));
+          });
+        } else {
+          el.schedWeekdaysWrapper.style.display = 'none';
+        }
+
+        const targets = sched.deviceIps || (sched.deviceIp ? [sched.deviceIp] : ['default']);
+        renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', targets);
+        el.scheduleModal.style.display = 'flex';
+        return;
+      }
+
       const runBtn = e.target.closest('.btn-run-sched');
       if (runBtn) {
         const id = runBtn.getAttribute('data-id');
@@ -602,8 +660,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    // 履歴クリア
+    document.getElementById('btnClearHistory')?.addEventListener('click', () => {
+      state.history = [];
+      renderHistoryList();
+      showToast('発言履歴をクリアしました');
+    });
+
     // モーダル操作
     el.btnOpenNewScheduleModal.addEventListener('click', () => {
+      document.getElementById('schedEditId').value = '';
+      document.getElementById('modalTitle').textContent = '新規スケジュール登録';
       el.scheduleForm.reset();
       el.schedTime.value = '07:00';
       el.schedWeekdaysWrapper.style.display = 'none';
@@ -614,10 +681,11 @@ document.addEventListener('DOMContentLoaded', () => {
     el.btnCloseModal.addEventListener('click', () => { el.scheduleModal.style.display = 'none'; });
     el.btnCancelModal.addEventListener('click', () => { el.scheduleModal.style.display = 'none'; });
 
-    // スケジュール保存
+    // スケジュール保存 (新規作成または更新)
     el.scheduleForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
+      const editId = document.getElementById('schedEditId')?.value;
       const freqRadio = document.querySelector('input[name="schedFrequency"]:checked');
       const frequency = freqRadio ? freqRadio.value : 'daily';
 
@@ -651,8 +719,11 @@ document.addEventListener('DOMContentLoaded', () => {
       };
 
       try {
-        const res = await fetch('/api/schedules', {
-          method: 'POST',
+        const url = editId ? `/api/schedules/${editId}` : '/api/schedules';
+        const method = editId ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+          method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
@@ -662,11 +733,11 @@ document.addEventListener('DOMContentLoaded', () => {
           throw new Error(errData.error || '保存失敗');
         }
 
-        showToast('新規スケジュールを登録しました！', 'success');
+        showToast(editId ? 'スケジュールを更新しました！' : '新規スケジュールを登録しました！', 'success');
         el.scheduleModal.style.display = 'none';
         await loadSchedules();
       } catch (err) {
-        showToast('登録エラー: ' + err.message, 'error');
+        showToast(`保存エラー: ${err.message}`, 'error');
       }
     });
 
@@ -870,8 +941,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
       const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : 'google');
 
-      // 初期値: デフォルトまたは部屋を選択
-      const isChecked = dev.ip === '192.168.11.97' || dev.isDefault;
+      // 初期値: デフォルトまたは最初のスピーカーを選択
+      const isChecked = dev.isDefault || (!state.devices.some(d => d.isDefault) && state.devices[0]?.ip === dev.ip);
 
       html += `
         <label class="speaker-chip ${isAlexa ? 'alexa-chip' : ''} ${isHomePod ? 'homepod-chip' : ''} ${isChecked ? 'checked' : ''}">
@@ -905,18 +976,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isTunnel = document.querySelector('input[name="builderUrlType"]:checked')?.value === 'tunnel';
     const tunnelDomain = state.serverInfo?.tunnelDomain;
+    const localHost = state.serverInfo?.serverIp || window.location.hostname || 'localhost';
+    const localPort = state.serverInfo?.port || window.location.port || 8080;
     const baseUrl = (isTunnel && tunnelDomain)
       ? `https://${tunnelDomain}`
-      : `http://${state.serverInfo?.serverIp || '192.168.11.244'}:${state.serverInfo?.port || 8080}`;
-    const token = state.serverInfo?.webhookToken || '';
+      : `http://${localHost}:${localPort}`;
+    const token = document.getElementById('txtWebhookTokenVal')?.value || state.serverInfo?.webhookToken || '';
 
     const voice = document.getElementById('builderVoice')?.value;
     const rate = document.getElementById('builderRate')?.value;
     const volumeLevel = document.getElementById('builderVolumeLevel')?.value;
 
+    const defaultDevName = state.devices[0]?.name || 'default';
     const payloadObj = {
       text,
-      devices: devices.length > 0 ? devices : ['部屋']
+      devices: devices.length > 0 ? devices : [defaultDevName]
     };
     if (voice) payloadObj.voice = voice;
     if (rate) payloadObj.rate = rate;
@@ -944,6 +1018,16 @@ document.addEventListener('DOMContentLoaded', () => {
       codeEl.textContent = `curl "${baseUrl}/api/say?${params.toString()}"`;
     } else if (builderSelectedTab === 'json-body') {
       codeEl.textContent = JSON.stringify(payloadObj, null, 2);
+    } else if (builderSelectedTab === 'ifttt') {
+      let iftttGuide = `【IFTTT "Make a web request" (Webhooks) 設定】\n`;
+      iftttGuide += `1. URL:\n   ${baseUrl}/api/say\n\n`;
+      iftttGuide += `2. Method:\n   POST\n\n`;
+      iftttGuide += `3. Content Type:\n   application/json\n\n`;
+      if (token) {
+        iftttGuide += `4. Additional Headers:\n   Authorization: Bearer ${token}\n\n`;
+      }
+      iftttGuide += `5. Body (JSON):\n${JSON.stringify(payloadObj, null, 2)}`;
+      codeEl.textContent = iftttGuide;
     }
   }
 
@@ -1035,12 +1119,30 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    // トークン保存ボタン
+    document.getElementById('btnSaveWebhookToken')?.addEventListener('click', async () => {
+      const token = tokenInput ? tokenInput.value.trim() : '';
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ webhookToken: token })
+        });
+        if (!res.ok) throw new Error('保存失敗');
+        if (state.serverInfo) state.serverInfo.webhookToken = token;
+        updateBuilderCode();
+        showToast('Webhook 認証トークンを保存しました！', 'success');
+      } catch (e) {
+        showToast('トークン保存エラー: ' + e.message, 'error');
+      }
+    });
+
     // ビルダーコードコピーボタン
     document.getElementById('btnCopyBuilderCode')?.addEventListener('click', () => {
       const codeEl = document.getElementById('builderGeneratedCode');
       if (codeEl) {
         navigator.clipboard.writeText(codeEl.textContent).then(() => {
-          showToast('コードをクリップボードにコピーしました！', 'success');
+          showToast('設定/コードをクリップボードにコピーしました！', 'success');
         });
       }
     });
@@ -1119,7 +1221,185 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ================= 5. ユーティリティ =================
+  // ================= 5. Google カレンダー連携 =================
+  async function loadCalendarSettings() {
+    try {
+      const res = await fetch('/api/settings');
+      if (!res.ok) return;
+      const data = await res.json();
+      const cal = data.calendar || {};
+
+      const calEnabled = document.getElementById('calEnabled');
+      const calEnabledLabel = document.getElementById('calEnabledLabel');
+      if (calEnabled) {
+        calEnabled.checked = !!cal.enabled;
+        if (calEnabledLabel) calEnabledLabel.textContent = cal.enabled ? '有効' : '無効';
+      }
+
+      const calIcalUrl = document.getElementById('calIcalUrl');
+      if (calIcalUrl && cal.icalUrl) calIcalUrl.value = cal.icalUrl;
+
+      const calRemindMinutes = document.getElementById('calRemindMinutes');
+      if (calRemindMinutes && cal.remindMinutesBefore !== undefined) {
+        calRemindMinutes.value = String(cal.remindMinutesBefore);
+      }
+
+      const calDailySummaryEnabled = document.getElementById('calDailySummaryEnabled');
+      if (calDailySummaryEnabled) {
+        calDailySummaryEnabled.checked = cal.dailySummaryEnabled !== false;
+      }
+
+      const calDailySummaryTime = document.getElementById('calDailySummaryTime');
+      if (calDailySummaryTime && cal.dailySummaryTime) {
+        calDailySummaryTime.value = cal.dailySummaryTime;
+      }
+
+      const calVoice = document.getElementById('calVoice');
+      if (calVoice && cal.voice) calVoice.value = cal.voice;
+
+      renderCalendarSpeakers(cal.targetDevices || ['default']);
+    } catch (e) {
+      console.warn('カレンダー設定取得エラー:', e);
+    }
+  }
+
+  async function loadCalendarEvents() {
+    try {
+      const res = await fetch('/api/calendar/events');
+      if (!res.ok) return;
+      const data = await res.json();
+      renderCalendarEvents(data.today || [], data.lastFetched);
+    } catch (e) {
+      console.warn('カレンダーイベント取得エラー:', e);
+    }
+  }
+
+  function renderCalendarEvents(events, lastFetched) {
+    const listEl = document.getElementById('calEventsList');
+    const badgeEl = document.getElementById('calLastSyncBadge');
+    if (!listEl) return;
+
+    if (badgeEl && lastFetched) {
+      const timeStr = new Date(lastFetched).toLocaleTimeString();
+      badgeEl.textContent = `最終同期: ${timeStr}`;
+    }
+
+    if (!events || events.length === 0) {
+      listEl.innerHTML = `<li class="empty-msg">本日の予定はありません</li>`;
+      return;
+    }
+
+    let html = '';
+    events.forEach(ev => {
+      const isAllDay = !!ev.isAllDay;
+      let timeText = '終日';
+      if (!isAllDay && ev.start) {
+        const s = new Date(ev.start);
+        const h = String(s.getHours()).padStart(2, '0');
+        const m = String(s.getMinutes()).padStart(2, '0');
+        timeText = `${h}:${m}`;
+      }
+
+      html += `
+        <li class="cal-event-item ${isAllDay ? 'allday' : ''}">
+          <div class="cal-event-header">
+            <span class="cal-event-time">${timeText}</span>
+          </div>
+          <div class="cal-event-summary">${escapeHtml(ev.summary || '（無題）')}</div>
+          ${ev.location ? `<div class="cal-event-location">📍 ${escapeHtml(ev.location)}</div>` : ''}
+        </li>
+      `;
+    });
+
+    listEl.innerHTML = html;
+  }
+
+  function setupCalendarHandlers() {
+    // 有効/無効スイッチ
+    const calEnabled = document.getElementById('calEnabled');
+    const calEnabledLabel = document.getElementById('calEnabledLabel');
+    if (calEnabled) {
+      calEnabled.addEventListener('change', () => {
+        if (calEnabledLabel) calEnabledLabel.textContent = calEnabled.checked ? '有効' : '無効';
+      });
+    }
+
+    // カレンダー設定保存
+    const calForm = document.getElementById('calendarSettingsForm');
+    if (calForm) {
+      calForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const calSpeakers = getSelectedSpeakers(document.getElementById('calSpeakersContainer'));
+        const payload = {
+          calendar: {
+            enabled: document.getElementById('calEnabled')?.checked || false,
+            icalUrl: document.getElementById('calIcalUrl')?.value.trim() || '',
+            remindMinutesBefore: parseInt(document.getElementById('calRemindMinutes')?.value || '10', 10),
+            dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked || false,
+            dailySummaryTime: document.getElementById('calDailySummaryTime')?.value || '07:30',
+            targetDevices: calSpeakers.length ? calSpeakers : ['default'],
+            voice: document.getElementById('calVoice')?.value || 'ja-JP-NanamiNeural'
+          }
+        };
+
+        try {
+          const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) throw new Error('保存失敗');
+          showToast('Google カレンダー連携設定を保存しました！', 'success');
+          await loadCalendarEvents();
+        } catch (err) {
+          showToast('設定保存エラー: ' + err.message, 'error');
+        }
+      });
+    }
+
+    // 手動同期ボタン
+    document.getElementById('btnSyncCalendar')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnSyncCalendar');
+      btn.disabled = true;
+      showToast('Google カレンダーと同期しています...');
+      try {
+        const res = await fetch('/api/calendar/sync', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`カレンダー同期完了: ${data.count || 0} 件の予定を取得`, 'success');
+          await loadCalendarEvents();
+        } else {
+          throw new Error(data.error || '同期失敗');
+        }
+      } catch (err) {
+        showToast('同期エラー: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // 朝のまとめ読み上げテスト
+    document.getElementById('btnTestDailySummary')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnTestDailySummary');
+      btn.disabled = true;
+      showToast('朝の予定サマリーをスピーカーへ送信中...');
+      try {
+        const res = await fetch('/api/calendar/summary', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('朝の予定まとめアナウンスを実行しました！', 'success');
+        } else {
+          throw new Error(data.error || '実行失敗');
+        }
+      } catch (err) {
+        showToast('テスト発声エラー: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  // ================= 6. ユーティリティ =================
   function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;

@@ -1,7 +1,7 @@
 {
-  "name": "google-home-speaker",
+  "name": "smart-home-speaker-voice-hub",
   "version": "2.0.0",
-  "description": "Google Home / Nest TTS announcement platform with Edge TTS, Web GUI, and Scheduler",
+  "description": "Smart Speaker Voice Hub for Google Home / Nest, Amazon Alexa & Apple HomePod with Edge TTS and Web GUI",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -14,7 +14,7 @@
     "text-to-speech",
     "smart-home"
   ],
-  "author": "TAKAHASHI Taro (Updated for Edge TTS & Modern Web GUI)",
+  "author": "Maximilian2022",
   "license": "MIT",
   "dependencies": {
     "alexa-cookie2": "^5.0.6",

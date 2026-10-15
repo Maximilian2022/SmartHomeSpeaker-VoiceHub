@@ -1279,3 +1279,106 @@ input:checked + .slider:before {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* ================= Single Column & 4-Column Grid ================= */
+.single-col-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.speaker-checkbox-grid.four-col-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+@media (max-width: 1024px) {
+  .speaker-checkbox-grid.four-col-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .speaker-checkbox-grid.four-col-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================= Calendar Events List ================= */
+.calendar-events-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.cal-event-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--primary);
+  border-radius: 8px;
+  padding: 12px 14px;
+  transition: var(--transition);
+}
+
+.cal-event-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.cal-event-item.allday {
+  border-left-color: var(--success);
+}
+
+.cal-event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.cal-event-time {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--primary-light);
+}
+
+.cal-event-item.allday .cal-event-time {
+  color: var(--success);
+}
+
+.cal-event-summary {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.cal-event-location {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toggle-switch-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle-label {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+

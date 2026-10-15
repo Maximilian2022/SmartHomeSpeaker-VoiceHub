@@ -1,124 +1,110 @@
-# Google Home Speaker (Edge TTS & Web GUI Edition)
+# Smart Home Speaker Voice Hub 🎙️
 
-Google Home / Nest に高品質な日本語音声を喋らせるシステムです。
-従来の `google-home-voicetext` を大幅に刷新し、Microsoft Edge TTS、洗練された Web GUI、スケジュール管理機能、Cloudflare Tunnel 対応を備えています。
+Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod を統合し、自然な日本語音声（Microsoft Edge TTS）でアナウンスできるスマートスピーカー音声ハブです。
 
-## 主な特徴
-- **高品質・無料の音声合成 (Edge TTS)**: APIキー不要で、Microsoft Edge の自然な日本語音声（Nanami, Keita 等）を利用。
-- **直感的な Web GUI**: ブラウザから即時発言、ブラウザ試聴プレビュー、送信先スピーカーの選択が可能。
-- **スケジュール管理**: 定期アナウンス（毎朝の挨拶、ゴミ出しリマインダーなど）を GUI から登録・管理可能。
-- **マルチデバイス対応**: 宅内にある複数の Google Home / Nest デバイス（部屋、書斎、リビング、寝室等）を自動検出し、個別または一括指定可能。
-- **外部 Webhook & Cloudflare Tunnel 対応**: curl や Home Assistant、IFTTT 等から外部経由で呼び出し可能。トークン認証で外部公開時も安全。
-- **1ポート統合アーキテクチャ**: ポート 8080 のみで Web GUI、Webhook、音声ホスティングの全てが動作。
+Webブラウザからの直感的な即時発言、定期スケジュール放送、Googleカレンダー予定の自動読み上げ、Webhook（外部API・IFTTT等）経由の発言に対応しています。
+
+> [!NOTE]
+> 本ソフトウェアは、AIコーディングアシスタント（Google Antigravity）の支援を活用して設計・実装されたオープンソースプロジェクトです。
 
 ---
 
-## 起動方法
+## ✨ 主な機能
 
-### 1. ホストで直接起動
+- **高品質な音声合成 (Edge TTS)**: APIキー不要で自然な日本語音声（女性・男性の複数話者）を利用可能。
+- **マルチスピーカー対応**: 宅内の Google Home / Nest、Amazon Echo、Apple HomePod を自動検出し、個別または一括で発言。
+- **洗練された Web GUI**: 即時発言、ブラウザ試聴プレビュー、送信先スピーカーの選択、直近の発言履歴。
+- **スケジュール管理**: 定期アナウンス（毎朝の挨拶、リマインダーなど）を GUI から登録・編集・管理。
+- **Google カレンダー連携**: 予定開始前のリマインド放送や、毎朝の予定まとめアナウンスを自動実行。
+- **Webhook & 外部連携**: cURL、Home Assistant、IFTTT 等から手軽に呼び出し可能。Cloudflare Tunnel による外部アクセス時の認証保護対応。
+
+---
+
+## 🚀 起動方法
+
+### 1. 必要要件
+- Node.js 18 以上 (または Docker / Docker Compose)
+- スピーカー端末と同じローカルネットワーク (LAN)
+
+### 2. 環境設定
+サンプルファイルをコピーして設定ファイルを作成します。
+
 ```bash
-# 依存関係インストール
+cp .my.env.sample .my.env
+```
+
+必要に応じて `.my.env` を編集します（ポート番号変更、Webhookトークン設定など）。
+
+### 3. 起動 (ホストで直接動かす場合)
+
+```bash
+# 依存ライブラリのインストール
 npm install
 
-# サーバー起動 (ポート 8080)
+# サーバー起動 (デフォルト: ポート 8080)
 npm start
 ```
 
-ブラウザで `http://localhost:8080` を開きます。
+起動後、ブラウザで `http://localhost:8080` を開きます。
 
-### 2. Docker Compose で起動
+### 4. Docker Compose で起動する場合
+
 ```bash
 docker compose up -d
 ```
 
 ---
 
-## Webhook API の使い方
+## 📡 Webhook API の使い方
 
-### 1. テキストを発声させる (推奨)
+外部サービスやスクリプトからスピーカーへ発言させることができます。
+
+### 基本的な呼び出し (JSON POST)
+
 ```bash
-curl -X POST http://[IP_ADDRESS]/api/say \
+curl -X POST http://<サーバーIP>:8080/api/say \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "こんにちは！テスト送信です。",
-    "device": "部屋",
-    "voice": "ja-JP-NanamiNeural"
+    "text": "ご飯ができましたよ！",
+    "devices": ["リビング", "部屋"]
   }'
 ```
 
-#### パラメータ一覧 (JSON または Form-Data)
+### パラメータ一覧
+
 | パラメータ | 必須 | 説明 | 例 |
 |---|---|---|---|
-| `text` | ○ | 喋らせたい文言 | `"ご飯ができましたよ"` |
-| `device` または `deviceIp` | - | 送信先スピーカー名またはIP (単一) | `"部屋"`, `"192.168.11.97"` |
-| `devices` | - | 送信先スピーカーの配列 (複数一括) | `["部屋", "リビング"]` または `["all"]` |
+| `text` | ○ | 喋らせたい文言 | `"お風呂が沸きました"` |
+| `devices` | - | 送信先スピーカー名またはIP (配列) | `["リビング", "書斎"]` |
 | `voice` | - | 話者名 | `"ja-JP-NanamiNeural"` (女性), `"ja-JP-KeitaNeural"` (男性) |
-| `rate` | - | 話速 (パーセント) | `"+0%"`, `"+10%"` |
+| `rate` | - | 話速 (パーセント) | `"+0%"`, `"+20%"` |
 | `pitch` | - | 音高 (ヘルツ) | `"+0Hz"`, `"-5Hz"` |
+| `volumeLevel`| - | Google Cast 音量 (0.0〜1.0) | `0.5` |
 
-### 複数スピーカーへの送信例
-```bash
-curl -X POST http://[IP_ADDRESS]:8080/api/say \
-  -H "Authorization: Bearer [WEBHOOK_TOKEN]" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "text": "全員集合してください！",
-    "devices": ["部屋", "書斎"]
-  }'
-```
-
-### 2. 従来のエンドポイント互換 (google-home-voicetext)
-```bash
-curl -X POST -d "text=こんにちは、Googleです。" http://[IP_ADDRESS]:8080/google-home-voicetext
-```
+> [!TIP]
+> Web GUI の「Webhook / Tunnel」タブにある **Webhook コマンドビルダー** を使うと、画面上でスピーカーやメッセージを選ぶだけで cURL や IFTTT 向けの設定が自動生成されます。
 
 ---
 
-## 音声キャッシュ管理 (1GB LRU)
-- 生成された MP3 音声は `public/voice/` にハッシュ名でキャッシュされます。
-- 同一テキスト・同一話者の場合は再生成を行わずキャッシュから即座に再生されます。
-- キャッシュ再利用時はアクセス日時（atime/mtime）を自動タッチ更新します。
-- 合計容量が上限（デフォルト: 1024MB / 1GB）を超えると、最も古いアクセス日時のファイルから自動クリーンアップされます。
-- 設定変更は `.my.env` の `MAX_CACHE_SIZE_MB` で調整可能です。
+## 📅 Google カレンダー連携
+
+1. Web GUI の「カレンダー連携」タブを開きます。
+2. Google カレンダーの「設定」>「カレンダーの統合」にある **「iCal 形式の非公開 URL」** を貼り付けて保存します。
+3. 開始前の直前リマインド（例: 10分前）や、毎朝の予定サマリー放送（例: 07:30）が自動でスピーカーからアナウンスされます。
+
+※ サーバーは15分おきに安全な頻度でカレンダー情報をバックグラウンド同期します。
 
 ---
 
-## Cloudflare Tunnel 経由での利用 (インターネット越しの発言)
+## 📜 ライセンス & クレジット
 
-Cloudflare Zero Trust (Dashboard) を使って外部から安全に Webhook を呼び出すことができます。
+本プロジェクトは **MIT License** の下で公開されています。
 
-### 1. Cloudflare Dashboard の設定 (Public Hostname)
-Cloudflare Zero Trust の **Networks > Tunnels** からトンネルを作成し、**Public Hostname** を次のように登録します：
+### 参考・利用ライブラリ
+本ソフトウェアの開発にあたり、以下の素晴らしいオープンソースプロジェクトの知見・ライブラリを活用・参考にしています。各開発者・コミュニティの皆様に感謝いたします。
 
-| 設定項目 | 入力値 | 備考 |
-|---|---|---|
-| **Subdomain** | `webhook` | お好みのサブドメイン |
-| **Domain** | `kit-a.net` | あなたの保有ドメイン |
-| **Path** | 空欄 | ルート全体を対象 |
-| **Type (Service Type)** | **`HTTP`** |  |
-| **URL (サービスURL)** | **`localhost:8080`** または **`192.168.11.244:8080`** | 本サーバーのローカル待受アドレス |
-
-> [!IMPORTANT]
-> **サービスURL（Service URL）とは？**
-> `cloudflared` が受信した通信を転送するローカルサーバーの宛先です。
-> 本システムは Docker コンテナで `network_mode: "host"` としてホストマシンのポート `8080` を直接リッスンしているため、サービスURLには `localhost:8080`（または `192.168.11.244:8080`）を入力します。
-
-### 2. Web GUI の 403 遮断プロテクション (セキュリティ)
-Cloudflare Tunnel 経由（`Host: webhook.kit-a.net`）でのアクセスは、セキュリティのため**Web管理画面や内部API（`/`, `/index.html`, `/api/status`, `/api/devices`, `/api/schedules`）を `403 Forbidden` で自動遮断**します。
-外部から許可されるのは **Webhook 発言エンドポイント（`/api/say`）のみ** です（認証トークン必須）。
-
-### 3. 外部からの Webhook 呼び出し例
-```bash
-curl -X POST https://webhook.kit-a.net/api/say \
-  -H "Authorization: Bearer your-super-secret-token" \
-  -H "Content-Type: application/json" \
-  -d '{"text": "外出先からの通知です。", "devices": ["部屋"]}'
-```
-
----
-
-## Alexa (Amazon Echo) 連携 (オプション)
-`thorsten-gehrig/alexa-remote-control` を内包しており、Amazon Echo デバイスへも同時に発言させることができます。
-1. `.my.env` で `ALEXA_ENABLED=true` に設定。
-2. 初回認証（Amazon OTP）を完了させると、Web GUI や Webhook で Echo デバイスも選択可能になります。
-
+- **[google-home-voicetext](https://github.com/sikkimtemi/google-home-voicetext-docker)** (Taro TAKAHASHI) - オリジナルの Google Home 音声通知着想
+- **[node-edge-tts](https://github.com/schroffl/node-edge-tts)** - Microsoft Edge 音声合成クライアント
+- **[castv2-client](https://github.com/thibauts/node-castv2-client)** - Google Cast (Chromecast) 通信プロトコル実装
+- **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** / **[alexa-cookie2](https://github.com/Apollon77/alexa-cookie)** - Amazon Echo 制御および認証連携
+- **[pyatv](https://github.com/postlund/pyatv)** - Apple HomePod AirPlay2 ストリーミング

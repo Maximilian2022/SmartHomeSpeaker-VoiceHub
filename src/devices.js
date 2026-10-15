@@ -1,21 +1,10 @@
 const { exec } = require('child_process');
 const alexaManager = require('./alexa');
 const homepodManager = require('./homepod');
+const settingsManager = require('./settings');
 
-// 事前に検出確認済みのデバイス一覧（フォールバックおよび正確な日本語名マップ）
-const KNOWN_DEVICES = [
-  { id: 'room', name: '部屋', ip: '192.168.11.97', model: 'Google Nest Hub', type: 'google' },
-  { id: 'study', name: '書斎', ip: '192.168.11.147', model: 'Google Home Mini', type: 'google' },
-  { id: 'living', name: 'リビング', ip: '192.168.11.96', model: 'Google Nest Hub Max', type: 'google' },
-  { id: 'bedroom', name: '寝室', ip: '192.168.11.81', model: 'Google Nest Hub', type: 'google' },
-  { id: 'japanese_room', name: '和室', ip: '192.168.11.176', model: 'Google Home Mini', type: 'google' },
-  { id: 'kitchen', name: 'キッチン', ip: '192.168.11.178', model: 'Google Home Mini', type: 'google' },
-  { id: 'toilet_1f', name: 'トイレ1F', ip: '192.168.11.92', model: 'Google Home Mini', type: 'google' },
-  { id: 'toilet_2f', name: 'トイレ2F', ip: '192.168.11.121', model: 'Google Home Mini', type: 'google' },
-  { id: 'entrance', name: '玄関', ip: '192.168.11.9', model: 'Google Home Mini', type: 'google' },
-  { id: 'living_tv', name: 'リビングTV', ip: '192.168.11.185', model: 'Google TV Streamer', type: 'google' },
-  { id: 'bedroom_cast', name: '寝室キャスト', ip: '192.168.11.94', model: 'Chromecast', type: 'google' }
-];
+// 事前に検出確認済みのデバイス一覧（空配列にして mDNS / Avahi による完全自動検出とする）
+const KNOWN_DEVICES = [];
 
 class DeviceManager {
   constructor() {
@@ -30,7 +19,15 @@ class DeviceManager {
   }
 
   getDefaultDeviceIp() {
-    return process.env.GOOGLE_HOME_IP || '192.168.11.97';
+    const configured = settingsManager.getDefaultDeviceId();
+    if (configured) return configured;
+    // 設定がない場合は最初に見つかったデバイス
+    const firstDev = Array.from(this.devices.values())[0];
+    return firstDev ? firstDev.ip : (process.env.GOOGLE_HOME_IP || '');
+  }
+
+  setDefaultDeviceIp(id) {
+    return settingsManager.setDefaultDeviceId(id);
   }
 
   async getDevices() {

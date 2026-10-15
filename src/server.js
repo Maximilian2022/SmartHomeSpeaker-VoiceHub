@@ -8,6 +8,8 @@ const deviceManager = require('./devices');
 const schedulerManager = require('./scheduler');
 const alexaManager = require('./alexa');
 const homepodManager = require('./homepod');
+const settingsManager = require('./settings');
+const calendarManager = require('./calendar');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
@@ -19,23 +21,21 @@ function resolveServerIp() {
   if (process.env.SERVER_IP) return process.env.SERVER_IP;
 
   const interfaces = os.networkInterfaces();
-  const ifaceName = process.env.WIRELESS_MODULE_NAME || 'ens192';
-
-  if (interfaces[ifaceName]) {
-    for (const iface of interfaces[ifaceName]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
+  const candidates = [];
 
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
+        // 192.168.x.x または 10.x.x.x などのローカル LAN プライベート IP を最優先
+        if (iface.address.startsWith('192.168.') || iface.address.startsWith('10.')) {
+          return iface.address;
+        }
+        candidates.push(iface.address);
       }
     }
   }
+
+  if (candidates.length > 0) return candidates[0];
   return '127.0.0.1';
 }
 
@@ -72,8 +72,8 @@ function isTunnelRequest(req) {
 // セキュリティフィルター: Cloudflare Tunnel からのアクセス時は Web GUI へのアクセスを遮断
 app.use((req, res, next) => {
   if (isTunnelRequest(req)) {
-    // 許可するエンドポイント: Webhook (/api/say, /google-home-voicetext)
-    const allowedPaths = ['/api/say', '/google-home-voicetext'];
+    // 許可するエンドポイント: Webhook (/api/say のみ)
+    const allowedPaths = ['/api/say'];
     const isAllowed = allowedPaths.some(p => req.path.startsWith(p));
 
     if (!isAllowed) {
@@ -99,7 +99,6 @@ app.get('/', (req, res) => {
 // 音声ファイルホスティング (1GB LRU キャッシュ)
 const VOICE_DIR = path.resolve(__dirname, '../public/voice');
 app.use('/voice', express.static(VOICE_DIR));
-app.use('/googlehome', express.static(VOICE_DIR)); // 過去互換URL
 
 /**
  * 複数デバイスへの同時発信ロジック (Google Home + Alexa)
@@ -202,9 +201,20 @@ schedulerManager.setExecutor(async (text, options) => {
   return await speakToMultipleDevices(text, targets, options);
 });
 
+// カレンダーマネージャーにマルチデバイス実行エンジンを紐付け
+calendarManager.setExecutor(async (text, options) => {
+  const targets = options.deviceIps || (options.deviceIp ? [options.deviceIp] : []);
+  return await speakToMultipleDevices(text, targets, options);
+});
+
+// 初期カレンダーイベントの同期開始
+calendarManager.syncEvents().catch(err => {
+  console.warn('[Calendar] 初回同期エラー:', err.message);
+});
+
 // Webhook認証ミドルウェア (外部Cloudflare Tunnel等からのアクセス保護用)
 function requireWebhookAuth(req, res, next) {
-  const token = process.env.WEBHOOK_TOKEN;
+  const token = settingsManager.getWebhookToken();
   if (!token) return next();
 
   // ローカルホストまたはプライベートLANからのWeb GUIアクセスはスキップ
@@ -274,24 +284,52 @@ app.post('/api/say', requireWebhookAuth, async (req, res) => {
   }
 });
 
-// 2. 以前の google-home-voicetext との後方互換エンドポイント
-app.post('/google-home-voicetext', requireWebhookAuth, async (req, res) => {
-  const text = req.body.text;
-  if (!text) {
-    return res.status(400).send('Please POST "text=Hello Google Home"');
-  }
+// 2. システム設定 API
+app.get('/api/settings', (req, res) => {
+  res.json(settingsManager.get());
+});
 
+app.put('/api/settings', (req, res) => {
   try {
-    const targets = req.body.deviceIp ? [req.body.deviceIp] : [];
-    await speakToMultipleDevices(text, targets, { voice: req.body.voice });
-    res.send(`Google Home will say: ${text}\n`);
+    const updated = settingsManager.update(req.body);
+    // カレンダー設定更新時に再同期
+    if (req.body.calendar) {
+      calendarManager.syncEvents().catch(() => {});
+    }
+    res.json(updated);
   } catch (err) {
-    console.error('[Legacy API Error]:', err.message);
-    res.status(500).send(`Error: ${err.message}\n`);
+    res.status(400).json({ error: err.message });
   }
 });
 
-// 3. ブラウザでの事前試聴プレビュー用
+// 3. カレンダー連携 API
+app.get('/api/calendar/events', (req, res) => {
+  res.json({
+    today: calendarManager.getTodayEvents(),
+    upcoming: calendarManager.getUpcomingEvents(),
+    lastFetched: calendarManager.lastFetched
+  });
+});
+
+app.post('/api/calendar/sync', async (req, res) => {
+  try {
+    const events = await calendarManager.syncEvents();
+    res.json({ success: true, count: events.length, lastFetched: calendarManager.lastFetched });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/calendar/summary', async (req, res) => {
+  try {
+    const result = await calendarManager.speakDailySummary();
+    res.json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. ブラウザでの事前試聴プレビュー用
 app.get('/api/preview', async (req, res) => {
   const text = req.query.text;
   if (!text) return res.status(400).json({ error: 'text is required' });

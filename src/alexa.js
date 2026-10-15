@@ -113,7 +113,7 @@ class AlexaManager {
   /**
    * Alexa ログイン用プロキシを開始
    */
-  startProxyAuth(hostIp = '192.168.11.244', port = 8081) {
+  startProxyAuth(hostIp = 'localhost', port = 8081) {
     return new Promise((resolve, reject) => {
       if (this.proxyRunning) {
         return resolve({

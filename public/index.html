@@ -44,7 +44,7 @@
             <rect width="18" height="18" x="3" y="3" rx="2"/>
             <path d="M9 9h6v6H9z"/>
           </svg>
-          <span id="defaultDeviceText">部屋 (192.168.11.97)</span>
+          <span id="defaultDeviceText">--</span>
         </div>
       </div>
     </header>
@@ -59,6 +59,10 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         スケジュール管理
       </button>
+      <button class="tab-btn" data-tab="tab-calendar" id="btnTabCalendar">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        カレンダー連携
+      </button>
       <button class="tab-btn" data-tab="tab-devices" id="btnTabDevices">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
         接続デバイス
@@ -71,9 +75,9 @@
 
     <!-- メインコンテンツ -->
     <main class="app-main">
-      <!-- 1. 即時発言パネル -->
+      <!-- 1. 即時発言パネル (1列全幅レイアウト) -->
       <section id="tab-say" class="tab-pane active">
-        <div class="grid-layout">
+        <div class="single-col-layout">
           <!-- 入力カード -->
           <div class="card glass-card">
             <div class="card-header">
@@ -83,7 +87,7 @@
 
             <div class="card-body">
               <div class="form-group">
-                <textarea id="sayTextInput" class="form-textarea" rows="4" placeholder="喋らせたいテキストを入力してください (例: ご飯ができましたよ。リビングに来てください。)"></textarea>
+                <textarea id="sayTextInput" class="form-textarea" rows="3" placeholder="喋らせたいテキストを入力してください (例: ご飯ができましたよ。リビングに来てください。)"></textarea>
               </div>
 
               <!-- クイックプリセット -->
@@ -96,7 +100,7 @@
                 <button type="button" class="preset-btn" data-text="そろそろ就寝の時間です。おやすみなさい。">おやすみ</button>
               </div>
 
-              <!-- 送信先スピーカーの複数選択 -->
+              <!-- 送信先スピーカーの複数選択 (4列グリッド) -->
               <div class="form-group">
                 <div class="flex-between" style="margin-bottom: 8px;">
                   <label class="form-label" style="margin-bottom: 0;">
@@ -110,7 +114,7 @@
                   </div>
                 </div>
 
-                <div id="saySpeakersContainer" class="speaker-checkbox-grid">
+                <div id="saySpeakersContainer" class="speaker-checkbox-grid four-col-grid">
                   <!-- JSでチェックボックスを動的生成 -->
                   <span class="text-sub">スピーカー一覧を読み込み中...</span>
                 </div>
@@ -166,17 +170,16 @@
             </div>
           </div>
 
-          <!-- サイドパネル: クイックステータス & 履歴 -->
-          <div class="side-panel">
-            <div class="card glass-card">
-              <div class="card-header">
-                <h3>直近の発言履歴</h3>
-              </div>
-              <div class="card-body">
-                <ul id="recentHistoryList" class="history-list">
-                  <li class="empty-msg">履歴はまだありません</li>
-                </ul>
-              </div>
+          <!-- 最下部に配置された直近の発言履歴カード -->
+          <div class="card glass-card history-bottom-card" style="margin-top: 24px;">
+            <div class="card-header flex-between">
+              <h3>直近の発言履歴</h3>
+              <button type="button" id="btnClearHistory" class="btn-text text-sub">履歴をクリア</button>
+            </div>
+            <div class="card-body">
+              <ul id="recentHistoryList" class="history-list">
+                <li class="empty-msg">履歴はまだありません</li>
+              </ul>
             </div>
           </div>
         </div>
@@ -220,7 +223,119 @@
         </div>
       </section>
 
-      <!-- 3. 接続デバイスパネル -->
+      <!-- 3. Google カレンダー連携パネル -->
+      <section id="tab-calendar" class="tab-pane">
+        <div class="grid-layout">
+          <!-- カレンダー設定カード -->
+          <div class="card glass-card">
+            <div class="card-header flex-between">
+              <div>
+                <h2>Google カレンダー自動音声連携</h2>
+                <span class="card-sub">予定の開始前リマインド通知や、毎朝の予定一括アナウンスをスピーカーから自動放送します</span>
+              </div>
+              <div class="toggle-switch-wrapper">
+                <label class="switch">
+                  <input type="checkbox" id="calEnabled">
+                  <span class="slider round"></span>
+                </label>
+                <span class="toggle-label" id="calEnabledLabel">無効</span>
+              </div>
+            </div>
+
+            <div class="card-body">
+              <form id="calendarSettingsForm">
+                <!-- iCal URL -->
+                <div class="form-group">
+                  <label for="calIcalUrl" class="form-label">
+                    Google カレンダー iCal (ICS) 非公開 URL *
+                  </label>
+                  <input type="url" id="calIcalUrl" class="form-input" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" required>
+                  <small class="help-text">
+                    💡 <strong>取得方法:</strong> Google カレンダーの「設定」&gt; 連携したいカレンダーを選択 &gt;「カレンダーの統合」&gt;<strong>「iCal 形式の非公開 URL」</strong>をコピーして貼り付けてください。
+                  </small>
+                </div>
+
+                <!-- 通知オプション -->
+                <div class="settings-grid" style="margin-top: 16px;">
+                  <!-- 直前リマインド -->
+                  <div class="form-group">
+                    <label for="calRemindMinutes" class="form-label">開始直前リマインド</label>
+                    <select id="calRemindMinutes" class="form-select">
+                      <option value="0">リマインドなし</option>
+                      <option value="5">5分前</option>
+                      <option value="10" selected>10分前 (推奨)</option>
+                      <option value="15">15分前</option>
+                      <option value="30">30分前</option>
+                    </select>
+                  </div>
+
+                  <!-- 朝の予定まとめ -->
+                  <div class="form-group">
+                    <label class="form-label">朝の予定まとめアナウンス</label>
+                    <div class="flex-align-center" style="gap: 12px; margin-top: 4px;">
+                      <label class="checkbox-label">
+                        <input type="checkbox" id="calDailySummaryEnabled" checked>
+                        <span>毎朝実行</span>
+                      </label>
+                      <input type="time" id="calDailySummaryTime" class="form-input" style="width: 120px;" value="07:30">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 送信先スピーカー & 音声ボイス -->
+                <div class="settings-grid" style="margin-top: 16px;">
+                  <div class="form-group">
+                    <label class="form-label">通知先スピーカー</label>
+                    <div id="calSpeakersContainer" class="speaker-checkbox-grid" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); max-height: 140px; overflow-y: auto;">
+                      <!-- JSで動的生成 -->
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="calVoice" class="form-label">話者 (声色)</label>
+                    <select id="calVoice" class="form-select">
+                      <option value="ja-JP-NanamiNeural" selected>七海 (Nanami) - 女性</option>
+                      <option value="ja-JP-KeitaNeural">圭太 (Keita) - 男性</option>
+                      <option value="ja-JP-AoiNeural">碧 (Aoi) - 女性・落ち着いた声</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="action-btn-group" style="margin-top: 24px;">
+                  <button type="button" id="btnSyncCalendar" class="btn btn-secondary">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    今すぐカレンダー同期
+                  </button>
+                  <button type="button" id="btnTestDailySummary" class="btn btn-secondary">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    朝のまとめ読み上げテスト
+                  </button>
+                  <button type="submit" id="btnSaveCalSettings" class="btn btn-primary">
+                    カレンダー設定を保存
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- カレンダー予定プレビューカード -->
+          <div class="side-panel">
+            <div class="card glass-card">
+              <div class="card-header flex-between">
+                <h3>本日の予定一覧</h3>
+                <span id="calLastSyncBadge" class="text-sub" style="font-size: 0.8rem;">未同期</span>
+              </div>
+              <div class="card-body">
+                <ul id="calEventsList" class="calendar-events-list">
+                  <li class="empty-msg">カレンダーを設定すると本日の予定が表示されます</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. 接続デバイスパネル -->
       <section id="tab-devices" class="tab-pane">
         <div class="card glass-card">
           <div class="card-header flex-between">
@@ -270,7 +385,7 @@
                 <p>以下のリンクをクリックして、手元のブラウザ（PC・スマートフォン）で Amazon にログインしてください。ログインが完了すると、自動的にこの画面が切り替わります。</p>
                 <div class="auth-link-box">
                   <a id="alexaLoginLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-success btn-lg">
-                    👉 Amazon ログイン画面を開く (<span id="alexaLoginUrlText">http://192.168.11.244:8081</span>)
+                    👉 Amazon ログイン画面を開く (<span id="alexaLoginUrlText">http://&lt;SERVER_IP&gt;:8081</span>)
                   </a>
                   <button type="button" id="btnCancelAlexaAuth" class="btn btn-secondary btn-sm" style="margin-left: 12px;">キャンセル</button>
                 </div>
@@ -361,22 +476,23 @@
               </p>
             </div>
 
-            <!-- 🔐 Webhook 認証シークレットトークン表示エリア -->
+            <!-- 🔐 Webhook 認証シークレットトークン表示・設定エリア -->
             <div id="webhookTokenCard" class="token-banner-card" style="margin-bottom: 24px;">
               <div class="token-header flex-between">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <span style="font-size: 20px;">🔐</span>
                   <strong>Webhook 認証シークレットトークン (WEBHOOK_TOKEN)</strong>
                 </div>
-                <span class="badge-success">認証保護有効</span>
+                <span id="webhookTokenBadge" class="badge-success">認証保護有効</span>
               </div>
               <p style="color: var(--text-muted); font-size: 0.88rem; margin: 8px 0 12px;">
-                外部（Cloudflare Tunnel 等）から発声 API を呼び出す際、認証用ヘッダーまたはパラメータとしてこのトークンを付与します。
+                外部（Cloudflare Tunnel 等）から発声 API を呼び出す際、認証用ヘッダーまたはパラメータとしてこのトークンを付与します。設定ファイル（<code>.my.env</code>）またはここで直接変更可能です。
               </p>
-              <div class="token-display-box">
-                <input type="password" id="txtWebhookTokenVal" class="form-input token-input" readonly value="">
+              <div class="token-display-box" style="display: flex; gap: 8px;">
+                <input type="password" id="txtWebhookTokenVal" class="form-input token-input" placeholder="トークン未設定（未設定の場合は認証不要）" style="flex: 1;">
                 <button type="button" id="btnToggleTokenVisibility" class="btn btn-secondary btn-sm" title="表示/非表示">👁️</button>
-                <button type="button" id="btnCopyWebhookToken" class="btn btn-primary btn-sm">トークンをコピー</button>
+                <button type="button" id="btnSaveWebhookToken" class="btn btn-primary btn-sm">保存</button>
+                <button type="button" id="btnCopyWebhookToken" class="btn btn-secondary btn-sm">コピー</button>
               </div>
             </div>
 
@@ -397,11 +513,11 @@
                 <div class="endpoint-selector-group">
                   <label class="radio-label">
                     <input type="radio" name="builderUrlType" value="lan" checked>
-                    <span>🏠 宅内 LAN (<code>http://192.168.11.244:8080/api/say</code>)</span>
+                    <span>🏠 宅内 LAN (<code id="builderLanUrlLabel">http://&lt;SERVER_IP&gt;:8080/api/say</code>)</span>
                   </label>
-                  <label class="radio-label" id="builderRadioTunnelWrapper" style="display: none;">
+                  <label class="radio-label" id="builderRadioTunnelWrapper">
                     <input type="radio" name="builderUrlType" value="tunnel">
-                    <span>🌐 Cloudflare Tunnel (外部向け <code id="builderTunnelUrlLabel">https://webhook.kit-a.net/api/say</code>)</span>
+                    <span>🌐 Cloudflare Tunnel (外部向け <code id="builderTunnelUrlLabel">https://&lt;TUNNEL_DOMAIN&gt;/api/say</code>)</span>
                   </label>
                 </div>
               </div>
@@ -471,6 +587,7 @@
                     <button type="button" class="pill-btn active" data-output-tab="curl-post">cURL (POST JSON)</button>
                     <button type="button" class="pill-btn" data-output-tab="curl-get">cURL (GET Query)</button>
                     <button type="button" class="pill-btn" data-output-tab="json-body">JSON ペイロード (Body)</button>
+                    <button type="button" class="pill-btn" data-output-tab="ifttt">IFTTT (Webhook)</button>
                   </div>
                   <div class="action-btn-group">
                     <button type="button" id="btnTestWebhookNow" class="btn btn-success btn-sm">
@@ -479,7 +596,7 @@
                     </button>
                     <button type="button" id="btnCopyBuilderCode" class="btn btn-primary btn-sm">
                       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                      コードをコピー
+                      設定/コードをコピー
                     </button>
                   </div>
                 </div>
@@ -488,16 +605,6 @@
                   <pre><code id="builderGeneratedCode" class="language-bash">生成中...</code></pre>
                 </div>
                 <div id="testWebhookStatus" class="test-status-msg" style="display: none; margin-top: 8px;"></div>
-              </div>
-            </div>
-
-            <!-- 従来の後方互換エンドポイント -->
-            <div class="guide-section">
-              <h3>後方互換エンドポイント (従来の google-home-voicetext)</h3>
-              <p style="color: var(--text-muted); font-size: 0.88rem;">旧スクリプトや互換システムからの呼び出し用エンドポイントです。</p>
-              <div class="code-block-wrapper">
-                <pre><code id="legacyCurlExample">curl -X POST -d "text=こんにちは、Googleです。" http://192.168.11.244:8080/google-home-voicetext</code></pre>
-                <button type="button" class="btn-copy" data-copy-target="legacyCurlExample">コピー</button>
               </div>
             </div>
           </div>
