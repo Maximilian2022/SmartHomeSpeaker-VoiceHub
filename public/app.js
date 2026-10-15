@@ -1556,28 +1556,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
     container.innerHTML = html;
 
+    // 共通カレンダー設定保存関数
+    async function saveCurrentCalendarConfig(shouldSync = false) {
+      const calSpeakers = getSelectedSpeakers(document.getElementById('calSpeakersContainer'));
+      const calendars = state.calendarData?.calendars || [];
+
+      const payload = {
+        calendar: {
+          enabled: document.getElementById('calEnabled')?.checked || false,
+          calendars,
+          icalUrl: calendars[0]?.icalUrl || '', // 互換性維持用
+          remindEnabled: document.getElementById('calRemindEnabled')?.checked !== false,
+          remindMinutesBefore: parseInt(document.getElementById('calRemindMinutes')?.value || '10', 10),
+          dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked !== false,
+          dailySummaryTime: document.getElementById('calDailySummaryTime')?.value || '07:30',
+          targetDevices: calSpeakers.length ? calSpeakers : ['default'],
+          voice: document.getElementById('calVoice')?.value || 'ja-JP-NanamiNeural'
+        }
+      };
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('保存失敗');
+        if (shouldSync) {
+          await loadCalendarEvents();
+        }
+        return true;
+      } catch (err) {
+        showToast('設定保存エラー: ' + err.message, 'error');
+        return false;
+      }
+    }
+
     // カレンダー個別ON/OFFトグル
     container.querySelectorAll('.cal-toggle-item').forEach(chk => {
-      chk.addEventListener('change', (e) => {
+      chk.addEventListener('change', async (e) => {
         const id = e.target.getAttribute('data-id');
         const found = state.calendarData.calendars.find(c => c.id === id);
         if (found) {
           found.enabled = e.target.checked;
           renderCalendarList();
+          await saveCurrentCalendarConfig(true);
+          showToast(`「${found.name}」の有効状態を更新しました`, 'success');
         }
       });
     });
 
-    // カレンダー削除
+    // カレンダー削除 (即時反映 & 保存)
     container.querySelectorAll('.btn-delete-cal').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         const id = btn.getAttribute('data-id');
         const found = state.calendarData.calendars.find(c => c.id === id);
         const name = found ? found.name : 'カレンダー';
         if (confirm(`「${name}」を連携リストから削除してもよろしいですか？`)) {
           state.calendarData.calendars = state.calendarData.calendars.filter(c => c.id !== id);
           renderCalendarList();
-          showToast(`「${name}」を削除しました（保存ボタンを押すと確定します）`, 'info');
+          const ok = await saveCurrentCalendarConfig(true);
+          if (ok) {
+            showToast(`「${name}」を削除しました`, 'success');
+          }
         }
       });
     });
@@ -1688,9 +1729,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // カレンダー追加の確定
+    // カレンダー追加の確定 (即時反映 & 保存 & 自動同期)
     if (btnAddCalConfirm) {
-      btnAddCalConfirm.addEventListener('click', () => {
+      btnAddCalConfirm.addEventListener('click', async () => {
         const nameInput = document.getElementById('newCalName');
         const urlInput = document.getElementById('newCalUrl');
         const name = nameInput?.value.trim() || 'カレンダー';
@@ -1708,6 +1749,12 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
+        // 公開用 basic.ics 警告チェック
+        if (url.includes('/public/basic.ics')) {
+          const proceed = confirm('【ご注意】入力されたURLはGoogleカレンダーの「公開用」URLです。\nカレンダーを一般公開していない場合、同期時に 404 エラーとなります。\n\n非公開カレンダーの場合は、Google カレンダー設定の「非公開 URL の iCal」をコピーしてください。\n\nこのまま登録を続行しますか？');
+          if (!proceed) return;
+        }
+
         if (!state.calendarData) state.calendarData = { calendars: [] };
         if (!state.calendarData.calendars) state.calendarData.calendars = [];
 
@@ -1722,8 +1769,50 @@ document.addEventListener('DOMContentLoaded', () => {
         addCalInlineForm.style.display = 'none';
         nameInput.value = '';
         urlInput.value = '';
-        showToast(`「${name}」を追加しました！「設定を保存」ボタンを押すと確定します`, 'success');
+
+        // サーバーへ即時保存 & 同期
+        showToast(`「${name}」を登録して同期しています...`, 'info');
+        const ok = await saveCalendarConfigInternal(true);
+        if (ok) {
+          showToast(`「${name}」を追加し、予定を同期しました！`, 'success');
+        }
       });
+    }
+
+    // 内部保存ヘルパー
+    async function saveCalendarConfigInternal(shouldSync = false) {
+      const calSpeakers = getSelectedSpeakers(document.getElementById('calSpeakersContainer'));
+      const calendars = state.calendarData?.calendars || [];
+
+      const payload = {
+        calendar: {
+          enabled: document.getElementById('calEnabled')?.checked || false,
+          calendars,
+          icalUrl: calendars[0]?.icalUrl || '',
+          remindEnabled: document.getElementById('calRemindEnabled')?.checked !== false,
+          remindMinutesBefore: parseInt(document.getElementById('calRemindMinutes')?.value || '10', 10),
+          dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked !== false,
+          dailySummaryTime: document.getElementById('calDailySummaryTime')?.value || '07:30',
+          targetDevices: calSpeakers.length ? calSpeakers : ['default'],
+          voice: document.getElementById('calVoice')?.value || 'ja-JP-NanamiNeural'
+        }
+      };
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('保存失敗');
+        if (shouldSync) {
+          await loadCalendarEvents();
+        }
+        return true;
+      } catch (err) {
+        showToast('設定保存エラー: ' + err.message, 'error');
+        return false;
+      }
     }
 
     // カレンダー設定保存
@@ -1731,34 +1820,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (calForm) {
       calForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const calSpeakers = getSelectedSpeakers(document.getElementById('calSpeakersContainer'));
-        const calendars = state.calendarData?.calendars || [];
-
-        const payload = {
-          calendar: {
-            enabled: document.getElementById('calEnabled')?.checked || false,
-            calendars,
-            icalUrl: calendars[0]?.icalUrl || '', // 互換性維持用
-            remindEnabled: document.getElementById('calRemindEnabled')?.checked !== false,
-            remindMinutesBefore: parseInt(document.getElementById('calRemindMinutes')?.value || '10', 10),
-            dailySummaryEnabled: document.getElementById('calDailySummaryEnabled')?.checked !== false,
-            dailySummaryTime: document.getElementById('calDailySummaryTime')?.value || '07:30',
-            targetDevices: calSpeakers.length ? calSpeakers : ['default'],
-            voice: document.getElementById('calVoice')?.value || 'ja-JP-NanamiNeural'
-          }
-        };
-
-        try {
-          const res = await fetch('/api/settings', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          if (!res.ok) throw new Error('保存失敗');
+        const ok = await saveCalendarConfigInternal(true);
+        if (ok) {
           showToast('Google カレンダー連携設定を保存しました！', 'success');
-          await loadCalendarEvents();
-        } catch (err) {
-          showToast('設定保存エラー: ' + err.message, 'error');
         }
       });
     }
