@@ -15,7 +15,14 @@ Webブラウザからの直感的な即時発言、定期スケジュール放�
 - **マルチスピーカー対応**: 宅内の Google Home / Nest、Amazon Echo、Apple HomePod を自動検出し、個別または一括で発言。
 - **Web GUI**: 即時発言、ブラウザ試聴プレビュー、送信先スピーカーの選択、直近の発言履歴。
 - **スケジュール管理**: 定期アナウンス（毎朝の挨拶、リマインダーなど）を GUI から登録・編集・管理。
-- **Google カレンダー連携**: 予定開始前のリマインド放送や、毎朝の予定まとめアナウンスを自動実行。
+- **Google カレンダー連携**: 複数カレンダーの同期、予定開始前のリマインド放送や朝の予定まとめアナウンスを自動実行。
+- **おやすみ・会議モード (DND)**:
+  - 曜日・時間帯による定時ミュート（平日日中や深夜）。
+  - カレンダー予定（MTG・会議等）進行中の自動サイレント化（終日予定自動除外）。
+  - ワンタップ即時ミュート（30分/1時間/2時間/本日終了）。
+  - 動作モード選択（完全スキップ、囁き極小音量、終了後まとめアナウンスの保留キュー）。
+  - 書斎や仕事部屋のみミュートできる対象スピーカー選択。
+  - 緊急警報用バイパスフラグ (`urgent: true`)。
 - **Webhook & 外部連携**: cURL、Home Assistant、IFTTT 等から手軽に呼び出し可能。Cloudflare Tunnel による外部アクセス時の認証保護対応。
 
 ---
@@ -122,7 +129,7 @@ curl -X POST http://<サーバーIP>:8080/api/say \
 本ソフトウェアの開発にあたり、以下の素晴らしいオープンソースプロジェクトの知見・ライブラリを活用・参考にしています。各開発者・コミュニティの皆様に感謝いたします。
 
 - **[google-home-voicetext](https://github.com/sikkimtemi/google-home-voicetext-docker)** (Taro TAKAHASHI) - オリジナルの Google Home 音声通知着想
-- **[node-edge-tts](https://github.com/schroffl/node-edge-tts)** - Microsoft Edge 音声合成クライアント
+- **[node-edge-tts](https://github.com/SchneeHertz/node-edge-tts)** - Microsoft Edge 音声合成クライアント
 - **[castv2-client](https://github.com/thibauts/node-castv2-client)** - Google Cast (Chromecast) 通信プロトコル実装
 - **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** / **[alexa-cookie2](https://github.com/Apollon77/alexa-cookie)** - Amazon Echo 制御および認証連携
 - **[pyatv](https://github.com/postlund/pyatv)** - Apple HomePod AirPlay2 ストリーミング

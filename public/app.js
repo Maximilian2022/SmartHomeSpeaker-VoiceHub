@@ -93,6 +93,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     setupWebhookBuilder();
     setupCalendarHandlers();
+    setupDndHandlers();
     await loadServerStatus();
     await Promise.all([
       loadDevices(),
@@ -100,8 +101,14 @@ document.addEventListener('DOMContentLoaded', () => {
       loadSchedules(),
       loadAlexaStatus(),
       loadCalendarSettings(),
-      loadCalendarEvents()
+      loadCalendarEvents(),
+      loadDndStatus(),
+      loadDndSettings(),
+      loadDndHistory()
     ]);
+
+    // DND ステータスを定期ポーリング (15秒ごと)
+    setInterval(loadDndStatus, 15000);
   }
 
   // サーバー状態
@@ -168,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', initialSelected);
       renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
       renderCalendarSpeakers();
+      renderDndSpeakers();
       renderDevicesGrid();
       renderBuilderSpeakers();
       updateBuilderCode();
@@ -522,6 +530,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    // ヘッダーの DND チップクリックで DND タブへ移動
+    document.getElementById('headerDndChip')?.addEventListener('click', () => {
+      document.getElementById('btnTabDnd')?.click();
+    });
+
     // クイックプリセットクリック
     el.presetBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -623,11 +636,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const voice = el.sayVoiceSelect.value;
         const rate = (parseInt(el.sayRateRange.value) >= 0 ? '+' : '') + el.sayRateRange.value + '%';
         const pitch = (parseInt(el.sayPitchRange.value) >= 0 ? '+' : '') + el.sayPitchRange.value + 'Hz';
+        const urgent = document.getElementById('sayUrgentCheck')?.checked || false;
 
         const res = await fetch('/api/say', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, devices: selectedSpeakers, voice, rate, pitch })
+          body: JSON.stringify({
+            text,
+            devices: selectedSpeakers,
+            voice,
+            rate,
+            pitch,
+            urgent,
+            bypassDnd: urgent
+          })
         });
 
         if (!res.ok) {
@@ -636,13 +658,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const data = await res.json();
-        const successCount = data.results?.filter(r => r.status === 'success').length || 0;
-        showToast(`${selectedSpeakers.length} 台のスピーカーへ送信完了 (${successCount} 台成功)！`, 'success');
+        if (data.dndSuppressed) {
+          showToast('【DND発動中】おやすみ・会議モード中のため発話を抑制しました', 'info');
+          loadDndHistory();
+        } else {
+          const successCount = data.results?.filter(r => r.status === 'success').length || 0;
+          showToast(`${selectedSpeakers.length} 台のスピーカーへ送信完了 (${successCount} 台成功)！`, 'success');
+        }
 
         // 履歴に追加
         state.history.unshift({
           text,
-          status: 'success',
+          status: data.dndSuppressed ? 'suppressed' : 'success',
           timestamp: new Date().toISOString()
         });
         renderHistoryList();
@@ -1865,6 +1892,495 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('テスト発声エラー: ' + err.message, 'error');
       } finally {
         btn.disabled = false;
+      }
+    });
+  }
+
+  // ================= 5.5 おやすみ・会議モード (DND) =================
+  async function loadDndStatus() {
+    try {
+      const res = await fetch('/api/dnd/status');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.dndStatus = data;
+      renderDndStatus();
+    } catch (e) {
+      console.warn('DNDステータス取得失敗:', e);
+    }
+  }
+
+  function renderDndStatus() {
+    const s = state.dndStatus || {};
+    const headerChip = document.getElementById('headerDndChip');
+    const headerText = document.getElementById('headerDndText');
+    const banner = document.getElementById('dndStatusBanner');
+    const dot = document.getElementById('dndStatusDot');
+    const title = document.getElementById('dndStatusTitle');
+    const subtitle = document.getElementById('dndStatusSubtitle');
+    const queueBadge = document.getElementById('dndQueueBadge');
+    const queueCount = document.getElementById('dndQueueCount');
+    const btnCancel = document.getElementById('btnCancelQuickDnd');
+    const activeCalBox = document.getElementById('dndActiveCalendarBox');
+
+    // 1. ヘッダー表示
+    if (headerText) {
+      if (s.isActive) {
+        let reasonShort = s.reason ? s.reason.replace('カレンダー予定中: ', '📅').replace('定時サイレント: ', '⏰').replace('手動サイレント (即時)', '🔇手動') : '🔇発動中';
+        if (reasonShort.length > 14) reasonShort = reasonShort.slice(0, 14) + '...';
+        headerText.textContent = `DND: ${reasonShort}`;
+        if (headerChip) {
+          headerChip.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+          headerChip.style.color = '#f87171';
+        }
+      } else {
+        headerText.textContent = s.enabled ? 'DND: 監視中' : 'DND: 無効';
+        if (headerChip) {
+          headerChip.style.borderColor = '';
+          headerChip.style.color = '';
+        }
+      }
+    }
+
+    // 2. バナー表示
+    if (banner && title && subtitle) {
+      if (s.isActive) {
+        banner.style.background = 'rgba(239, 68, 68, 0.12)';
+        banner.style.borderColor = 'rgba(239, 68, 68, 0.35)';
+        if (dot) {
+          dot.style.background = '#ef4444';
+          dot.style.boxShadow = '0 0 10px #ef4444';
+        }
+        title.innerHTML = `🔇 サイレント発動中: <span style="color:#f87171;">${escapeHtml(s.reason || 'DNDアクティブ')}</span>`;
+        let subText = `現在スピーカーは【${s.action === 'whisper' ? `囁き音量 (${s.whisperVolume || 10}%)` : s.action === 'queue' ? '保留キュー' : '完全スキップ'}】に設定されています。`;
+        if (s.until) {
+          const uDate = new Date(s.until);
+          subText += ` 解除予定: ${uDate.toLocaleTimeString()}`;
+        }
+        subtitle.textContent = subText;
+        if (btnCancel) btnCancel.style.display = 'inline-block';
+      } else {
+        banner.style.background = 'rgba(16, 185, 129, 0.1)';
+        banner.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+        if (dot) {
+          dot.style.background = '#10b981';
+          dot.style.boxShadow = '0 0 10px #10b981';
+        }
+        title.textContent = s.enabled ? '🟢 現在は通常モードです' : '⚪ DND機能は全体無効です';
+        subtitle.textContent = s.enabled 
+          ? '通知やアナウンスは通常音量でスピーカーから再生されます（予定や時間帯に合わせて自動切替）'
+          : 'スイッチをONにすると、定時やカレンダー連携での静音化が有効になります';
+        if (btnCancel) btnCancel.style.display = 'none';
+      }
+    }
+
+    // 3. 保留キュー件数
+    if (queueBadge && queueCount) {
+      if (s.queuedCount > 0) {
+        queueBadge.style.display = 'inline-block';
+        queueCount.textContent = s.queuedCount;
+      } else {
+        queueBadge.style.display = 'none';
+      }
+    }
+
+    // 4. カレンダー進行中予定プレビュー
+    if (activeCalBox) {
+      if (s.activeCalendarEvent) {
+        const ev = s.activeCalendarEvent;
+        const sTime = ev.start ? new Date(ev.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const eTime = ev.end ? new Date(ev.end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        activeCalBox.innerHTML = `
+          <div style="display:flex; align-items:center; gap:8px; color:#f87171;">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444;"></span>
+            <strong>進行中の予定を検知中:</strong> ${escapeHtml(ev.summary || '予定あり')} (${sTime} 〜 ${eTime})
+          </div>
+        `;
+      } else {
+        activeCalBox.innerHTML = '現在進行中の会議・カレンダー予定はありません';
+      }
+    }
+  }
+
+  async function loadDndSettings() {
+    try {
+      const res = await fetch('/api/settings');
+      if (!res.ok) return;
+      const data = await res.json();
+      const dnd = data.dnd || {};
+      state.dndConfig = dnd;
+
+      // マスター
+      const masterEl = document.getElementById('dndMasterEnabled');
+      if (masterEl) masterEl.checked = dnd.enabled !== false;
+
+      // カレンダー
+      const calEl = document.getElementById('dndCalendarEnabled');
+      if (calEl) calEl.checked = !!dnd.calendarEnabled;
+      const kwEl = document.getElementById('dndCalendarKeywords');
+      if (kwEl) kwEl.value = dnd.calendarKeywords || '';
+
+      // スケジュール
+      const schedEl = document.getElementById('dndScheduleEnabled');
+      if (schedEl) schedEl.checked = !!dnd.scheduleEnabled;
+      renderDndSchedules();
+
+      // アクションラジオ
+      const actionRadio = document.querySelector(`input[name="dndAction"][value="${dnd.action || 'skip'}"]`);
+      if (actionRadio) actionRadio.checked = true;
+      const whisperWrapper = document.getElementById('dndWhisperWrapper');
+      if (whisperWrapper) whisperWrapper.style.display = (dnd.action === 'whisper') ? 'block' : 'none';
+      const whisperVolEl = document.getElementById('dndWhisperVolume');
+      const whisperDispEl = document.getElementById('dndWhisperDisplay');
+      if (whisperVolEl) whisperVolEl.value = dnd.whisperVolume || 10;
+      if (whisperDispEl) whisperDispEl.textContent = `${dnd.whisperVolume || 10}%`;
+
+      // スコープラジオ
+      const scopeRadio = document.querySelector(`input[name="dndTargetScope"][value="${dnd.targetScope || 'all'}"]`);
+      if (scopeRadio) scopeRadio.checked = true;
+      const spkWrapper = document.getElementById('dndSpeakersWrapper');
+      if (spkWrapper) spkWrapper.style.display = (dnd.targetScope === 'specific') ? 'block' : 'none';
+      renderDndSpeakers(dnd.targetDevices || []);
+    } catch (e) {
+      console.warn('DND設定取得失敗:', e);
+    }
+  }
+
+  function renderDndSchedules() {
+    const container = document.getElementById('dndScheduleList');
+    if (!container) return;
+    const list = state.dndConfig?.schedules || [];
+
+    if (!list.length) {
+      container.innerHTML = `<div class="empty-msg" style="padding:10px 0;">登録された定時ルールはありません</div>`;
+      return;
+    }
+
+    const WEEKDAYS_MAP = { '0': '日', '1': '月', '2': '火', '3': '水', '4': '木', '5': '金', '6': '土' };
+
+    let html = '';
+    list.forEach(item => {
+      const checked = item.enabled !== false ? 'checked' : '';
+      const daysStr = (item.days || []).map(d => WEEKDAYS_MAP[d] || d).join('・') || '全日';
+
+      html += `
+        <div class="calendar-item" style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:8px; margin-bottom:8px;">
+          <div style="display:flex; align-items:center; gap:12px; min-width:0; flex:1;">
+            <label class="switch">
+              <input type="checkbox" class="dnd-sched-toggle" data-id="${escapeHtml(item.id)}" ${checked}>
+              <span class="slider"></span>
+            </label>
+            <div>
+              <strong style="font-size:0.9rem;">${escapeHtml(item.name || '定時サイレント')}</strong>
+              <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">
+                毎週 ${escapeHtml(daysStr)} ｜ ${escapeHtml(item.startTime || '00:00')} 〜 ${escapeHtml(item.endTime || '23:59')}
+              </div>
+            </div>
+          </div>
+          <button type="button" class="btn-icon danger btn-delete-dnd-sched" data-id="${escapeHtml(item.id)}" title="削除">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+
+    // トグル切り替え
+    container.querySelectorAll('.dnd-sched-toggle').forEach(chk => {
+      chk.addEventListener('change', async (e) => {
+        const id = e.target.getAttribute('data-id');
+        const found = state.dndConfig.schedules.find(s => s.id === id);
+        if (found) {
+          found.enabled = e.target.checked;
+          await saveDndSettingsInternal();
+          showToast(`「${found.name}」の有効状態を更新しました`, 'success');
+          loadDndStatus();
+        }
+      });
+    });
+
+    // 削除
+    container.querySelectorAll('.btn-delete-dnd-sched').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = btn.getAttribute('data-id');
+        const found = state.dndConfig.schedules.find(s => s.id === id);
+        const name = found ? found.name : 'ルール';
+        if (confirm(`「${name}」を削除してもよろしいですか？`)) {
+          state.dndConfig.schedules = state.dndConfig.schedules.filter(s => s.id !== id);
+          renderDndSchedules();
+          await saveDndSettingsInternal();
+          showToast(`「${name}」を削除しました`, 'success');
+          loadDndStatus();
+        }
+      });
+    });
+  }
+
+  function renderDndSpeakers(selectedList) {
+    const container = document.getElementById('dndSpeakersContainer');
+    if (!container) return;
+    const current = selectedList || state.dndConfig?.targetDevices || [];
+    renderSpeakersCheckboxes(container, 'dndSpeaker', current);
+  }
+
+  async function loadDndHistory() {
+    try {
+      const res = await fetch('/api/dnd/history');
+      if (!res.ok) return;
+      const data = await res.json();
+      state.dndHistory = data;
+      renderDndHistory();
+    } catch (e) {
+      console.warn('DND履歴取得失敗:', e);
+    }
+  }
+
+  function renderDndHistory() {
+    const container = document.getElementById('dndHistoryList');
+    if (!container) return;
+    const list = state.dndHistory || [];
+
+    if (!list.length) {
+      container.innerHTML = `<li class="empty-msg">サイレント履歴はまだありません</li>`;
+      return;
+    }
+
+    let html = '';
+    list.forEach(item => {
+      const t = new Date(item.timestamp).toLocaleTimeString();
+      let actionBadge = `<span style="font-size:0.75rem; padding:2px 8px; border-radius:999px; background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3);">${escapeHtml(item.handledAs || 'スキップ')}</span>`;
+      if (item.action === 'whisper') {
+        actionBadge = `<span style="font-size:0.75rem; padding:2px 8px; border-radius:999px; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">${escapeHtml(item.handledAs || '極小音量')}</span>`;
+      } else if (item.action === 'queue') {
+        actionBadge = `<span style="font-size:0.75rem; padding:2px 8px; border-radius:999px; background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3);">${escapeHtml(item.handledAs || '保留キュー')}</span>`;
+      }
+
+      html += `
+        <li class="history-item" style="padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.8rem; color:var(--text-muted); font-family:var(--font-mono);">${t}</span>
+              ${actionBadge}
+              <span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:1px 6px; border-radius:4px;">理由: ${escapeHtml(item.reason || '')}</span>
+            </div>
+            <span style="font-size:0.8rem; color:var(--text-muted);">${escapeHtml(item.targetDevice || '全室')}</span>
+          </div>
+          <div style="font-size:0.9rem; color:var(--text-color); margin-top:2px;">${escapeHtml(item.text || '')}</div>
+        </li>
+      `;
+    });
+
+    container.innerHTML = html;
+  }
+
+  async function saveDndSettingsInternal() {
+    const spk = getSelectedSpeakers(document.getElementById('dndSpeakersContainer'));
+    const dnd = state.dndConfig || {};
+
+    const payload = {
+      dnd: {
+        enabled: document.getElementById('dndMasterEnabled')?.checked !== false,
+        calendarEnabled: document.getElementById('dndCalendarEnabled')?.checked || false,
+        calendarKeywords: document.getElementById('dndCalendarKeywords')?.value || '',
+        scheduleEnabled: document.getElementById('dndScheduleEnabled')?.checked || false,
+        schedules: dnd.schedules || [],
+        action: document.querySelector('input[name="dndAction"]:checked')?.value || 'skip',
+        whisperVolume: parseInt(document.getElementById('dndWhisperVolume')?.value || '10', 10),
+        targetScope: document.querySelector('input[name="dndTargetScope"]:checked')?.value || 'all',
+        targetDevices: spk
+      }
+    };
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('保存失敗');
+      const updated = await res.json();
+      state.dndConfig = updated.dnd || payload.dnd;
+      return true;
+    } catch (err) {
+      showToast('DND設定保存エラー: ' + err.message, 'error');
+      return false;
+    }
+  }
+
+  function setupDndHandlers() {
+    // マスター切り替え
+    document.getElementById('dndMasterEnabled')?.addEventListener('change', async () => {
+      await saveDndSettingsInternal();
+      showToast('おやすみ・会議モードの全体設定を更新しました', 'success');
+      loadDndStatus();
+    });
+
+    // カレンダー連動トグル
+    document.getElementById('dndCalendarEnabled')?.addEventListener('change', async () => {
+      await saveDndSettingsInternal();
+      showToast('カレンダー予定連動の有効状態を更新しました', 'success');
+      loadDndStatus();
+    });
+
+    // 定時スケジュールトグル
+    document.getElementById('dndScheduleEnabled')?.addEventListener('change', async () => {
+      await saveDndSettingsInternal();
+      showToast('定時スケジュールの有効状態を更新しました', 'success');
+      loadDndStatus();
+    });
+
+    // ワンタップ即時ミュートボタン
+    document.querySelectorAll('.btn-quick-dnd').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const val = btn.getAttribute('data-minutes');
+        let minutes = 30;
+        if (val === 'today') {
+          const now = new Date();
+          const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+          minutes = Math.max(1, Math.round((endOfDay.getTime() - now.getTime()) / 60000));
+        } else {
+          minutes = parseInt(val, 10) || 30;
+        }
+
+        try {
+          const res = await fetch('/api/dnd/quick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ minutes, reason: `ワンタップ即時サイレント (${val === 'today' ? '本日中' : `${val}分`})` })
+          });
+          if (!res.ok) throw new Error('設定失敗');
+          showToast(`【サイレント発動】${val === 'today' ? '本日終了まで' : `${minutes}分間`}ミュートを開始しました`, 'success');
+          await loadDndStatus();
+        } catch (e) {
+          showToast('即時ミュート設定エラー: ' + e.message, 'error');
+        }
+      });
+    });
+
+    // サイレント即時解除
+    document.getElementById('btnCancelQuickDnd')?.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/dnd/quick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ minutes: 0 })
+        });
+        if (!res.ok) throw new Error('解除失敗');
+        showToast('サイレントを解除し、通常モードに復帰しました', 'success');
+        await loadDndStatus();
+      } catch (e) {
+        showToast('サイレント解除エラー: ' + e.message, 'error');
+      }
+    });
+
+    // 定時サイレント追加インラインフォーム開閉
+    const btnShowAdd = document.getElementById('btnShowAddDndSched');
+    const formEl = document.getElementById('addDndSchedInlineForm');
+    const btnCancelAdd = document.getElementById('btnCancelAddDndSched');
+    const btnConfirmAdd = document.getElementById('btnAddDndSchedConfirm');
+
+    if (btnShowAdd && formEl) {
+      btnShowAdd.addEventListener('click', () => {
+        formEl.style.display = formEl.style.display === 'none' ? 'block' : 'none';
+        if (formEl.style.display === 'block') {
+          document.getElementById('newDndSchedName')?.focus();
+        }
+      });
+    }
+
+    if (btnCancelAdd && formEl) {
+      btnCancelAdd.addEventListener('click', () => {
+        formEl.style.display = 'none';
+      });
+    }
+
+    // 定時サイレント追加の確定
+    if (btnConfirmAdd) {
+      btnConfirmAdd.addEventListener('click', async () => {
+        const name = document.getElementById('newDndSchedName')?.value.trim() || '定時サイレント';
+        const sTime = document.getElementById('newDndStartTime')?.value || '09:00';
+        const eTime = document.getElementById('newDndEndTime')?.value || '18:00';
+        const days = Array.from(document.querySelectorAll('input[name="newDndDay"]:checked')).map(c => c.value);
+
+        if (!days.length) {
+          showToast('適用する曜日を1日以上選択してください', 'error');
+          return;
+        }
+
+        if (!state.dndConfig) state.dndConfig = { schedules: [] };
+        if (!state.dndConfig.schedules) state.dndConfig.schedules = [];
+
+        state.dndConfig.schedules.push({
+          id: 'dnd_sched_' + Date.now(),
+          name,
+          days,
+          startTime: sTime,
+          endTime: eTime,
+          enabled: true
+        });
+
+        renderDndSchedules();
+        formEl.style.display = 'none';
+        document.getElementById('newDndSchedName').value = '';
+
+        const ok = await saveDndSettingsInternal();
+        if (ok) {
+          showToast(`定時ルール「${name}」を追加・保存しました！`, 'success');
+          loadDndStatus();
+        }
+      });
+    }
+
+    // アクションラジオ切り替え (囁き音量スライダー連動)
+    document.querySelectorAll('input[name="dndAction"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const whisperWrapper = document.getElementById('dndWhisperWrapper');
+        if (whisperWrapper) {
+          whisperWrapper.style.display = (e.target.value === 'whisper') ? 'block' : 'none';
+        }
+      });
+    });
+
+    // 囁き音量スライダー値表示
+    const whisperVol = document.getElementById('dndWhisperVolume');
+    const whisperDisp = document.getElementById('dndWhisperDisplay');
+    if (whisperVol && whisperDisp) {
+      whisperVol.addEventListener('input', (e) => {
+        whisperDisp.textContent = `${e.target.value}%`;
+      });
+    }
+
+    // スコープラジオ切り替え (スピーカー一覧連動)
+    document.querySelectorAll('input[name="dndTargetScope"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const spkWrapper = document.getElementById('dndSpeakersWrapper');
+        if (spkWrapper) {
+          spkWrapper.style.display = (e.target.value === 'specific') ? 'block' : 'none';
+        }
+      });
+    });
+
+    // DND設定フォーム保存
+    document.getElementById('dndSettingsForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const ok = await saveDndSettingsInternal();
+      if (ok) {
+        showToast('おやすみ・会議モード (DND) 設定を保存しました！', 'success');
+        loadDndStatus();
+      }
+    });
+
+    // 履歴クリア
+    document.getElementById('btnClearDndHistory')?.addEventListener('click', async () => {
+      if (confirm('サイレント履歴をクリアしてもよろしいですか？')) {
+        try {
+          await fetch('/api/dnd/history', { method: 'DELETE' });
+          state.dndHistory = [];
+          renderDndHistory();
+          showToast('サイレント履歴をクリアしました', 'success');
+        } catch (e) {
+          showToast('履歴クリア失敗: ' + e.message, 'error');
+        }
       }
     });
   }

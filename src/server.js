@@ -10,6 +10,7 @@ const alexaManager = require('./alexa');
 const homepodManager = require('./homepod');
 const settingsManager = require('./settings');
 const calendarManager = require('./calendar');
+const dndManager = require('./dnd');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
@@ -124,10 +125,76 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     }
   }
 
+  // DND (おやすみ / 会議モード) 判定とフィルタリング
+  const activeTargets = [];
+  let isWhisperGlobal = false;
+  let whisperVolGlobal = 10;
+
+  for (const dev of resolvedTargets) {
+    const dndCheck = dndManager.checkDndStatus(dev.ip, options);
+    if (!dndCheck.isDnd) {
+      activeTargets.push(dev);
+    } else {
+      // DND 発動中！
+      if (dndCheck.action === 'whisper') {
+        isWhisperGlobal = true;
+        whisperVolGlobal = dndCheck.whisperVolume || 10;
+        activeTargets.push(dev);
+        dndManager.logEvent({
+          text,
+          targetDevice: dev.name || dev.ip,
+          reason: dndCheck.reason,
+          action: 'whisper',
+          handledAs: `極小音量 (${whisperVolGlobal}%)`
+        });
+      } else if (dndCheck.action === 'queue') {
+        dndManager.enqueue({
+          text,
+          targetDevice: dev.ip,
+          options,
+          reason: dndCheck.reason
+        });
+        dndManager.logEvent({
+          text,
+          targetDevice: dev.name || dev.ip,
+          reason: dndCheck.reason,
+          action: 'queue',
+          handledAs: '保留キューへ追加'
+        });
+      } else {
+        // 'skip'
+        console.log(`[DND] 発話をスキップしました (送信先: ${dev.name || dev.ip}, 理由: ${dndCheck.reason})`);
+        dndManager.logEvent({
+          text,
+          targetDevice: dev.name || dev.ip,
+          reason: dndCheck.reason,
+          action: 'skip',
+          handledAs: '完全スキップ (無音)'
+        });
+      }
+    }
+  }
+
+  // 送信先が 0 台になった場合は早期リターン
+  if (activeTargets.length === 0) {
+    return {
+      success: true,
+      dndSuppressed: true,
+      message: 'おやすみ・会議モード (DND) 発動中のため発話を抑制しました',
+      text,
+      results: []
+    };
+  }
+
+  // 極小音量モードの場合は音量レベルを上書き (0.01〜1.0)
+  const effectiveVolumeLevel = isWhisperGlobal 
+    ? (whisperVolGlobal / 100) 
+    : options.volumeLevel;
+
   // Google Home 向け、Alexa 向け、HomePod 向けを分類
-  const googleDevices = resolvedTargets.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod'));
-  const alexaDevices = resolvedTargets.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
-  const homepodDevices = resolvedTargets.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
+  const googleDevices = activeTargets.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod'));
+  const alexaDevices = activeTargets.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
+  const homepodDevices = activeTargets.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
 
   const dispatchPromises = [];
   let audioUrl = null;
@@ -147,9 +214,9 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   // Google Home デバイスへ並行キャスト
   if (googleDevices.length > 0 && sharedSpeech) {
     for (const dev of googleDevices) {
-      console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}`);
+      console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}${isWhisperGlobal ? ` [DND極小音量: ${whisperVolGlobal}%]` : ''}`);
       dispatchPromises.push(
-        castManager.playMedia(dev.ip, audioUrl, { volumeLevel: options.volumeLevel })
+        castManager.playMedia(dev.ip, audioUrl, { volumeLevel: effectiveVolumeLevel })
           .then(res => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'success', result: res }))
           .catch(err => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'error', error: err.message }))
       );
@@ -205,6 +272,15 @@ schedulerManager.setExecutor(async (text, options) => {
 calendarManager.setExecutor(async (text, options) => {
   const targets = options.deviceIps || (options.deviceIp ? [options.deviceIp] : []);
   return await speakToMultipleDevices(text, targets, options);
+});
+
+// DND マネージャーの保留キュー消化エンジンを紐付け
+dndManager.setSpeakerExecutor(async (item) => {
+  const targets = item.targetDevice ? [item.targetDevice] : [];
+  return await speakToMultipleDevices(item.text, targets, {
+    ...(item.options || {}),
+    bypassDnd: true
+  });
 });
 
 // 初期カレンダーイベントの同期開始
@@ -269,12 +345,17 @@ app.post('/api/say', requireWebhookAuth, async (req, res) => {
   }
 
   try {
+    const isUrgent = req.body.urgent === true || req.body.urgent === 'true' || req.query.urgent === 'true' ||
+                     req.body.bypassDnd === true || req.body.bypassDnd === 'true' || req.query.bypassDnd === 'true';
+
     const result = await speakToMultipleDevices(text, targets, {
       voice: req.body.voice || req.query.voice,
       rate: req.body.rate || req.query.rate,
       pitch: req.body.pitch || req.query.pitch,
       volume: req.body.volume || req.query.volume,
-      volumeLevel: req.body.volumeLevel !== undefined ? parseFloat(req.body.volumeLevel) : undefined
+      volumeLevel: req.body.volumeLevel !== undefined ? parseFloat(req.body.volumeLevel) : undefined,
+      urgent: isUrgent,
+      bypassDnd: isUrgent
     });
 
     res.json(result);
@@ -347,6 +428,27 @@ app.post('/api/calendar/summary', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// 4. おやすみ・会議モード (DND) API
+app.get('/api/dnd/status', (req, res) => {
+  res.json(dndManager.getGlobalStatus());
+});
+
+app.post('/api/dnd/quick', (req, res) => {
+  const minutes = parseInt(req.body.minutes ?? 30, 10);
+  const reason = req.body.reason || '手動サイレント (即時)';
+  const result = dndManager.setQuickDnd(minutes, reason);
+  res.json(result);
+});
+
+app.get('/api/dnd/history', (req, res) => {
+  res.json(dndManager.getHistory());
+});
+
+app.delete('/api/dnd/history', (req, res) => {
+  dndManager.clearHistory();
+  res.json({ success: true });
 });
 
 // 4. ブラウザでの事前試聴プレビュー用

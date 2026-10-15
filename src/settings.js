@@ -22,6 +22,36 @@ const DEFAULT_SETTINGS = {
     targetDevices: ['default'],
     voice: 'ja-JP-NanamiNeural',
     volumeLevel: ''
+  },
+  dnd: {
+    enabled: true,
+    scheduleEnabled: false,
+    schedules: [
+      {
+        id: 'dnd_work',
+        name: '平日業務時間',
+        days: ['1', '2', '3', '4', '5'],
+        startTime: '09:00',
+        endTime: '18:00',
+        enabled: true
+      },
+      {
+        id: 'dnd_night',
+        name: '深夜帯',
+        days: ['0', '1', '2', '3', '4', '5', '6'],
+        startTime: '23:00',
+        endTime: '07:00',
+        enabled: false
+      }
+    ],
+    calendarEnabled: true,
+    calendarKeywords: 'MTG, 会議, Zoom, Teams, Meet, 打ち合わせ, 商談, 集中',
+    manualUntil: null,
+    manualReason: '',
+    targetScope: 'all', // 'all' | 'specific'
+    targetDevices: [],
+    action: 'skip', // 'skip' | 'whisper' | 'queue'
+    whisperVolume: 10
   }
 };
 
@@ -42,6 +72,10 @@ class SettingsManager {
           calendar: {
             ...DEFAULT_SETTINGS.calendar,
             ...(parsed.calendar || {})
+          },
+          dnd: {
+            ...DEFAULT_SETTINGS.dnd,
+            ...(parsed.dnd || {})
           }
         };
 
@@ -59,6 +93,11 @@ class SettingsManager {
         }
         if (this.settings.calendar.remindEnabled === undefined) {
           this.settings.calendar.remindEnabled = (parseInt(this.settings.calendar.remindMinutesBefore, 10) || 0) > 0;
+        }
+
+        // DND スケジュール配列の確認
+        if (!Array.isArray(this.settings.dnd.schedules)) {
+          this.settings.dnd.schedules = [...DEFAULT_SETTINGS.dnd.schedules];
         }
       } else {
         this.settings = { ...DEFAULT_SETTINGS };
@@ -93,6 +132,12 @@ class SettingsManager {
       this.settings.calendar = {
         ...this.settings.calendar,
         ...updates.calendar
+      };
+    }
+    if (updates.dnd) {
+      this.settings.dnd = {
+        ...this.settings.dnd,
+        ...updates.dnd
       };
     }
     this.save();
