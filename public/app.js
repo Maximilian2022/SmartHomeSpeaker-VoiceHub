@@ -52,6 +52,10 @@ document.addEventListener('DOMContentLoaded', () => {
     schedWeekdayChecks: document.querySelectorAll('input[name="schedDay"]'),
     schedTime: document.getElementById('schedTime'),
     schedVoice: document.getElementById('schedVoice'),
+    schedRateRange: document.getElementById('schedRateRange'),
+    schedRateValueDisplay: document.getElementById('schedRateValueDisplay'),
+    schedPitchRange: document.getElementById('schedPitchRange'),
+    schedPitchValueDisplay: document.getElementById('schedPitchValueDisplay'),
     schedSpeakersContainer: document.getElementById('schedSpeakersContainer'),
     // デバイス
     devicesGrid: document.getElementById('devicesGrid'),

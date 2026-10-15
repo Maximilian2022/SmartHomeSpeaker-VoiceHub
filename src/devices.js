@@ -6,6 +6,24 @@ const settingsManager = require('./settings');
 // 事前に検出確認済みのデバイス一覧（空配列にして mDNS / Avahi による完全自動検出とする）
 const KNOWN_DEVICES = [];
 
+/**
+ * Avahi の \DDD (10進数バイトエスケープ) を UTF-8 デコード
+ * 例: \233\131\168\229\177\139 -> "部屋"
+ */
+function decodeAvahiString(str) {
+  if (!str) return '';
+  const bytes = [];
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === '\\' && i + 3 < str.length && /^\d{3}$/.test(str.slice(i + 1, i + 4))) {
+      bytes.push(parseInt(str.slice(i + 1, i + 4), 10));
+      i += 3;
+    } else {
+      bytes.push(str.charCodeAt(i));
+    }
+  }
+  return Buffer.from(bytes).toString('utf8');
+}
+
 class DeviceManager {
   constructor() {
     this.devices = new Map();
@@ -122,16 +140,29 @@ class DeviceManager {
         const parts = line.split(';');
         if (parts[0] === '=' && parts[2] === 'IPv4' && parts[7]) {
           const ip = parts[7];
-          if (this.devices.has(ip)) {
-            continue;
-          }
-
           const txtRaw = parts[9] || '';
-          let name = parts[3] || `Cast-${ip}`;
+          let name = `Cast-${ip}`;
           let model = 'Google Cast';
 
+          // Google Cast の親しみやすい名前 (fn=...) を抽出してデコード
+          const fnMatch = txtRaw.match(/"fn=([^"]+)"/);
+          if (fnMatch) {
+            name = decodeAvahiString(fnMatch[1]);
+          } else if (parts[3]) {
+            name = decodeAvahiString(parts[3]);
+          }
+
           const mdMatch = txtRaw.match(/"md=([^"]+)"/);
-          if (mdMatch) model = mdMatch[1];
+          if (mdMatch) {
+            model = decodeAvahiString(mdMatch[1]);
+          }
+
+          if (this.devices.has(ip)) {
+            // 既に存在していても Friendly Name が取れていれば更新
+            const existing = this.devices.get(ip);
+            if (fnMatch) existing.name = name;
+            continue;
+          }
 
           this.devices.set(ip, {
             id: `dev_${ip.replace(/\./g, '_')}`,

@@ -670,18 +670,29 @@
           </div>
 
           <!-- 発言時刻ピッカー -->
-          <div class="form-row">
-            <div class="form-group flex-1">
-              <label for="schedTime" class="form-label">発言時刻 *</label>
-              <input type="time" id="schedTime" class="form-input" required value="07:00">
-            </div>
+          <div class="form-group">
+            <label for="schedTime" class="form-label">発言時刻 *</label>
+            <input type="time" id="schedTime" class="form-input" required value="07:00">
+          </div>
 
-            <div class="form-group flex-1">
+          <!-- 音声オプション (話者・速度・音高) -->
+          <div class="settings-grid" style="margin-bottom: 16px;">
+            <div class="form-group">
               <label for="schedVoice" class="form-label">話者 (声色)</label>
               <select id="schedVoice" class="form-select">
                 <option value="ja-JP-NanamiNeural">七海 (Nanami) - 女性</option>
                 <option value="ja-JP-KeitaNeural">圭太 (Keita) - 男性</option>
               </select>
+            </div>
+
+            <div class="form-group">
+              <label for="schedRateRange" class="form-label">話速: <span id="schedRateValueDisplay">標準 (0%)</span></label>
+              <input type="range" id="schedRateRange" min="-30" max="50" step="5" value="0" class="form-range">
+            </div>
+
+            <div class="form-group">
+              <label for="schedPitchRange" class="form-label">音高: <span id="schedPitchValueDisplay">標準 (0Hz)</span></label>
+              <input type="range" id="schedPitchRange" min="-20" max="20" step="2" value="0" class="form-range">
             </div>
           </div>
 

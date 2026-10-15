@@ -168,7 +168,9 @@ class SchedulerManager {
             if (this.executor) {
               await this.executor(sched.text, {
                 deviceIps: targets.map(d => (d === 'default' ? undefined : d)).filter(Boolean),
-                voice: sched.voice
+                voice: sched.voice,
+                rate: sched.rate,
+                pitch: sched.pitch
               });
             }
             this.addHistory({
@@ -257,6 +259,8 @@ class SchedulerManager {
       text: data.text,
       deviceIps,
       voice: data.voice || 'ja-JP-NanamiNeural',
+      rate: data.rate || '+0%',
+      pitch: data.pitch || '+0Hz',
       createdAt: new Date().toISOString()
     };
 
@@ -342,7 +346,9 @@ class SchedulerManager {
 
     return await this.executor(sched.text, {
       deviceIps: targets.map(d => (d === 'default' ? undefined : d)).filter(Boolean),
-      voice: sched.voice
+      voice: sched.voice,
+      rate: sched.rate,
+      pitch: sched.pitch
     });
   }
 }
