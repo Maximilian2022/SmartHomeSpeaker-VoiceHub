@@ -13,14 +13,14 @@ class CastManager {
       let isSettled = false;
       const client = new Client();
 
-      // 12秒タイムアウト設定
+      // 5秒タイムアウト設定 (応答のないデバイスによる全体の遅延を防止)
       const timer = setTimeout(() => {
         if (!isSettled) {
           isSettled = true;
           try { client.close(); } catch (e) {}
           reject(new Error(`Google Cast 接続タイムアウト (${host})`));
         }
-      }, 12000);
+      }, 5000);
 
       const cleanupAndResolve = (result) => {
         if (!isSettled) {

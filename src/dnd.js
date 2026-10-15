@@ -309,7 +309,7 @@ class DndManager {
   }
 
   /**
-   * キューに溜まっている発話を順次再生
+   * キューに溜まっている発話を順次再生 (前の通知が完全に再生終了するまで待機)
    */
   async checkAndFlushQueue() {
     if (this.queue.length === 0 || !this.speakerExecutor) return;
@@ -317,30 +317,52 @@ class DndManager {
     const items = [...this.queue];
     this.queue = [];
 
-    console.log(`[DND] 保留されていた ${items.length} 件の通知を再生します`);
+    console.log(`[DND] 保留されていた ${items.length} 件の通知を順番に再生開始します`);
 
     // 冒頭アナウンス
     try {
-      await this.speakerExecutor({
-        text: `会議・おやすみモードが終了しました。保留されていた通知が ${items.length} 件あります。`,
-        targetDevice: items[0].targetDevice
+      const firstTargets = items[0].targetDevices || (items[0].targetDevice ? [items[0].targetDevice] : []);
+      const announceText = `会議・おやすみモードが終了しました。保留されていた通知が ${items.length} 件あります。`;
+      const announceRes = await this.speakerExecutor({
+        text: announceText,
+        targetDevices: firstTargets,
+        options: {
+          source: 'dnd_queue',
+          sourceLabel: 'DND保留アナウンス',
+          clientName: 'DNDシステム'
+        }
       });
-      await new Promise(r => setTimeout(r, 1500));
-    } catch (e) {}
+      // 冒頭アナウンスの実際の音声秒数 (または文字数推定) + 1.5秒の余白を確実に待機！
+      const announceDuration = (announceRes?.duration && announceRes.duration > 0)
+        ? announceRes.duration
+        : Math.max(4.5, (announceText.length / 4.8) + 2.0);
+      const waitMs = Math.ceil((announceDuration + 1.5) * 1000);
+      console.log(`[DND] 冒頭アナウンス再生中... (${(announceDuration).toFixed(1)}秒 + 1.5秒待機)`);
+      await new Promise(r => setTimeout(r, waitMs));
+    } catch (e) {
+      console.warn('[DND] 冒頭アナウンス失敗:', e.message);
+    }
 
-    // 各アイテムを再生
-    for (const item of items) {
+    // 各アイテムを順番に再生（前の音声が完全に終わりきるまで待つ）
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       try {
-        await this.speakerExecutor({
-          text: item.text,
-          targetDevice: item.targetDevice,
-          options: item.options
-        });
-        await new Promise(r => setTimeout(r, 1200));
+        console.log(`[DND] 保留通知 [${i + 1}/${items.length}] 再生中: "${String(item.text).slice(0, 30)}..."`);
+        const itemRes = await this.speakerExecutor(item);
+
+        // 音声の実際の秒数 (または文字数推定) + 1.8秒のインターバルを確実に待機！
+        const itemDuration = (itemRes?.duration && itemRes.duration > 0)
+          ? itemRes.duration
+          : Math.max(3.0, (String(item.text).length / 4.8) + 2.5);
+        const waitMs = Math.ceil((itemDuration + 1.8) * 1000);
+        console.log(`[DND] 通知 [${i + 1}/${items.length}] 再生待機中... (${(itemDuration).toFixed(1)}秒 + 1.8秒間隔)`);
+        await new Promise(r => setTimeout(r, waitMs));
       } catch (err) {
-        console.error('[DND] 保留通知の再生エラー:', err.message);
+        console.error(`[DND] 保留通知 [${i + 1}/${items.length}] 再生エラー:`, err.message);
+        await new Promise(r => setTimeout(r, 2000));
       }
     }
+    console.log('[DND] 保留キューの全件再生が完了しました');
   }
 }
 

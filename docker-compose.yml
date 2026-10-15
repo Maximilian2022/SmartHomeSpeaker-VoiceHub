@@ -8,6 +8,8 @@ services:
       - path: ./.my.env
         required: false
     volumes:
+      - ./src:/app/src
+      - ./public:/app/public
       - voice_data:/app/data
       - voice_cache:/app/public/voice
       # ホストの D-Bus / Avahi ソケット（デバイス自動検出用）

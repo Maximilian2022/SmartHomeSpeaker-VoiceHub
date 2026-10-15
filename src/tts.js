@@ -26,6 +26,51 @@ const MAX_CACHE_SIZE_BYTES = parseInt(process.env.MAX_CACHE_SIZE_MB || '1024', 1
 // クリーンアップ時の目標サイズ (900MB)
 const TARGET_CACHE_SIZE_BYTES = Math.floor(MAX_CACHE_SIZE_BYTES * 0.9);
 
+const CHIME_DIR = path.resolve(__dirname, '../public/sound');
+const settingsManager = require('./settings');
+const { execFile } = require('child_process');
+
+/**
+ * チャイムMP3とTTS音声を結合
+ */
+async function concatenateMp3(chimePath, ttsPath, outputPath) {
+  return new Promise((resolve) => {
+    // ffmpeg で結合 (最も確実で高音質)
+    const filter = '[0:a][1:a]concat=n=2:v=0:a=1[out]';
+    execFile('ffmpeg', ['-y', '-i', chimePath, '-i', ttsPath, '-filter_complex', filter, '-map', '[out]', '-b:a', '128k', outputPath], { timeout: 10000 }, (err) => {
+      if (!err && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+        return resolve(true);
+      }
+      // ffmpeg が不在または失敗した場合は MP3 バイト連結にフォールバック
+      try {
+        const chimeBuf = fs.readFileSync(chimePath);
+        const ttsBuf = fs.readFileSync(ttsPath);
+        fs.writeFileSync(outputPath, Buffer.concat([chimeBuf, ttsBuf]));
+        resolve(true);
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * 音声ファイルの実際の再生尺 (秒数) を ffprobe で正確に取得
+ */
+async function getAudioDuration(filepath) {
+  return new Promise((resolve) => {
+    execFile('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', filepath], { timeout: 3000 }, (err, stdout) => {
+      if (!err && stdout) {
+        const dur = parseFloat(String(stdout).trim());
+        if (!isNaN(dur) && dur > 0) {
+          return resolve(dur);
+        }
+      }
+      resolve(null);
+    });
+  });
+}
+
 class TTSManager {
   constructor() {
     this.defaultVoice = process.env.DEFAULT_VOICE || 'ja-JP-NanamiNeural';
@@ -41,8 +86,8 @@ class TTSManager {
   /**
    * テキストからMP3音声を生成（キャッシュがあれば再利用してmtime更新）
    * @param {string} text 読み上げテキスト
-   * @param {Object} options voice, rate, pitch, volume
-   * @returns {Promise<{ filename: string, filepath: string, urlPath: string }>}
+   * @param {Object} options voice, rate, pitch, volume, chime
+   * @returns {Promise<{ filename: string, filepath: string, urlPath: string, duration: number }>}
    */
   async generateSpeech(text, options = {}) {
     if (!text || !text.trim()) {
@@ -55,14 +100,27 @@ class TTSManager {
     const pitch = options.pitch || '+0Hz';
     const volume = options.volume || '+0%';
 
+    // チャイムの判定 (指定がなければ設定値、設定がなければ dingdong)
+    let chime = options.chime;
+    if (chime === undefined) {
+      const s = settingsManager.get();
+      chime = s.chime !== undefined ? s.chime : 'dingdong';
+    }
+    const chimeType = (chime && chime !== 'none') ? chime.toLowerCase() : 'none';
+    const chimeFile = chimeType !== 'none' ? path.join(CHIME_DIR, `${chimeType}.mp3`) : null;
+    const useChime = chimeFile && fs.existsSync(chimeFile);
+
     // キャッシュ用ハッシュキー生成
     const hash = crypto
       .createHash('md5')
-      .update(`${cleanText}_${voice}_${rate}_${pitch}_${volume}`)
+      .update(`${cleanText}_${voice}_${rate}_${pitch}_${volume}_${useChime ? chimeType : 'none'}`)
       .digest('hex');
 
     const filename = `speech_${hash}.mp3`;
     const filepath = path.join(VOICE_DIR, filename);
+
+    // 推定尺 (ffprobe失敗時の安全フォールバック)
+    const fallbackDuration = Math.max(2.0, (cleanText.length / 5.2) + (useChime ? 2.2 : 0.5));
 
     // キャッシュが存在しサイズが0でなければ再利用（LRU: アクセス時刻を更新）
     if (fs.existsSync(filepath)) {
@@ -70,11 +128,13 @@ class TTSManager {
         const stats = fs.statSync(filepath);
         if (stats.size > 0) {
           const now = new Date();
-          fs.utimesSync(filepath, now, now); // アクセス時刻・更新時刻をタッチ
+          fs.utimesSync(filepath, now, now);
+          const probeDuration = await getAudioDuration(filepath);
           return {
             filename,
             filepath,
-            urlPath: `/voice/${filename}`
+            urlPath: `/voice/${filename}`,
+            duration: probeDuration || fallbackDuration
           };
         }
       } catch (e) {
@@ -82,8 +142,10 @@ class TTSManager {
       }
     }
 
-    // 生成（最大2回リトライ）
+    // 音声生成（最大2回リトライ）
     let lastError = null;
+    const rawPath = useChime ? path.join(VOICE_DIR, `raw_${hash}.mp3`) : filepath;
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const tts = new EdgeTTS({
@@ -95,20 +157,32 @@ class TTSManager {
           timeout: 15000
         });
 
-        await tts.ttsPromise(cleanText, filepath);
+        await tts.ttsPromise(cleanText, rawPath);
 
-        if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
-          // 生成後に容量チェック
-          this.enforceLRUCacheLimit();
-          return {
-            filename,
-            filepath,
-            urlPath: `/voice/${filename}`
-          };
+        if (fs.existsSync(rawPath) && fs.statSync(rawPath).size > 0) {
+          // チャイム結合が必要な場合
+          if (useChime) {
+            await concatenateMp3(chimeFile, rawPath, filepath);
+            try { fs.unlinkSync(rawPath); } catch (e) {}
+          }
+
+          if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
+            this.enforceLRUCacheLimit();
+            const probeDuration = await getAudioDuration(filepath);
+            return {
+              filename,
+              filepath,
+              urlPath: `/voice/${filename}`,
+              duration: probeDuration || fallbackDuration
+            };
+          }
         }
       } catch (err) {
         lastError = err;
         console.warn(`Edge TTS 生成リトライ (${attempt}/2):`, err?.message || err);
+        if (fs.existsSync(rawPath)) {
+          try { fs.unlinkSync(rawPath); } catch (e) {}
+        }
         if (fs.existsSync(filepath)) {
           try { fs.unlinkSync(filepath); } catch (e) {}
         }

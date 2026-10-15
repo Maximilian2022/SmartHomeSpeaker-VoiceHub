@@ -71,6 +71,38 @@ function isTunnelRequest(req) {
   return hasCfHeaders || isTunnelHost;
 }
 
+// クライアントIPアドレスの抽出 (Cloudflare Tunnel, リバースプロキシ, 直結対応)
+function extractClientIp(req) {
+  const cfIp = req.headers['cf-connecting-ip'];
+  if (cfIp) return String(cfIp).trim();
+
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) {
+    const first = String(xff).split(',')[0].trim();
+    if (first) return first;
+  }
+
+  const raw = req.socket?.remoteAddress || req.connection?.remoteAddress || '';
+  return raw.replace(/^::ffff:/, '');
+}
+
+// User-Agent ヘッダーからの送信元クライアント自動判定
+function detectUserAgentClient(userAgent = '') {
+  const ua = String(userAgent).toLowerCase();
+  if (!ua) return null;
+  if (ua.includes('ifttt') || ua.includes('applets/')) return 'IFTTT';
+  if (ua.includes('slackbot') || ua.includes('slack')) return 'Slack';
+  if (ua.includes('discordbot') || ua.includes('discord')) return 'Discord';
+  if (ua.includes('homeassistant') || ua.includes('home-assistant') || ua.includes('aiohttp')) return 'Home Assistant';
+  if (ua.includes('line-bot') || ua.includes('line/')) return 'LINE Bot';
+  if (ua.includes('curl/')) return 'curl';
+  if (ua.includes('python-requests') || ua.includes('python/')) return 'Python';
+  if (ua.includes('postmanruntime') || ua.includes('postman')) return 'Postman';
+  if (ua.includes('axios') || ua.includes('node-fetch') || ua.includes('undici')) return 'Node.js';
+  if (ua.includes('go-http-client')) return 'Go Client';
+  return null;
+}
+
 // セキュリティフィルター: Cloudflare Tunnel からのアクセス時は Web GUI へのアクセスを遮断
 app.use((req, res, next) => {
   if (isTunnelRequest(req)) {
@@ -102,11 +134,63 @@ app.get('/', (req, res) => {
 const VOICE_DIR = path.resolve(__dirname, '../public/voice');
 app.use('/voice', express.static(VOICE_DIR));
 
+// 重複通知防止 (Deduplication) のキャッシュ (key -> timestamp)
+const recentDeduplicationCache = new Map();
+
+function isDuplicateRequest(clientKey, text, cooldownSeconds = 30) {
+  if (!cooldownSeconds || cooldownSeconds <= 0) return false;
+  const now = Date.now();
+  const cacheKey = `${clientKey}:::${String(text).trim()}`;
+  const lastTime = recentDeduplicationCache.get(cacheKey);
+
+  if (lastTime && (now - lastTime) < (cooldownSeconds * 1000)) {
+    return true;
+  }
+  recentDeduplicationCache.set(cacheKey, now);
+
+  // キャッシュ肥大化防止 (1000件超えたら古いものを削除)
+  if (recentDeduplicationCache.size > 1000) {
+    const expireThreshold = now - 3600000;
+    for (const [k, v] of recentDeduplicationCache.entries()) {
+      if (v < expireThreshold) recentDeduplicationCache.delete(k);
+    }
+  }
+  return false;
+}
+
+// 時間帯別自動音量計算 (Auto Volume)
+function getAutoVolumeLevel(now = new Date()) {
+  const currentSettings = settingsManager.get();
+  const autoVol = currentSettings.autoVolume;
+  if (!autoVol || !autoVol.enabled || !Array.isArray(autoVol.rules)) {
+    return null;
+  }
+
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const currentHM = `${hours}:${minutes}`;
+
+  for (const rule of autoVol.rules) {
+    if (!rule.startTime || !rule.endTime) continue;
+    if (rule.startTime <= rule.endTime) {
+      if (currentHM >= rule.startTime && currentHM < rule.endTime) {
+        return Math.max(0.01, Math.min(1.0, (parseInt(rule.volume, 10) || 50) / 100));
+      }
+    } else {
+      // 日跨ぎ (例: 23:00〜07:00)
+      if (currentHM >= rule.startTime || currentHM < rule.endTime) {
+        return Math.max(0.01, Math.min(1.0, (parseInt(rule.volume, 10) || 50) / 100));
+      }
+    }
+  }
+  return null;
+}
+
 /**
- * 複数デバイスへの同時発信ロジック (Google Home + Alexa)
+ * 複数デバイスへの同時発信ロジック (Google Home + Alexa + HomePod)
  * @param {string} text 喋らせる文言
- * @param {Array<string>} targetList 送信先IPまたはデバイス名リスト
- * @param {Object} options voice, rate, pitch, volume, volumeLevel
+ * @param {Array<string>} targetList 送信先IPまたはデバイス名リスト (ALL, GH:ALL, AL:ALL, HP:ALL, 1F, 2F, LDK 短縮マクロ対応)
+ * @param {Object} options voice, rate, pitch, volume, volumeLevel, chime
  */
 async function speakToMultipleDevices(text, targetList = [], options = {}) {
   // リストが空の場合はデフォルト
@@ -115,21 +199,75 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     targets = [deviceManager.getDefaultDeviceIp()];
   }
 
-  // 重複排除とデバイス解決
-  const resolvedTargets = [];
+  // 利用可能な全デバイス一覧を取得し、短縮マクロ (ALL, GH:ALL, AL:ALL, HP:ALL) およびカスタム部屋グループ (1F, 2F, LDK等) を解決
+  const allAvailableDevices = await deviceManager.getDevices();
+  const currentSettings = settingsManager.get();
+  const deviceGroups = currentSettings.deviceGroups || {};
+  const expandedTargets = [];
+
   for (const t of targets) {
-    const dev = deviceManager.findDevice(t);
-    if (dev) {
-      resolvedTargets.push(dev);
+    const raw = String(t).trim();
+    const upper = raw.toUpperCase();
+
+    if (upper === 'ALL' || upper === '*') {
+      expandedTargets.push(...allAvailableDevices);
+    } else if (upper === 'GH:ALL' || upper === 'GOOGLE:ALL' || upper === 'GH_ALL') {
+      const ghDevs = allAvailableDevices.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod'));
+      expandedTargets.push(...ghDevs);
+    } else if (upper === 'AL:ALL' || upper === 'ALEXA:ALL' || upper === 'AL_ALL') {
+      const alDevs = allAvailableDevices.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
+      expandedTargets.push(...alDevs);
+    } else if (upper === 'HP:ALL' || upper === 'HOMEPOD:ALL' || upper === 'HP_ALL') {
+      const hpDevs = allAvailableDevices.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
+      expandedTargets.push(...hpDevs);
     } else {
-      resolvedTargets.push({ id: t, name: t, ip: t, type: 'google' });
+      // カスタム部屋グループ（大文字小文字問わずマッチ）
+      let matchedGroup = null;
+      for (const [groupName, groupMembers] of Object.entries(deviceGroups)) {
+        if (groupName.toLowerCase() === raw.toLowerCase() && Array.isArray(groupMembers)) {
+          matchedGroup = groupMembers;
+          break;
+        }
+      }
+
+      if (matchedGroup) {
+        for (const memberName of matchedGroup) {
+          const dev = deviceManager.findDevice(memberName);
+          if (dev) {
+            expandedTargets.push(dev);
+          } else {
+            expandedTargets.push({ id: memberName, name: memberName, ip: memberName, type: 'google' });
+          }
+        }
+      } else {
+        const dev = deviceManager.findDevice(raw);
+        if (dev) {
+          expandedTargets.push(dev);
+        } else {
+          expandedTargets.push({ id: raw, name: raw, ip: raw, type: 'google' });
+        }
+      }
+    }
+  }
+
+  // 重複排除 (ip をキーとする)
+  const resolvedTargets = [];
+  const seenIps = new Set();
+  for (const dev of expandedTargets) {
+    if (!dev || !dev.ip) continue;
+    if (!seenIps.has(dev.ip)) {
+      seenIps.add(dev.ip);
+      resolvedTargets.push(dev);
     }
   }
 
   // DND (おやすみ / 会議モード) 判定とフィルタリング
   const activeTargets = [];
+  const queuedTargets = [];
   let isWhisperGlobal = false;
   let whisperVolGlobal = 10;
+  let dndSuppressedCount = 0;
+  let dndQueuedReason = '';
 
   for (const dev of resolvedTargets) {
     const dndCheck = dndManager.checkDndStatus(dev.ip, options);
@@ -149,12 +287,8 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
           handledAs: `極小音量 (${whisperVolGlobal}%)`
         });
       } else if (dndCheck.action === 'queue') {
-        dndManager.enqueue({
-          text,
-          targetDevice: dev.ip,
-          options,
-          reason: dndCheck.reason
-        });
+        queuedTargets.push(dev);
+        dndQueuedReason = dndCheck.reason || 'DND発動中';
         dndManager.logEvent({
           text,
           targetDevice: dev.name || dev.ip,
@@ -164,6 +298,7 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
         });
       } else {
         // 'skip'
+        dndSuppressedCount++;
         console.log(`[DND] 発話をスキップしました (送信先: ${dev.name || dev.ip}, 理由: ${dndCheck.reason})`);
         dndManager.logEvent({
           text,
@@ -176,36 +311,73 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     }
   }
 
+  // 保留対象がある場合、1リクエストにつき1件としてキューに追加 (重複登録を防止)
+  if (queuedTargets.length > 0) {
+    dndManager.enqueue({
+      text,
+      targetDevices: queuedTargets.map(d => d.ip),
+      targetDeviceNames: queuedTargets.map(d => d.name || d.ip),
+      options: {
+        ...options,
+        wasQueued: true,
+        originalSource: options.source,
+        originalSourceLabel: options.sourceLabel,
+        clientName: options.clientName,
+        clientIp: options.clientIp
+      },
+      reason: dndQueuedReason
+    });
+  }
+
   // 送信先が 0 台になった場合は早期リターン
   if (activeTargets.length === 0) {
+    const isQueuedOnly = queuedTargets.length > 0;
+    const statusMsg = isQueuedOnly 
+      ? `DND発動中のため保留キューに追加しました (${queuedTargets.length}台)` 
+      : 'おやすみ・会議モード (DND) 発動中のため発話を保留/抑制しました';
+
     historyManager.addEntry({
       text,
       source: options.source || 'api',
       sourceLabel: options.sourceLabel,
+      clientName: options.clientName || '',
+      clientIp: options.clientIp || '',
+      wasQueued: isQueuedOnly,
       targets: resolvedTargets.map(d => d.name || d.ip),
       voice: options.voice,
       rate: options.rate,
       pitch: options.pitch,
       volume: options.volume,
       volumeLevel: options.volumeLevel,
-      status: 'suppressed',
-      statusMessage: 'おやすみ・会議モード (DND) 発動中のため発話を抑制しました',
+      status: isQueuedOnly ? 'queued' : 'suppressed',
+      statusMessage: statusMsg,
       urgent: !!options.urgent,
       results: []
     });
     return {
       success: true,
       dndSuppressed: true,
-      message: 'おやすみ・会議モード (DND) 発動中のため発話を抑制しました',
+      queued: isQueuedOnly,
+      message: statusMsg,
       text,
       results: []
     };
   }
 
+  // 音量レベルの決定 (未指定の場合は時間帯別自動音量カーブを適用)
+  let effectiveVolumeLevel = options.volumeLevel;
+  if (effectiveVolumeLevel === undefined) {
+    const autoVol = getAutoVolumeLevel();
+    if (autoVol !== null) {
+      effectiveVolumeLevel = autoVol;
+      console.log(`[AutoVolume] 現在時刻に応じた自動音量カーブを適用: ${Math.round(autoVol * 100)}%`);
+    }
+  }
+
   // 極小音量モードの場合は音量レベルを上書き (0.01〜1.0)
-  const effectiveVolumeLevel = isWhisperGlobal 
-    ? (whisperVolGlobal / 100) 
-    : options.volumeLevel;
+  if (isWhisperGlobal) {
+    effectiveVolumeLevel = whisperVolGlobal / 100;
+  }
 
   // Google Home 向け、Alexa 向け、HomePod 向けを分類
   const googleDevices = activeTargets.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod'));
@@ -216,13 +388,14 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   let audioUrl = null;
   let sharedSpeech = null;
 
-  // Google Home または HomePod がある場合、Edge TTS 音声を 1 度だけ生成
+  // Google Home または HomePod がある場合、Edge TTS 音声を 1 度だけ生成 (チャイム音結合オプション対応)
   if (googleDevices.length > 0 || homepodDevices.length > 0) {
     sharedSpeech = await ttsManager.generateSpeech(text, {
       voice: options.voice,
       rate: options.rate,
       pitch: options.pitch,
-      volume: options.volume
+      volume: options.volume,
+      chime: options.chime
     });
     audioUrl = `http://${SERVER_IP}:${PORT}${sharedSpeech.urlPath}`;
   }
@@ -286,6 +459,9 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     text,
     source: options.source || 'api',
     sourceLabel: options.sourceLabel,
+    clientName: options.clientName || '',
+    clientIp: options.clientIp || '',
+    wasQueued: !!options.wasQueued,
     targets: resolvedTargets.map(d => d.name || d.ip),
     voice: options.voice,
     rate: options.rate,
@@ -302,6 +478,7 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     success: hasSuccess,
     text,
     audioUrl,
+    duration: sharedSpeech?.duration || Math.max(2.5, (String(text).length / 5.0) + (options.chime && options.chime !== 'none' ? 2.5 : 0.5)),
     results: detailedResults
   };
 }
@@ -318,14 +495,17 @@ calendarManager.setExecutor(async (text, options) => {
   return await speakToMultipleDevices(text, targets, options);
 });
 
-// DND マネージャーの保留キュー消化エンジンを紐付け
+// DND マネージャーの保留キュー消化エンジンを紐付け (複数ターゲット同時再生対応)
 dndManager.setSpeakerExecutor(async (item) => {
-  const targets = item.targetDevice ? [item.targetDevice] : [];
+  const targets = item.targetDevices || (item.targetDevice ? [item.targetDevice] : []);
   return await speakToMultipleDevices(item.text, targets, {
     ...(item.options || {}),
     bypassDnd: true,
-    source: 'dnd_queue',
-    sourceLabel: 'DND保留再生'
+    wasQueued: true, // 保留からの再生フラグ
+    source: item.options?.originalSource || item.options?.source || 'api',
+    sourceLabel: item.options?.originalSourceLabel || item.options?.sourceLabel,
+    clientName: item.options?.clientName,
+    clientIp: item.options?.clientIp
   });
 });
 
@@ -394,24 +574,84 @@ const handleSay = async (req, res) => {
     const isUrgent = req.body?.urgent === true || req.body?.urgent === 'true' || req.query?.urgent === 'true' ||
                      req.body?.bypassDnd === true || req.body?.bypassDnd === 'true' || req.query?.bypassDnd === 'true';
 
-    // 送信元メタデータの判定
+    // 送信元クライアント & IP の判定
+    const clientIp = extractClientIp(req);
+    const userAgent = req.headers['user-agent'] || '';
+    const rawFrom = req.body?.from || req.query?.from || 
+                    req.body?.client || req.query?.client || 
+                    req.body?.sender || req.query?.sender || '';
+
+    // 送信元メタデータの判定 (通信経路)
     let source = req.body?.source || req.query?.source;
     let sourceLabel = req.body?.sourceLabel || req.query?.sourceLabel;
+    const isTunnel = isTunnelRequest(req);
+
     if (!source) {
-      if (isTunnelRequest(req)) {
+      if (isTunnel) {
         source = 'tunnel_webhook';
-        sourceLabel = 'Cloudflare Tunnel (外部)';
       } else {
         const referer = req.headers['referer'] || '';
         const origin = req.headers['origin'] || '';
         const fetchSite = req.headers['sec-fetch-site'] || '';
         if (referer.includes(`:${PORT}`) || origin.includes(`:${PORT}`) || fetchSite === 'same-origin') {
           source = 'web_ui';
-          sourceLabel = 'Web UI (即時発言)';
         } else {
           source = 'api';
-          sourceLabel = '外部 API / Webhook';
         }
+      }
+    }
+
+    // IPエイリアスおよび User-Agent の照合
+    const currentSettings = settingsManager.get();
+    const ipAliases = currentSettings.ipAliases || {};
+    const ipAlias = clientIp ? ipAliases[clientIp] : null;
+    const uaDetected = detectUserAgentClient(userAgent);
+
+    let clientName = '';
+    if (rawFrom) {
+      clientName = String(rawFrom).trim();
+    } else if (ipAlias) {
+      clientName = ipAlias;
+    } else if (uaDetected) {
+      clientName = uaDetected;
+    } else if (source === 'web_ui') {
+      clientName = 'Web UI';
+    } else if (clientIp && !clientIp.startsWith('127.') && clientIp !== '::1') {
+      clientName = clientIp;
+    }
+
+    // 送信元ラベルの構築 (通信経路そのものの名称)
+    if (!sourceLabel) {
+      if (source === 'tunnel_webhook') {
+        sourceLabel = 'Cloudflare Tunnel';
+      } else if (source === 'web_ui') {
+        sourceLabel = 'Web UI';
+      } else if (source === 'schedule') {
+        sourceLabel = '定期スケジュール';
+      } else if (source === 'calendar') {
+        sourceLabel = 'カレンダー連携';
+      } else {
+        sourceLabel = '外部 API';
+      }
+    }
+
+    // 1行アクセスログ出力 (トラブルシューティング & 監視用)
+    const cleanLogText = String(text).replace(/[\r\n]+/g, ' ').slice(0, 50);
+    const targetLogStr = targets.length > 0 ? targets.join(',') : 'default';
+    console.log(`[API Request] [From: ${clientName || '未指定'}] [Via: ${sourceLabel}] [IP: ${clientIp || 'local'}] [Targets: ${targetLogStr}] [Text: "${cleanLogText}"]`);
+
+    // 重複通知ブロック判定 (設定で有効化されている場合、クールダウン秒数以内の同一通知をスキップ)
+    const dedupeConfig = currentSettings.deduplication || {};
+    if (dedupeConfig.enabled && source !== 'web_ui') {
+      const clientKey = clientName || clientIp || 'anonymous';
+      if (isDuplicateRequest(clientKey, text, dedupeConfig.cooldownSeconds || 30)) {
+        console.log(`[Deduplication] 重複通知を自動ブロックしました (${dedupeConfig.cooldownSeconds}秒クールダウン): [${clientKey}] "${cleanLogText}"`);
+        return res.status(200).json({
+          success: true,
+          deduplicated: true,
+          message: `直前の同一通知から ${dedupeConfig.cooldownSeconds} 秒以内のためスキップしました`,
+          text
+        });
       }
     }
 
@@ -435,10 +675,13 @@ const handleSay = async (req, res) => {
       pitch: req.body?.pitch || req.query?.pitch,
       volume: req.body?.volume || req.query?.volume,
       volumeLevel: parsedVol,
+      chime: req.body?.chime !== undefined ? req.body.chime : req.query?.chime,
       urgent: isUrgent,
       bypassDnd: isUrgent,
       source,
-      sourceLabel
+      sourceLabel,
+      clientName,
+      clientIp
     };
 
     if (shouldRunAsync) {

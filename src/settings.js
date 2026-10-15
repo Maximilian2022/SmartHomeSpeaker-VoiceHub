@@ -56,7 +56,26 @@ const DEFAULT_SETTINGS = {
     targetDevices: [],
     action: 'skip', // 'skip' | 'whisper' | 'queue'
     whisperVolume: 10
-  }
+  },
+  chime: 'dingdong', // 'none' | 'dingdong' | 'bell' | 'announce' | 'alert'
+  deduplication: {
+    enabled: true,
+    cooldownSeconds: 30
+  },
+  deviceGroups: {
+    '1F': ['リビング', 'キッチン', '和室', 'トイレ1F'],
+    '2F': ['寝室', '書斎', '部屋', 'トイレ2F'],
+    'LDK': ['リビング', 'キッチン']
+  },
+  autoVolume: {
+    enabled: true,
+    rules: [
+      { id: 'day', name: '日中 (07:00〜21:00)', startTime: '07:00', endTime: '21:00', volume: 50 },
+      { id: 'evening', name: '夜間 (21:00〜23:00)', startTime: '21:00', endTime: '23:00', volume: 25 },
+      { id: 'night', name: '深夜 (23:00〜07:00)', startTime: '23:00', endTime: '07:00', volume: 10 }
+    ]
+  },
+  ipAliases: {} // { "192.168.1.50": "ラズパイ", ... }
 };
 
 class SettingsManager {
@@ -73,6 +92,17 @@ class SettingsManager {
         this.settings = {
           ...DEFAULT_SETTINGS,
           ...parsed,
+          chime: parsed.chime !== undefined ? parsed.chime : DEFAULT_SETTINGS.chime,
+          deduplication: {
+            ...DEFAULT_SETTINGS.deduplication,
+            ...(parsed.deduplication || {})
+          },
+          deviceGroups: parsed.deviceGroups || { ...DEFAULT_SETTINGS.deviceGroups },
+          autoVolume: {
+            ...DEFAULT_SETTINGS.autoVolume,
+            ...(parsed.autoVolume || {})
+          },
+          ipAliases: parsed.ipAliases || {},
           calendar: {
             ...DEFAULT_SETTINGS.calendar,
             ...(parsed.calendar || {})
@@ -131,6 +161,27 @@ class SettingsManager {
     }
     if (updates.webhookToken !== undefined) {
       this.settings.webhookToken = updates.webhookToken;
+    }
+    if (updates.ipAliases !== undefined) {
+      this.settings.ipAliases = updates.ipAliases && typeof updates.ipAliases === 'object' ? updates.ipAliases : {};
+    }
+    if (updates.chime !== undefined) {
+      this.settings.chime = updates.chime;
+    }
+    if (updates.deduplication) {
+      this.settings.deduplication = {
+        ...this.settings.deduplication,
+        ...updates.deduplication
+      };
+    }
+    if (updates.deviceGroups !== undefined) {
+      this.settings.deviceGroups = updates.deviceGroups && typeof updates.deviceGroups === 'object' ? updates.deviceGroups : {};
+    }
+    if (updates.autoVolume) {
+      this.settings.autoVolume = {
+        ...this.settings.autoVolume,
+        ...updates.autoVolume
+      };
     }
     if (updates.calendar) {
       this.settings.calendar = {

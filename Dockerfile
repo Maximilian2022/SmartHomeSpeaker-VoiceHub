@@ -2,7 +2,7 @@ FROM node:26-slim
 
 WORKDIR /app
 
-# avahi-utils, jq, curl, tzdata, python3 をインストール (Google Cast & Alexa & HomePod 用)
+# avahi-utils, jq, curl, tzdata, python3, ffmpeg をインストール (Google Cast & Alexa & HomePod 用)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     avahi-utils \
     jq \
@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # pyatv 仮想環境の作成とインストール (Apple HomePod AirPlay2 制御用)

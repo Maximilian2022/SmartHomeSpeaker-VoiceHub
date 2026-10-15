@@ -86,6 +86,10 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         Webhook / Tunnel
       </button>
+      <button class="tab-btn" data-tab="tab-settings" id="btnTabSettings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        拡張・システム設定
+      </button>
     </nav>
 
     <!-- メインコンテンツ -->
@@ -665,15 +669,19 @@
 
               <!-- スピーカー複数選択 -->
               <div class="form-group">
-                <div class="flex-between" style="margin-bottom: 8px;">
-                  <label class="form-label" style="margin: 0;">送信先スピーカー選択 * (複数選択可)</label>
-                  <div class="quick-select-buttons">
-                    <button type="button" class="btn-chip" id="btnBuilderSelectAll">全スピーカー</button>
-                    <button type="button" class="btn-chip" id="btnBuilderSelectGoogle">Google のみ</button>
-                    <button type="button" class="btn-chip" id="btnBuilderSelectAlexa">Alexa のみ</button>
-                    <button type="button" class="btn-chip" id="btnBuilderSelectHomePod">HomePod のみ</button>
+                <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                  <label class="form-label" style="margin: 0;">送信先スピーカー指定 *</label>
+                  <div class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <button type="button" class="btn-chip btn-macro" id="btnMacroAll" data-macro="ALL" title="全スピーカーへ一括送信 (devices: [&quot;ALL&quot;])">⚡ ALL (全台)</button>
+                    <button type="button" class="btn-chip btn-macro" id="btnMacroGoogle" data-macro="GH:ALL" title="Google Home全台へ一括送信 (devices: [&quot;GH:ALL&quot;])">⚡ GH:ALL (Google全台)</button>
+                    <button type="button" class="btn-chip btn-macro" id="btnMacroAlexa" data-macro="AL:ALL" title="Alexa全台へ一括送信 (devices: [&quot;AL:ALL&quot;])">⚡ AL:ALL (Alexa全台)</button>
+                    <button type="button" class="btn-chip btn-macro" id="btnMacroHomePod" data-macro="HP:ALL" title="HomePod全台へ一括送信 (devices: [&quot;HP:ALL&quot;])">⚡ HP:ALL (HomePod全台)</button>
+                    <span id="builderCustomGroupChips" style="display: inline-flex; gap: 6px; flex-wrap: wrap;"></span>
                     <button type="button" class="btn-chip text-danger" id="btnBuilderClear">クリア</button>
                   </div>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;">
+                  💡 <code>ALL</code>, <code>GH:ALL</code> や登録グループ（<code>1F</code>, <code>2F</code> 等）を選ぶと、スピーカーがたくさんあってもURLやコマンドが短くスマートになります。個別選択したい場合は下のスピーカーをチェックしてください。
                 </div>
                 <div id="builderSpeakersGrid" class="builder-speakers-grid">
                   <!-- スピーカーチェックボックスが動的に並ぶ -->
@@ -687,12 +695,32 @@
                 <input type="text" id="builderText" class="form-input" value="ご飯ができましたよ！みんな集まってください。" placeholder="喋らせる文言を入力">
               </div>
 
+              <!-- 送信元 (from) -->
+              <div class="form-group">
+                <label for="builderFrom" class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                  <span>送信元 / クライアント名 (from)</span>
+                  <span style="font-weight: normal; color: var(--text-muted); font-size: 0.8rem;">任意（発言履歴に表示されます）</span>
+                </label>
+                <input type="text" id="builderFrom" class="form-input" placeholder="例: IFTTT, 雨雲Bot, 給湯器, Discord">
+              </div>
+
               <!-- 音声オプション (アコーディオン) -->
               <details class="builder-options-details" style="margin-bottom: 20px;">
                 <summary style="font-size: 0.88rem; color: var(--text-muted); cursor: pointer; padding: 4px 0;">
-                  ⚙️ 音声・速度・音量オプション（任意）
+                  ⚙️ 音声・チャイム・速度・音量オプション（任意）
                 </summary>
                 <div class="options-grid" style="margin-top: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+                  <div class="form-group">
+                    <label for="builderChime" class="form-label">前置きチャイム音 (Chime)</label>
+                    <select id="builderChime" class="form-select">
+                      <option value="">設定デフォルトに従う</option>
+                      <option value="dingdong">🔔 ピンポン (dingdong)</option>
+                      <option value="bell">🎶 ベル (bell)</option>
+                      <option value="announce">📢 アナウンス (announce)</option>
+                      <option value="alert">⚠️ アラート (alert)</option>
+                      <option value="none">チャイムなし (直接発話)</option>
+                    </select>
+                  </div>
                   <div class="form-group">
                     <label for="builderVoice" class="form-label">話者 (Voice)</label>
                     <select id="builderVoice" class="form-select">
@@ -781,6 +809,29 @@ Body:
                 <small class="help-text">
                   💡 個人のプライベートな予定やメール情報はご自身の Gemini アカウント内だけで安全に処理され、発話テキストのみがスピーカーに届きます。
                 </small>
+              </div>
+            </div>
+
+            <!-- 🏷️ 送信元 IP エイリアス登録カード -->
+            <div class="card glass-card" style="margin-top: 24px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08);">
+              <div class="card-header flex-between" style="padding: 16px 20px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 1.3rem;">🏷️</span>
+                  <div>
+                    <h3 style="font-size: 1rem; margin: 0;">送信元 IP エイリアス登録（宅内機器・Bot の名前付け）</h3>
+                    <span style="font-size: 0.78rem; color: var(--text-muted);">宅内のラズパイやマイコン、PCのIPアドレスに名前を付けておくと、発言履歴ログで「誰から届いたか」が自動表示されます</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body" style="padding: 16px 20px;">
+                <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
+                  <input type="text" id="txtNewAliasIp" class="form-input" placeholder="IPアドレス (例: 192.168.1.50)" style="flex: 1; min-width: 160px;">
+                  <input type="text" id="txtNewAliasName" class="form-input" placeholder="表示名 (例: 給湯器監視ラズパイ)" style="flex: 1; min-width: 160px;">
+                  <button type="button" id="btnAddIpAlias" class="btn btn-primary btn-sm">追加 / 保存</button>
+                </div>
+                <div id="ipAliasesListContainer">
+                  <span class="loading-text">登録済みエイリアスなし</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1057,7 +1108,188 @@ Body:
           </div>
         </div>
       </section>
+
+      <!-- 7. 拡張・システム設定パネル -->
+      <section id="tab-settings" class="tab-pane">
+        <div class="two-col-layout">
+          <!-- 左カラム: チャイム & 重複防止 & 自動音量 -->
+          <div class="col">
+            <!-- 1. 前置きチャイム音設定 -->
+            <div class="card glass-card">
+              <div class="card-header">
+                <h2>🔔 前置きチャイム音 (聞き逃し防止)</h2>
+                <span class="card-sub">発声の冒頭に心地よいチャイム音を自動挿入して再生します</span>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label for="settingDefaultChime" class="form-label">標準チャイム音</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="settingDefaultChime" class="form-select" style="flex: 1;">
+                      <option value="dingdong">🔔 ピンポン (dingdong) - 標準・案内</option>
+                      <option value="bell">🎶 ベル (bell) - やさしいお知らせ</option>
+                      <option value="announce">📢 アナウンス (announce) - 明るい注意喚起</option>
+                      <option value="alert">⚠️ アラート (alert) - 重要通知・警告</option>
+                      <option value="none">チャイムなし (直接アナウンス)</option>
+                    </select>
+                    <button type="button" id="btnPreviewChime" class="btn btn-secondary" style="white-space: nowrap;">
+                      ▶ 試聴
+                    </button>
+                  </div>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">
+                  ※ APIやWebhookから個別に <code>chime=alert</code> などを指定した場合は、そちらが優先されます。
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. 重複通知の自動防止 -->
+            <div class="card glass-card" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🛡️ 重複通知の自動防止 (Deduplication)</h2>
+                  <span class="card-sub">IFTTTや外部トリガーの誤連打・ネットワーク再送による連呼を防ぎます</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="settingDedupeEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+              <div class="card-body">
+                <div class="form-group" style="margin-bottom: 8px;">
+                  <label for="settingDedupeCooldown" class="form-label">
+                    クールダウン時間 (秒)
+                  </label>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="settingDedupeCooldown" class="form-input" min="5" max="300" step="5" value="30" style="max-width: 120px;">
+                    <span style="font-size: 0.88rem; color: var(--text-color);">秒以内の同一送信元・同一文言を自動ブロック</span>
+                  </div>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 8px;">
+                  💡 Web画面からの直接テスト発言は除外されるため、安心してテストできます。
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. 時間帯別自動音量カーブ -->
+            <div class="card glass-card" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🌙 時間帯別自動音量カーブ (Auto Volume)</h2>
+                  <span class="card-sub">時刻に応じた最適な発言音量を自動で適用します (夜間・深夜の爆音防止)</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="settingAutoVolEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <div class="flex-between">
+                    <label class="form-label">☀️ 日中帯 (07:00 〜 21:00)</label>
+                    <span id="labelAutoVolDay" style="font-weight: 600; font-size: 0.88rem; color: var(--primary-color);">50%</span>
+                  </div>
+                  <input type="range" id="rangeAutoVolDay" min="10" max="100" step="5" value="50" class="form-range">
+                </div>
+                <div class="form-group" style="margin-top: 14px;">
+                  <div class="flex-between">
+                    <label class="form-label">🌆 夜間帯 (21:00 〜 23:00)</label>
+                    <span id="labelAutoVolEvening" style="font-weight: 600; font-size: 0.88rem; color: #f59e0b;">25%</span>
+                  </div>
+                  <input type="range" id="rangeAutoVolEvening" min="5" max="80" step="5" value="25" class="form-range">
+                </div>
+                <div class="form-group" style="margin-top: 14px;">
+                  <div class="flex-between">
+                    <label class="form-label">🌃 深夜帯 (23:00 〜 07:00)</label>
+                    <span id="labelAutoVolNight" style="font-weight: 600; font-size: 0.88rem; color: #8b5cf6;">10%</span>
+                  </div>
+                  <input type="range" id="rangeAutoVolNight" min="5" max="50" step="5" value="10" class="form-range">
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 10px;">
+                  ※ APIや即時発言で個別に音量パーセントが指定されている場合は、個別指定が優先されます。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右カラム: カスタム部屋グループ & IPエイリアス -->
+          <div class="col">
+            <!-- 4. カスタム部屋グループ (ゾーン一括指定) -->
+            <div class="card glass-card">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🏠 カスタム部屋グループ (ゾーン指定)</h2>
+                  <span class="card-sub">「1F」「2F」「LDK」などを登録し、一言でまとめて鳴らせます</span>
+                </div>
+                <button type="button" id="btnOpenNewGroupModal" class="btn btn-primary btn-sm">＋ 新規グループ</button>
+              </div>
+              <div class="card-body">
+                <div id="deviceGroupsContainer" class="device-groups-list" style="display: flex; flex-direction: column; gap: 10px;">
+                  <!-- JS動的生成 -->
+                  <span class="text-sub">グループ設定を読み込み中...</span>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 12px;">
+                  💡 WebhookやAPIで <code>devices: ["1F"]</code> や <code>device=LDK</code> と指定するだけで所属スピーカーが一括同時再生されます。
+                </div>
+              </div>
+            </div>
+
+            <!-- 5. クライアントIPエイリアス登録 -->
+            <div class="card glass-card" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🏷️ 送信元 IP エイリアス登録</h2>
+                  <span class="card-sub">送信元IPを「給湯器」「ラズパイ」などの分かりやすい名前に紐付けます</span>
+                </div>
+              </div>
+              <div class="card-body">
+                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                  <input type="text" id="inputNewAliasIp" class="form-input" placeholder="IPアドレス (例: 192.168.1.50)" style="flex: 1;">
+                  <input type="text" id="inputNewAliasName" class="form-input" placeholder="表示名 (例: ラズパイ監視)" style="flex: 1;">
+                  <button type="button" id="btnAddIpAlias" class="btn btn-secondary" style="white-space: nowrap;">登録</button>
+                </div>
+                <div id="ipAliasesContainer" style="display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto;">
+                  <!-- JS動的生成 -->
+                  <span class="text-sub">エイリアスなし</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 全設定保存ボタン -->
+            <div style="margin-top: 20px; text-align: right;">
+              <button type="button" id="btnSaveAllSettings" class="btn btn-primary" style="padding: 10px 24px; font-size: 0.95rem;">
+                💾 システム設定を保存
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
+
+    <!-- グループ作成モーダル -->
+    <div id="modalDeviceGroup" class="modal-backdrop" style="display: none;">
+      <div class="modal-content glass-card" style="max-width: 500px;">
+        <div class="modal-header">
+          <h3 id="modalGroupTitle">カスタム部屋グループ作成</h3>
+          <button type="button" id="btnCloseGroupModal" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="inputGroupName" class="form-label">グループ名 (半角英数字または日本語) *</label>
+            <input type="text" id="inputGroupName" class="form-input" placeholder="例: 1F, 2F, LDK, 寝室まわり">
+          </div>
+          <div class="form-group">
+            <label class="form-label">所属させるスピーカー (複数選択) *</label>
+            <div id="groupSpeakerCheckboxes" class="speaker-checkbox-grid" style="max-height: 200px; overflow-y: auto;">
+              <!-- JS動的生成 -->
+            </div>
+          </div>
+          <div class="modal-footer" style="padding: 12px 0 0; border-top: 1px solid rgba(255,255,255,0.08);">
+            <button type="button" id="btnCancelGroupModal" class="btn btn-secondary">キャンセル</button>
+            <button type="button" id="btnSaveGroupModal" class="btn btn-primary">グループを保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- 新規スケジュール登録モーダル (GUIフレンドリー・cron不要) -->
     <div id="scheduleModal" class="modal-backdrop" style="display: none;">

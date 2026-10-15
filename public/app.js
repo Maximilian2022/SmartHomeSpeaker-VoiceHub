@@ -111,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupWebhookBuilder();
     setupCalendarHandlers();
     setupDndHandlers();
+    setupSettingsHandlers();
     await loadServerStatus();
     await Promise.all([
       loadDevices(),
@@ -122,7 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
       loadCalendarEvents(),
       loadDndStatus(),
       loadDndSettings(),
-      loadDndHistory()
+      loadDndHistory(),
+      loadSettings()
     ]);
 
     // DND ステータスを定期ポーリング (15秒ごと)
@@ -585,9 +587,25 @@ document.addEventListener('DOMContentLoaded', () => {
       else if (diffSec < 86400) relativeTime = `${Math.floor(diffSec / 3600)}時間前`;
       else relativeTime = `${Math.floor(diffSec / 86400)}日前`;
 
-      // 送信元バッジ
+      // 送信元バッジ (通信経路)
       const sourceClass = `source-${item.source || 'api'}`;
       const sourceText = escapeHtml(item.sourceLabel || item.source || '不明');
+
+      // 送信元クライアント（From）バッジ: Discord, IFTTT, Slack等の独立表示
+      let clientBadgeHtml = '';
+      if (item.clientName) {
+        let icon = '🤖';
+        const cLower = item.clientName.toLowerCase();
+        if (cLower.includes('discord')) icon = '🎮';
+        else if (cLower.includes('ifttt')) icon = '⚡';
+        else if (cLower.includes('slack')) icon = '💬';
+        else if (cLower.includes('line')) icon = '🟢';
+        else if (cLower.includes('home assistant') || cLower.includes('ha')) icon = '🏠';
+        else if (item.clientName === 'Web UI') icon = '🖥️';
+        else icon = '👤';
+
+        clientBadgeHtml = `<span class="history-from-badge" title="送信元クライアント: ${escapeHtml(item.clientName)}">${icon} From: <strong>${escapeHtml(item.clientName)}</strong></span>`;
+      }
 
       // ステータスバッジ
       let statusBadgeHtml = '';
@@ -595,6 +613,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (item.status === 'suppressed') {
         statusClass = 'status-suppressed';
         statusBadgeHtml = `<span class="history-status-badge status-suppressed">🌙 DNDサイレント</span>`;
+      } else if (item.status === 'queued') {
+        statusClass = 'status-dnd-queued';
+        statusBadgeHtml = `<span class="history-status-badge status-dnd-queued">🕒 DND保留中</span>`;
       } else if (item.status === 'error') {
         statusClass = 'status-error';
         statusBadgeHtml = `<span class="history-status-badge status-error">❌ 送信失敗</span>`;
@@ -604,6 +625,16 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         statusBadgeHtml = `<span class="history-status-badge status-success">✓ 送信成功</span>`;
       }
+
+      // DND保留再生バッジ (右上の送信成功の左に配置)
+      const dndQueuedBadgeHtml = item.wasQueued
+        ? `<span class="history-status-badge status-dnd-queued" title="DND (おやすみ・会議モード) 中に保留され、解除後に自動再生されました">🕒 DND保留再生</span>`
+        : '';
+
+      // 送信元IPタグ
+      const clientIpTag = item.clientIp
+        ? `<span class="history-ip-tag" title="送信元 IP: ${escapeHtml(item.clientIp)}">IP: ${escapeHtml(item.clientIp)}</span>`
+        : '';
 
       // 送信先スピーカー表示
       const targetsList = Array.isArray(item.targets) ? item.targets : (item.targets ? [item.targets] : ['デフォルト']);
@@ -617,13 +648,16 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="history-card-item ${statusClass}" data-id="${escapeHtml(item.id || '')}">
           <div class="history-card-top">
             <div class="history-meta-group">
-              <span class="source-badge ${sourceClass}">
+              <span class="source-badge ${sourceClass}" title="${item.clientIp ? `送信元 IP: ${escapeHtml(item.clientIp)}` : ''}">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
                 ${sourceText}
               </span>
+              ${clientBadgeHtml}
+              ${clientIpTag}
               <span class="history-time" title="${timeStr}">${relativeTime} (${timeStr})</span>
             </div>
-            <div>
+            <div class="history-status-group" style="display: flex; align-items: center; gap: 6px;">
+              ${dndQueuedBadgeHtml}
               ${statusBadgeHtml}
             </div>
           </div>
@@ -679,6 +713,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // 発言履歴タブを開いた時は最新の履歴を再取得
         if (targetId === 'tab-history') {
           loadHistory();
+        } else if (targetId === 'tab-settings') {
+          loadSettings();
         }
       });
     });
@@ -1468,6 +1504,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ================= 4. Webhook ビルダー機能 =================
   let builderSelectedTab = 'curl-post';
+  let builderMacroTarget = null; // 'ALL' | 'GH:ALL' | 'AL:ALL' | 'HP:ALL' | null
+
+  function clearMacroButtons() {
+    builderMacroTarget = null;
+    document.querySelectorAll('.btn-macro').forEach(b => b.classList.remove('active'));
+  }
 
   function renderBuilderSpeakers() {
     const grid = document.getElementById('builderSpeakersGrid');
@@ -1514,6 +1556,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     grid.querySelectorAll('input[type="checkbox"]').forEach(chk => {
       chk.addEventListener('change', (e) => {
+        // 個別チェック操作されたらマクロ指定は解除
+        clearMacroButtons();
         const parent = e.target.closest('.speaker-chip');
         if (e.target.checked) {
           parent.classList.add('checked');
@@ -1527,8 +1571,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateBuilderCode() {
     const text = document.getElementById('builderText')?.value || 'ご飯ができましたよ！みんな集まってください。';
-    const checkedBoxes = Array.from(document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]:checked'));
-    const devices = checkedBoxes.map(c => c.value);
+    const fromVal = document.getElementById('builderFrom')?.value.trim() || '';
+
+    // 送信先デバイス: 短縮マクロ指定がある場合はそれを優先 (URL/コマンドが短縮される)
+    let devices = [];
+    if (builderMacroTarget) {
+      devices = [builderMacroTarget];
+    } else {
+      const checkedBoxes = Array.from(document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]:checked'));
+      devices = checkedBoxes.map(c => c.value);
+    }
 
     const isTunnel = document.querySelector('input[name="builderUrlType"]:checked')?.value === 'tunnel';
     const tunnelDomain = state.serverInfo?.tunnelDomain;
@@ -1542,15 +1594,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const voice = document.getElementById('builderVoice')?.value;
     const rate = document.getElementById('builderRate')?.value;
     const volumeLevel = document.getElementById('builderVolumeLevel')?.value;
+    const chime = document.getElementById('builderChime')?.value;
 
     const defaultDevName = state.devices[0]?.name || 'default';
     const payloadObj = {
       text,
       devices: devices.length > 0 ? devices : [defaultDevName]
     };
+    if (fromVal) payloadObj.from = fromVal;
     if (voice) payloadObj.voice = voice;
     if (rate) payloadObj.rate = rate;
     if (volumeLevel) payloadObj.volumeLevel = parseFloat(volumeLevel);
+    if (chime) payloadObj.chime = chime;
 
     const codeEl = document.getElementById('builderGeneratedCode');
     if (!codeEl) return;
@@ -1568,6 +1623,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (devices.length > 0) {
         params.set('devices', devices.join(','));
       }
+      if (fromVal) params.set('from', fromVal);
+      if (chime) params.set('chime', chime);
       if (voice) params.set('voice', voice);
       if (rate) params.set('rate', rate);
       if (token) params.set('token', token);
@@ -1587,53 +1644,99 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ビルダー内のカスタム部屋グループチップを描画
+  function renderBuilderCustomGroupChips() {
+    const container = document.getElementById('builderCustomGroupChips');
+    if (!container) return;
+
+    const groups = state.settings?.deviceGroups || {};
+    const groupNames = Object.keys(groups);
+    if (!groupNames.length) {
+      container.innerHTML = '';
+      return;
+    }
+
+    container.innerHTML = groupNames.map(grp => `
+      <button type="button" class="btn-chip btn-macro btn-custom-group" data-macro="${escapeHtml(grp)}" title="登録グループ [${escapeHtml(grp)}] へ一括送信 (devices: [&quot;${escapeHtml(grp)}&quot;])">
+        ⚡ ${escapeHtml(grp)}
+      </button>
+    `).join('');
+
+    // クリックイベントの紐付け
+    container.querySelectorAll('.btn-custom-group').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const macro = btn.getAttribute('data-macro');
+        const isAlreadyActive = (builderMacroTarget === macro);
+
+        clearMacroButtons();
+
+        if (!isAlreadyActive) {
+          btn.classList.add('active');
+          builderMacroTarget = macro;
+
+          const memberNames = (groups[macro] || []).map(m => String(m).toLowerCase());
+          document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
+            const devName = (c.closest('.speaker-chip')?.textContent || '').toLowerCase();
+            const devIp = c.value.toLowerCase();
+            const match = memberNames.some(m => devName.includes(m) || devIp.includes(m));
+            c.checked = match;
+            c.closest('.speaker-chip')?.classList.toggle('checked', match);
+          });
+        }
+        updateBuilderCode();
+      });
+    });
+  }
+
   function setupWebhookBuilder() {
     // フォーム入力変更リスナー
     const textInput = document.getElementById('builderText');
+    const fromInput = document.getElementById('builderFrom');
     const voiceSelect = document.getElementById('builderVoice');
     const rateSelect = document.getElementById('builderRate');
     const volSelect = document.getElementById('builderVolumeLevel');
+    const chimeSelect = document.getElementById('builderChime');
     const urlRadios = document.querySelectorAll('input[name="builderUrlType"]');
 
     if (textInput) textInput.addEventListener('input', updateBuilderCode);
+    if (fromInput) fromInput.addEventListener('input', updateBuilderCode);
     if (voiceSelect) voiceSelect.addEventListener('change', updateBuilderCode);
     if (rateSelect) rateSelect.addEventListener('change', updateBuilderCode);
     if (volSelect) volSelect.addEventListener('change', updateBuilderCode);
+    if (chimeSelect) chimeSelect.addEventListener('change', updateBuilderCode);
     urlRadios.forEach(r => r.addEventListener('change', updateBuilderCode));
 
-    // スピーカー一括選択ボタン
-    document.getElementById('btnBuilderSelectAll')?.addEventListener('click', () => {
-      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
-        c.checked = true;
-        c.closest('.speaker-chip')?.classList.add('checked');
+    // 短縮マクロボタン (ALL, GH:ALL, AL:ALL, HP:ALL)
+    document.querySelectorAll('.btn-macro').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const macro = btn.getAttribute('data-macro');
+        const isAlreadyActive = (builderMacroTarget === macro);
+
+        clearMacroButtons();
+
+        if (!isAlreadyActive) {
+          btn.classList.add('active');
+          builderMacroTarget = macro;
+
+          // 下のスピーカーチップも種別に応じて視覚的に選択
+          document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
+            const type = c.getAttribute('data-type');
+            let match = false;
+            if (macro === 'ALL') match = true;
+            else if (macro === 'GH:ALL') match = (type === 'google');
+            else if (macro === 'AL:ALL') match = (type === 'alexa');
+            else if (macro === 'HP:ALL') match = (type === 'homepod');
+            c.checked = match;
+            c.closest('.speaker-chip')?.classList.toggle('checked', match);
+          });
+        }
+        updateBuilderCode();
       });
-      updateBuilderCode();
     });
-    document.getElementById('btnBuilderSelectGoogle')?.addEventListener('click', () => {
-      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
-        const isMatch = c.getAttribute('data-type') === 'google';
-        c.checked = isMatch;
-        c.closest('.speaker-chip')?.classList.toggle('checked', isMatch);
-      });
-      updateBuilderCode();
-    });
-    document.getElementById('btnBuilderSelectAlexa')?.addEventListener('click', () => {
-      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
-        const isMatch = c.getAttribute('data-type') === 'alexa';
-        c.checked = isMatch;
-        c.closest('.speaker-chip')?.classList.toggle('checked', isMatch);
-      });
-      updateBuilderCode();
-    });
-    document.getElementById('btnBuilderSelectHomePod')?.addEventListener('click', () => {
-      document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
-        const isMatch = c.getAttribute('data-type') === 'homepod';
-        c.checked = isMatch;
-        c.closest('.speaker-chip')?.classList.toggle('checked', isMatch);
-      });
-      updateBuilderCode();
-    });
+
+    // スピーカークリアボタン
     document.getElementById('btnBuilderClear')?.addEventListener('click', () => {
+      clearMacroButtons();
       document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]').forEach(c => {
         c.checked = false;
         c.closest('.speaker-chip')?.classList.remove('checked');
@@ -1643,7 +1746,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // タブ切り替え
     document.querySelectorAll('.pill-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         document.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         builderSelectedTab = btn.getAttribute('data-output-tab');
@@ -3131,6 +3234,324 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  // ================= 8. 拡張・システム設定 (チャイム、重複ブロック、カスタムグループ、自動音量、IPエイリアス) =================
+  async function loadSettings() {
+    try {
+      const res = await fetch('/api/settings');
+      if (!res.ok) throw new Error('設定取得失敗');
+      const data = await res.json();
+      state.settings = data;
+      state.ipAliases = data.ipAliases || {};
+      state.deviceGroups = data.deviceGroups || {};
+
+      // 1. チャイム設定
+      const chimeSelect = document.getElementById('settingDefaultChime');
+      if (chimeSelect && data.chime !== undefined) {
+        chimeSelect.value = data.chime;
+      }
+
+      // 2. 重複通知ブロック
+      const dedupeCheck = document.getElementById('settingDedupeEnabled');
+      const dedupeInput = document.getElementById('settingDedupeCooldown');
+      if (dedupeCheck) dedupeCheck.checked = data.deduplication?.enabled !== false;
+      if (dedupeInput) dedupeInput.value = data.deduplication?.cooldownSeconds || 30;
+
+      // 3. 自動音量カーブ
+      const autoVolCheck = document.getElementById('settingAutoVolEnabled');
+      if (autoVolCheck) autoVolCheck.checked = data.autoVolume?.enabled !== false;
+
+      const rules = data.autoVolume?.rules || [];
+      const dayRule = rules.find(r => r.id === 'day') || { volume: 50 };
+      const eveningRule = rules.find(r => r.id === 'evening') || { volume: 25 };
+      const nightRule = rules.find(r => r.id === 'night') || { volume: 10 };
+
+      const rangeDay = document.getElementById('rangeAutoVolDay');
+      const labelDay = document.getElementById('labelAutoVolDay');
+      const rangeEve = document.getElementById('rangeAutoVolEvening');
+      const labelEve = document.getElementById('labelAutoVolEvening');
+      const rangeNight = document.getElementById('rangeAutoVolNight');
+      const labelNight = document.getElementById('labelAutoVolNight');
+
+      if (rangeDay) rangeDay.value = dayRule.volume;
+      if (labelDay) labelDay.textContent = `${dayRule.volume}%`;
+      if (rangeEve) rangeEve.value = eveningRule.volume;
+      if (labelEve) labelEve.textContent = `${eveningRule.volume}%`;
+      if (rangeNight) rangeNight.value = nightRule.volume;
+      if (labelNight) labelNight.textContent = `${nightRule.volume}%`;
+
+      // 4. カスタム部屋グループの描画
+      renderDeviceGroups();
+
+      // 5. IPエイリアスの描画
+      renderIpAliases();
+
+      // 6. Webhookビルダーのマクロチップも再描画
+      renderBuilderCustomGroupChips();
+    } catch (e) {
+      console.warn('システム設定読み込みエラー:', e.message);
+    }
+  }
+
+  // カスタム部屋グループ一覧描画
+  function renderDeviceGroups() {
+    const container = document.getElementById('deviceGroupsContainer');
+    if (!container) return;
+
+    const groups = state.deviceGroups || {};
+    const entries = Object.entries(groups);
+
+    if (entries.length === 0) {
+      container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 8px 0;">登録済みのカスタムグループはありません（「＋ 新規グループ」から作成できます）。</div>';
+      return;
+    }
+
+    container.innerHTML = entries.map(([name, members]) => {
+      const memberChips = (members || []).map(m => `<span class="group-member-chip">${escapeHtml(m)}</span>`).join(' ');
+      return `
+        <div class="group-card-item">
+          <div>
+            <div class="group-name-tag">
+              <span>🏠</span> <strong>${escapeHtml(name)}</strong>
+              <small style="color: var(--text-muted); font-weight: normal; margin-left: 6px;">(${members?.length || 0} 台)</small>
+            </div>
+            <div class="group-members-list">
+              ${memberChips || '<span style="color: var(--text-muted); font-size: 0.75rem;">所属スピーカーなし</span>'}
+            </div>
+          </div>
+          <button type="button" class="btn-chip text-danger btn-delete-group" data-name="${escapeHtml(name)}" title="グループ削除" style="padding: 4px 10px;">
+            削除
+          </button>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.btn-delete-group').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const name = e.target.getAttribute('data-name');
+        if (!confirm(`カスタムグループ「${name}」を削除しますか？`)) return;
+
+        delete state.deviceGroups[name];
+        await saveAllSettings({ silent: true });
+        renderDeviceGroups();
+        renderBuilderCustomGroupChips();
+        showToast(`グループ「${name}」を削除しました`, 'success');
+      });
+    });
+  }
+
+  // IPエイリアス一覧描画
+  function renderIpAliases() {
+    const container = document.getElementById('ipAliasesContainer');
+    if (!container) return;
+
+    const aliases = state.ipAliases || {};
+    const entries = Object.entries(aliases);
+
+    if (entries.length === 0) {
+      container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 6px 0;">登録済みの IP エイリアスはありません。</div>';
+      return;
+    }
+
+    container.innerHTML = entries.map(([ip, name]) => `
+      <div class="ip-alias-item">
+        <div>
+          <code>${escapeHtml(ip)}</code>
+          <strong style="margin-left: 8px; color: #ffffff;">${escapeHtml(name)}</strong>
+        </div>
+        <button type="button" class="btn-chip text-danger btn-delete-alias" data-ip="${escapeHtml(ip)}" title="削除" style="padding: 2px 8px; font-size: 0.75rem;">
+          削除
+        </button>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('.btn-delete-alias').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const ip = e.target.getAttribute('data-ip');
+        if (!confirm(`IP「${ip}」のエイリアスを削除しますか？`)) return;
+
+        delete state.ipAliases[ip];
+        await saveAllSettings({ silent: true });
+        renderIpAliases();
+        showToast('IP エイリアスを削除しました', 'success');
+      });
+    });
+  }
+
+  // 全システム設定の保存
+  async function saveAllSettings(options = {}) {
+    try {
+      const chime = document.getElementById('settingDefaultChime')?.value || 'dingdong';
+      const dedupeEnabled = document.getElementById('settingDedupeEnabled')?.checked !== false;
+      const dedupeCooldown = parseInt(document.getElementById('settingDedupeCooldown')?.value || '30', 10);
+
+      const autoVolEnabled = document.getElementById('settingAutoVolEnabled')?.checked !== false;
+      const volDay = parseInt(document.getElementById('rangeAutoVolDay')?.value || '50', 10);
+      const volEvening = parseInt(document.getElementById('rangeAutoVolEvening')?.value || '25', 10);
+      const volNight = parseInt(document.getElementById('rangeAutoVolNight')?.value || '10', 10);
+
+      const payload = {
+        chime,
+        deduplication: {
+          enabled: dedupeEnabled,
+          cooldownSeconds: dedupeCooldown
+        },
+        autoVolume: {
+          enabled: autoVolEnabled,
+          rules: [
+            { id: 'day', name: '日中 (07:00〜21:00)', startTime: '07:00', endTime: '21:00', volume: volDay },
+            { id: 'evening', name: '夜間 (21:00〜23:00)', startTime: '21:00', endTime: '23:00', volume: volEvening },
+            { id: 'night', name: '深夜 (23:00〜07:00)', startTime: '23:00', endTime: '07:00', volume: volNight }
+          ]
+        },
+        deviceGroups: state.deviceGroups || {},
+        ipAliases: state.ipAliases || {}
+      };
+
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('設定保存失敗');
+      const updated = await res.json();
+      state.settings = updated;
+
+      if (!options.silent) {
+        showToast('システム設定を保存しました', 'success');
+      }
+      renderBuilderCustomGroupChips();
+      return true;
+    } catch (e) {
+      showToast('設定保存エラー: ' + e.message, 'error');
+      return false;
+    }
+  }
+
+  function setupSettingsHandlers() {
+    // 1. チャイム試聴ボタン
+    document.getElementById('btnPreviewChime')?.addEventListener('click', () => {
+      const chime = document.getElementById('settingDefaultChime')?.value || 'dingdong';
+      if (chime === 'none') {
+        showToast('「チャイムなし」が選択されています', 'info');
+        return;
+      }
+      const audio = new Audio(`/sound/${chime}.mp3`);
+      audio.play().catch(e => {
+        showToast('チャイム試聴再生エラー: ' + e.message, 'error');
+      });
+    });
+
+    // 2. 自動音量スライダー値のリアルタイム表示
+    const rangeDay = document.getElementById('rangeAutoVolDay');
+    const labelDay = document.getElementById('labelAutoVolDay');
+    const rangeEve = document.getElementById('rangeAutoVolEvening');
+    const labelEve = document.getElementById('labelAutoVolEvening');
+    const rangeNight = document.getElementById('rangeAutoVolNight');
+    const labelNight = document.getElementById('labelAutoVolNight');
+
+    rangeDay?.addEventListener('input', (e) => {
+      if (labelDay) labelDay.textContent = `${e.target.value}%`;
+    });
+    rangeEve?.addEventListener('input', (e) => {
+      if (labelEve) labelEve.textContent = `${e.target.value}%`;
+    });
+    rangeNight?.addEventListener('input', (e) => {
+      if (labelNight) labelNight.textContent = `${e.target.value}%`;
+    });
+
+    // 3. 全設定保存ボタン
+    document.getElementById('btnSaveAllSettings')?.addEventListener('click', async () => {
+      await saveAllSettings();
+    });
+
+    // 4. IPエイリアス追加ボタン
+    document.getElementById('btnAddIpAlias')?.addEventListener('click', async () => {
+      const inputIp = document.getElementById('inputNewAliasIp');
+      const inputName = document.getElementById('inputNewAliasName');
+      const ip = (inputIp?.value || '').trim();
+      const name = (inputName?.value || '').trim();
+
+      if (!ip || !name) {
+        showToast('IPアドレスと表示名の両方を入力してください', 'warning');
+        return;
+      }
+
+      state.ipAliases = state.ipAliases || {};
+      state.ipAliases[ip] = name;
+      await saveAllSettings({ silent: true });
+      renderIpAliases();
+
+      if (inputIp) inputIp.value = '';
+      if (inputName) inputName.value = '';
+      showToast(`IP「${ip}」を「${name}」として登録しました`, 'success');
+    });
+
+    // 5. カスタムグループモーダル関連
+    const groupModal = document.getElementById('modalDeviceGroup');
+    const inputGroupName = document.getElementById('inputGroupName');
+    const groupCheckboxesContainer = document.getElementById('groupSpeakerCheckboxes');
+
+    // モーダルを開く
+    document.getElementById('btnOpenNewGroupModal')?.addEventListener('click', () => {
+      if (inputGroupName) inputGroupName.value = '';
+      if (groupCheckboxesContainer) {
+        const devs = state.devices || [];
+        if (!devs.length) {
+          groupCheckboxesContainer.innerHTML = '<span class="text-sub">利用可能なスピーカーがありません</span>';
+        } else {
+          groupCheckboxesContainer.innerHTML = devs.map(d => `
+            <label class="speaker-chip" style="cursor: pointer;">
+              <input type="checkbox" value="${escapeHtml(d.name || d.ip)}" style="margin-right: 6px;">
+              <span>${escapeHtml(d.name || d.ip)}</span>
+            </label>
+          `).join('');
+
+          groupCheckboxesContainer.querySelectorAll('input[type="checkbox"]').forEach(c => {
+            c.addEventListener('change', (e) => {
+              e.target.closest('.speaker-chip')?.classList.toggle('checked', e.target.checked);
+            });
+          });
+        }
+      }
+      if (groupModal) groupModal.style.display = 'flex';
+    });
+
+    // モーダルを閉じる
+    document.getElementById('btnCloseGroupModal')?.addEventListener('click', () => {
+      if (groupModal) groupModal.style.display = 'none';
+    });
+    document.getElementById('btnCancelGroupModal')?.addEventListener('click', () => {
+      if (groupModal) groupModal.style.display = 'none';
+    });
+
+    // グループ保存
+    document.getElementById('btnSaveGroupModal')?.addEventListener('click', async () => {
+      const name = (inputGroupName?.value || '').trim();
+      if (!name) {
+        showToast('グループ名を入力してください', 'warning');
+        return;
+      }
+
+      const checked = Array.from(groupCheckboxesContainer?.querySelectorAll('input[type="checkbox"]:checked') || [])
+        .map(c => c.value);
+
+      if (!checked.length) {
+        showToast('所属させるスピーカーを1台以上選択してください', 'warning');
+        return;
+      }
+
+      state.deviceGroups = state.deviceGroups || {};
+      state.deviceGroups[name] = checked;
+
+      await saveAllSettings({ silent: true });
+      renderDeviceGroups();
+      renderBuilderCustomGroupChips();
+
+      if (groupModal) groupModal.style.display = 'none';
+      showToast(`カスタムグループ「${name}」を保存しました`, 'success');
+    });
   }
 
   // 起動実行
