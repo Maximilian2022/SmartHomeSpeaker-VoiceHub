@@ -321,27 +321,31 @@ body {
 /* ================= Speaker Checkbox Grid (Multi-select) ================= */
 .speaker-checkbox-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
   gap: 8px;
-  max-height: 220px;
+  max-height: 240px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px;
   background: rgba(11, 15, 25, 0.5);
   border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
+  box-sizing: border-box;
 }
 
 .speaker-chip {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--card-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: var(--transition);
   user-select: none;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .speaker-chip:hover {
@@ -354,6 +358,7 @@ body {
   width: 16px;
   height: 16px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .speaker-chip.checked {
@@ -361,9 +366,19 @@ body {
   border-color: rgba(99, 102, 241, 0.4);
 }
 
+.speaker-chip.google-chip.checked {
+  background: rgba(66, 133, 244, 0.15);
+  border-color: rgba(66, 133, 244, 0.45);
+}
+
 .speaker-chip.alexa-chip.checked {
   background: rgba(0, 202, 239, 0.15);
   border-color: rgba(0, 202, 239, 0.4);
+}
+
+.speaker-chip.homepod-chip.checked {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 .speaker-chip-name {
@@ -373,15 +388,51 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.speaker-chip-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .speaker-chip-badge {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
+  font-weight: 600;
   padding: 1px 6px;
   border-radius: 999px;
-  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-sub);
+}
+
+.speaker-chip-badge.google-badge {
+  background: rgba(66, 133, 244, 0.15);
+  color: #8ab4f8;
+  border: 1px solid rgba(66, 133, 244, 0.3);
+}
+
+.speaker-chip-badge.alexa-badge {
+  background: rgba(0, 202, 239, 0.15);
+  color: var(--alexa-color, #00caef);
+  border: 1px solid rgba(0, 202, 239, 0.3);
+}
+
+.speaker-chip-badge.homepod-badge {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.speaker-chip-badge.default-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .btn-group-sm {

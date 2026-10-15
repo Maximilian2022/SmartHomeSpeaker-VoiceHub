@@ -70,7 +70,7 @@ class HomePodManager {
             const fullList = [
               {
                 id: 'homepod_ALL',
-                name: 'HomePod (全室 HomePod)',
+                name: '全室 HomePod',
                 ip: 'homepod:ALL',
                 model: 'Apple HomePod Group',
                 type: 'homepod'

@@ -33,7 +33,7 @@ async def main():
 
         results.append({
             'id': f"homepod_{target_id.replace(':', '_').replace('-', '_')}",
-            'name': f"HomePod: {name}",
+            'name': name,
             'rawName': name,
             'ip': f"homepod:{target_id}",
             'rawIp': address,

@@ -311,7 +311,7 @@ class AlexaManager {
         const devlistTxtPath = path.join(DATA_DIR, '.alexa.devicelist.txt');
         const seen = new Set();
         const devices = [
-          { id: 'alexa_ALL', name: 'Alexa (全室 Echo)', ip: 'alexa:ALL', model: 'Amazon Echo Group', type: 'alexa' }
+          { id: 'alexa_ALL', name: '全室 Echo', ip: 'alexa:ALL', model: 'Amazon Echo Group', type: 'alexa' }
         ];
 
         // 1. .alexa.devicelist.txt が存在する場合は family や deviceType も含めて高精度にパース
@@ -341,7 +341,7 @@ class AlexaManager {
 
               devices.push({
                 id: `alexa_${name.replace(/\s+/g, '_')}`,
-                name: `Alexa: ${name}`,
+                name: name,
                 ip: `alexa:${name}`,
                 model: model,
                 type: 'alexa'
@@ -369,7 +369,7 @@ class AlexaManager {
 
           devices.push({
             id: `alexa_${trimmed.replace(/\s+/g, '_')}`,
-            name: `Alexa: ${trimmed}`,
+            name: trimmed,
             ip: `alexa:${trimmed}`,
             model: 'Amazon Echo',
             type: 'alexa'

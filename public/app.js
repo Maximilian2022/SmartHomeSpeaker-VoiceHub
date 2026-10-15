@@ -208,6 +208,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ================= 2. レンダリング =================
 
+  // スピーカー表示名の整形（重複する Alexa: や HomePod: プレフィックスの除去）
+  function formatSpeakerDisplayName(name) {
+    if (!name) return '';
+    return name
+      .replace(/^(Alexa:\s*|HomePod:\s*)/i, '')
+      .replace(/^Alexa\s*\((全室\s*Echo)\)/i, '$1')
+      .replace(/^HomePod\s*\((全室\s*HomePod)\)/i, '$1');
+  }
+
   // 複数スピーカー選択チェックボックスの描画
   function renderSpeakersCheckboxes(container, nameAttr, selectedValues = []) {
     const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || (state.devices[0]?.ip || '');
@@ -220,7 +229,9 @@ document.addEventListener('DOMContentLoaded', () => {
         <label class="speaker-chip ${isDefChecked ? 'checked' : ''}">
           <input type="checkbox" name="${nameAttr}" value="default" ${isDefChecked}>
           <span class="speaker-chip-name">デフォルト (標準)</span>
-          <span class="speaker-chip-badge">標準</span>
+          <span class="speaker-chip-badges">
+            <span class="speaker-chip-badge default-badge">標準</span>
+          </span>
         </label>
       `;
     }
@@ -230,14 +241,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDefault = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
+      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : 'google-chip');
+      const displayName = formatSpeakerDisplayName(dev.name);
+
+      let badgeHtml = '';
+      if (isDefault) {
+        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">★</span>';
+      }
+      if (isAlexa) {
+        badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
+      } else if (isHomePod) {
+        badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+      } else {
+        badgeHtml += '<span class="speaker-chip-badge google-badge">Google Home</span>';
+      }
 
       html += `
-        <label class="speaker-chip ${isAlexa ? 'alexa-chip' : ''} ${isHomePod ? 'homepod-chip' : ''} ${isChecked ? 'checked' : ''}">
+        <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
           <input type="checkbox" name="${nameAttr}" value="${dev.ip}" ${isChecked}>
-          <span class="speaker-chip-name">${escapeHtml(dev.name)}</span>
-          ${isDefault ? '<span class="speaker-chip-badge">★</span>' : ''}
-          ${isAlexa ? '<span class="speaker-chip-badge" style="color:var(--alexa-color);">Echo</span>' : ''}
-          ${isHomePod ? '<span class="speaker-chip-badge" style="color:#ffffff;">HomePod</span>' : ''}
+          <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
+          <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
       `;
     });
@@ -305,7 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const devNames = targets.map(t => {
         if (t === 'default') return 'デフォルト (標準)';
         const found = state.devices.find(d => d.ip === t);
-        return found ? found.name : t;
+        return found ? formatSpeakerDisplayName(found.name) : t;
       }).join(', ');
 
       rowsHtml += `
@@ -348,12 +371,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDef = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
+      const displayName = formatSpeakerDisplayName(dev.name);
 
       cardsHtml += `
         <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''}">
           <div class="device-card-header">
-            <span class="device-card-title">${escapeHtml(dev.name)}</span>
+            <span class="device-card-title">${escapeHtml(displayName)}</span>
             ${isDef ? '<span class="device-tag">デフォルト</span>' : ''}
+            ${!isAlexa && !isHomePod ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);">Google Home</span>' : ''}
             ${isAlexa ? '<span class="device-tag alexa">Alexa Echo</span>' : ''}
             ${isHomePod ? '<span class="device-tag homepod">Apple HomePod</span>' : ''}
           </div>
@@ -361,7 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span><strong>識別子/IP:</strong> ${escapeHtml(dev.ip)}</span>
             <span><strong>モデル:</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${dev.name}" style="margin-top: 6px;">
+          <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" style="margin-top: 6px;">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             テスト発声
           </button>
@@ -990,16 +1015,29 @@ document.addEventListener('DOMContentLoaded', () => {
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
       const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : 'google');
+      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : 'google-chip');
+      const displayName = formatSpeakerDisplayName(dev.name);
 
       // 初期値: デフォルトまたは最初のスピーカーを選択
       const isChecked = dev.isDefault || (!state.devices.some(d => d.isDefault) && state.devices[0]?.ip === dev.ip);
 
+      let badgeHtml = '';
+      if (dev.isDefault) {
+        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">★</span>';
+      }
+      if (isAlexa) {
+        badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
+      } else if (isHomePod) {
+        badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+      } else {
+        badgeHtml += '<span class="speaker-chip-badge google-badge">Google Home</span>';
+      }
+
       html += `
-        <label class="speaker-chip ${isAlexa ? 'alexa-chip' : ''} ${isHomePod ? 'homepod-chip' : ''} ${isChecked ? 'checked' : ''}">
+        <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
           <input type="checkbox" name="builderSpeaker" value="${dev.ip}" data-type="${devType}" ${isChecked ? 'checked' : ''}>
-          <span class="speaker-chip-name">${escapeHtml(dev.name)}</span>
-          ${isAlexa ? '<span class="speaker-chip-badge" style="color:var(--alexa-color);">Echo</span>' : ''}
-          ${isHomePod ? '<span class="speaker-chip-badge" style="color:#ffffff;">HomePod</span>' : ''}
+          <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
+          <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
       `;
     });
