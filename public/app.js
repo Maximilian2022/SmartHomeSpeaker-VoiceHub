@@ -2438,6 +2438,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
+    // 1.5. ヘッダーのミュート/アンミュート切り替えボタン更新
+    const toggleBtn = document.getElementById('headerDndToggleBtn');
+    const toggleIcon = document.getElementById('headerDndToggleIcon');
+    const toggleText = document.getElementById('headerDndToggleText');
+    if (toggleBtn && toggleIcon && toggleText) {
+      if (s.isActive) {
+        toggleBtn.classList.add('is-muted');
+        toggleIcon.textContent = '🔊';
+        toggleText.textContent = 'アンミュート';
+        toggleBtn.title = 'クリックでミュートを解除 (通常モードへ復帰)';
+      } else {
+        toggleBtn.classList.remove('is-muted');
+        toggleIcon.textContent = '🔇';
+        toggleText.textContent = 'ミュート';
+        toggleBtn.title = 'ワンタップで即時ミュート (60分間サイレント)';
+      }
+    }
+
     // 2. バナー表示
     if (banner && title && subtitle) {
       if (s.isActive) {
@@ -2847,6 +2865,35 @@ document.addEventListener('DOMContentLoaded', () => {
         await loadDndStatus();
       } catch (e) {
         showToast('サイレント解除エラー: ' + e.message, 'error');
+      }
+    });
+
+    // ヘッダーのミュート/アンミュート即時トグルボタン
+    document.getElementById('headerDndToggleBtn')?.addEventListener('click', async () => {
+      const isCurrentlyActive = !!state.dndStatus?.isActive;
+      try {
+        if (isCurrentlyActive) {
+          // アンミュート実行
+          const res = await fetch('/api/dnd/quick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ minutes: 0 })
+          });
+          if (!res.ok) throw new Error('解除失敗');
+          showToast('ミュートを解除し、通常モードに復帰しました', 'success');
+        } else {
+          // ミュート実行 (60分)
+          const res = await fetch('/api/dnd/quick', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ minutes: 60, reason: '手動サイレント (ヘッダー即時ミュート)' })
+          });
+          if (!res.ok) throw new Error('設定失敗');
+          showToast('【サイレント発動】60分間のミュートを開始しました (再クリックで即時解除)', 'success');
+        }
+        await loadDndStatus();
+      } catch (e) {
+        showToast('ミュート切り替えエラー: ' + e.message, 'error');
       }
     });
 

@@ -65,6 +65,17 @@ class DndManager {
       }
     }
 
+    // 3.5. 手動アンミュートによる一時解除オーバーライド (カレンダーや定時DNDも一時解除)
+    if (dndConfig.manualUnmutedUntil) {
+      const unmutedDate = new Date(dndConfig.manualUnmutedUntil);
+      if (unmutedDate.getTime() > now.getTime()) {
+        return { isDnd: false, reason: '手動アンミュート中' };
+      } else {
+        dndConfig.manualUnmutedUntil = null;
+        settingsManager.update({ dnd: { manualUnmutedUntil: null } });
+      }
+    }
+
     // 4. カレンダー進行中予定連動 DND
     if (dndConfig.calendarEnabled && Array.isArray(calendarManager.eventsCache)) {
       const isAllMode = dndConfig.calendarMode === 'all';
@@ -210,13 +221,16 @@ class DndManager {
    */
   setQuickDnd(minutes, reason = '手動サイレント') {
     if (!minutes || minutes <= 0) {
+      // 60分間のアンミュートオーバーライドを設定（カレンダーや定時サイレントも確実に解除）
+      const unmutedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       settingsManager.update({
         dnd: {
           manualUntil: null,
-          manualReason: ''
+          manualReason: '',
+          manualUnmutedUntil: unmutedUntil
         }
       });
-      console.log('[DND] 手動サイレントを解除しました');
+      console.log('[DND] 手動サイレントを解除 (アンミュート) しました');
       this.checkAndFlushQueue();
       return { success: true, active: false };
     }
@@ -225,7 +239,8 @@ class DndManager {
     settingsManager.update({
       dnd: {
         manualUntil: until,
-        manualReason: reason
+        manualReason: reason,
+        manualUnmutedUntil: null
       }
     });
     console.log(`[DND] 手動サイレントを ${minutes} 分間有効化しました (解除予定: ${until})`);

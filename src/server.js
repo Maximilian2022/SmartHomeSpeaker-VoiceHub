@@ -365,38 +365,38 @@ function requireWebhookAuth(req, res, next) {
 
 // ================= API エンドポイント =================
 
-// 1. 発声 API (最新・複数デバイス対応)
-app.post('/api/say', requireWebhookAuth, async (req, res) => {
-  const text = req.body.text || req.query.text;
+// 1. 発声 API (最新・複数デバイス対応 & 非同期レスポンス対応)
+const handleSay = async (req, res) => {
+  const text = req.body?.text || req.query?.text;
   if (!text) {
     return res.status(400).json({ error: 'パラメータ "text" は必須です' });
   }
 
   // 複数デバイスの取得・正規化
   let targets = [];
-  if (Array.isArray(req.body.devices)) {
+  if (Array.isArray(req.body?.devices)) {
     targets = req.body.devices;
-  } else if (typeof req.body.devices === 'string') {
+  } else if (typeof req.body?.devices === 'string') {
     targets = req.body.devices.split(',').map(s => s.trim());
-  } else if (typeof req.body.device === 'string') {
+  } else if (typeof req.body?.device === 'string') {
     targets = req.body.device.split(',').map(s => s.trim());
-  } else if (Array.isArray(req.body.deviceIp)) {
+  } else if (Array.isArray(req.body?.deviceIp)) {
     targets = req.body.deviceIp;
-  } else if (req.body.deviceIp) {
+  } else if (req.body?.deviceIp) {
     targets = [req.body.deviceIp];
-  } else if (req.query.device) {
+  } else if (req.query?.device) {
     targets = req.query.device.split(',').map(s => s.trim());
-  } else if (req.query.deviceIp) {
+  } else if (req.query?.deviceIp) {
     targets = [req.query.deviceIp];
   }
 
   try {
-    const isUrgent = req.body.urgent === true || req.body.urgent === 'true' || req.query.urgent === 'true' ||
-                     req.body.bypassDnd === true || req.body.bypassDnd === 'true' || req.query.bypassDnd === 'true';
+    const isUrgent = req.body?.urgent === true || req.body?.urgent === 'true' || req.query?.urgent === 'true' ||
+                     req.body?.bypassDnd === true || req.body?.bypassDnd === 'true' || req.query?.bypassDnd === 'true';
 
     // 送信元メタデータの判定
-    let source = req.body.source || req.query.source;
-    let sourceLabel = req.body.sourceLabel || req.query.sourceLabel;
+    let source = req.body?.source || req.query?.source;
+    let sourceLabel = req.body?.sourceLabel || req.query?.sourceLabel;
     if (!source) {
       if (isTunnelRequest(req)) {
         source = 'tunnel_webhook';
@@ -415,24 +415,61 @@ app.post('/api/say', requireWebhookAuth, async (req, res) => {
       }
     }
 
-    const result = await speakToMultipleDevices(text, targets, {
-      voice: req.body.voice || req.query.voice,
-      rate: req.body.rate || req.query.rate,
-      pitch: req.body.pitch || req.query.pitch,
-      volume: req.body.volume || req.query.volume,
-      volumeLevel: req.body.volumeLevel !== undefined ? parseFloat(req.body.volumeLevel) : undefined,
+    // 非同期応答（即時レスポンス）の判定:
+    // 送信元（Slack, LINE, IFTTT 等）の3秒タイムアウトを防ぐため、外部 Webhook / API は原則として即時 200 OK を返却する
+    const isExplicitSync = req.body?.wait === true || req.body?.wait === 'true' || req.query?.wait === 'true' ||
+                           req.body?.sync === true || req.body?.sync === 'true' || req.query?.sync === 'true';
+
+    const isExplicitAsync = req.body?.async === true || req.body?.async === 'true' || req.query?.async === 'true' || req.query?.async === '1' ||
+                            req.body?.wait === false || req.body?.wait === 'false' || req.query?.wait === 'false';
+
+    const isExternalWebhook = (source === 'tunnel_webhook' || source === 'api');
+    const shouldRunAsync = isExplicitAsync || (isExternalWebhook && !isExplicitSync);
+
+    const rawVol = req.body?.volumeLevel !== undefined ? req.body.volumeLevel : req.query?.volumeLevel;
+    const parsedVol = (rawVol !== undefined && rawVol !== '') ? parseFloat(rawVol) : undefined;
+
+    const speakOptions = {
+      voice: req.body?.voice || req.query?.voice,
+      rate: req.body?.rate || req.query?.rate,
+      pitch: req.body?.pitch || req.query?.pitch,
+      volume: req.body?.volume || req.query?.volume,
+      volumeLevel: parsedVol,
       urgent: isUrgent,
       bypassDnd: isUrgent,
       source,
       sourceLabel
-    });
+    };
 
+    if (shouldRunAsync) {
+      // 送信元のタイムアウトを防ぐため、即座に 200 OK を返却（バックグラウンドで発声処理）
+      res.status(200).json({
+        success: true,
+        status: 'accepted',
+        async: true,
+        message: '発声リクエストを受付けました（バックグラウンドで処理中）',
+        text,
+        targets: targets.length > 0 ? targets : [deviceManager.getDefaultDeviceIp()]
+      });
+
+      // バックグラウンドで非同期実行（発声履歴ログには完了時に自動追記される）
+      speakToMultipleDevices(text, targets, speakOptions).catch(err => {
+        console.error('[Async API Say Error]:', err.message);
+      });
+      return;
+    }
+
+    // 同期実行（完了を待機）
+    const result = await speakToMultipleDevices(text, targets, speakOptions);
     res.json(result);
   } catch (err) {
     console.error('[API Say Error]:', err.message);
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+app.post('/api/say', requireWebhookAuth, handleSay);
+app.get('/api/say', requireWebhookAuth, handleSay);
 
 // 発声履歴 API (直近100件)
 app.get('/api/history', (req, res) => {
