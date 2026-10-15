@@ -404,6 +404,16 @@ app.post('/api/alexa/logout', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/alexa/token', (req, res) => {
+  try {
+    const token = req.body.token;
+    const result = alexaManager.setRefreshToken(token);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // 起動
 app.listen(PORT, '0.0.0.0', () => {
   console.log('====================================================');

@@ -76,6 +76,8 @@ document.addEventListener('DOMContentLoaded', () => {
     alexaLoginUrlText: document.getElementById('alexaLoginUrlText'),
     btnRefreshAlexaDevices: document.getElementById('btnRefreshAlexaDevices'),
     btnLogoutAlexa: document.getElementById('btnLogoutAlexa'),
+    inputAlexaToken: document.getElementById('inputAlexaToken'),
+    btnSaveAlexaToken: document.getElementById('btnSaveAlexaToken'),
     // トースト
     toastContainer: document.getElementById('toastContainer')
   };
@@ -713,6 +715,36 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast('Alexa 連携を解除しました', 'info');
         } catch (err) {
           showToast('連携解除失敗: ' + err.message, 'error');
+        }
+      });
+    }
+
+    // 手動トークン保存ボタン
+    if (el.btnSaveAlexaToken) {
+      el.btnSaveAlexaToken.addEventListener('click', async () => {
+        const token = (el.inputAlexaToken.value || '').trim();
+        if (!token) {
+          return showToast('リフレッシュトークンを入力してください', 'error');
+        }
+        try {
+          el.btnSaveAlexaToken.disabled = true;
+          const res = await fetch('/api/alexa/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token })
+          });
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.error || '保存失敗');
+          }
+          el.inputAlexaToken.value = '';
+          await loadDevices();
+          await loadAlexaStatus();
+          showToast('🎉 リフレッシュトークンを保存し、Alexa デバイスを読み込みました！', 'success');
+        } catch (err) {
+          showToast('エラー: ' + err.message, 'error');
+        } finally {
+          el.btnSaveAlexaToken.disabled = false;
         }
       });
     }

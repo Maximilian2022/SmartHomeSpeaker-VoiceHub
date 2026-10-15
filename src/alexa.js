@@ -82,6 +82,23 @@ class AlexaManager {
     return this.configured || process.env.ALEXA_ENABLED === 'true';
   }
 
+  setRefreshToken(token) {
+    if (!token || typeof token !== 'string') {
+      throw new Error('トークンが空です');
+    }
+    const cleanToken = token.trim();
+    if (!cleanToken.startsWith('Atnr|')) {
+      throw new Error('無効なリフレッシュトークン形式です ("Atnr|" で始まる文字列を指定してください)');
+    }
+    const data = {
+      refreshToken: cleanToken,
+      savedAt: new Date().toISOString()
+    };
+    this.saveCredentials(data);
+    this.listDevices().catch(() => {});
+    return { success: true, message: 'リフレッシュトークンを保存しました' };
+  }
+
   getAuthStatus(hostIp = '127.0.0.1') {
     return {
       enabled: this.isEnabled(),
@@ -115,10 +132,12 @@ class AlexaManager {
         proxyOwnIp: hostIp,
         proxyPort: port,
         proxyListenBind: '0.0.0.0',
-        amazonPage: this.amazonDomain,
-        baseAmazonPage: this.amazonDomain,
-        acceptLanguage: 'ja-JP',
-        amazonPageProxyLanguage: 'ja_JP',
+        // Amazon の OAuth 認可フローはグローバル共通で amazon.com に集約されており、
+        // amazon.co.jp を指定すると /ap/maplanding で 404 (犬のエラー) になるため amazon.com を指定
+        amazonPage: 'amazon.com',
+        baseAmazonPage: 'amazon.com',
+        acceptLanguage: 'en-US,ja-JP',
+        amazonPageProxyLanguage: 'en_US',
         proxyOnly: true,
         setupProxy: true,
         formerRegistrationData: this.credentials || undefined,

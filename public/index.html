@@ -291,6 +291,19 @@
                   </div>
                 </div>
               </div>
+
+              <!-- 手動トークン入力オプション (救済用) -->
+              <div class="alexa-manual-toggle" style="margin-top: 16px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px;">
+                <details style="cursor: pointer;">
+                  <summary style="font-size: 0.85rem; color: var(--text-muted); outline: none;">
+                    🔧 手動でリフレッシュトークン（Atnr|...）を入力して直接登録する場合
+                  </summary>
+                  <div style="margin-top: 12px; display: flex; gap: 8px;">
+                    <input type="password" id="inputAlexaToken" class="form-input" placeholder="Atnr|... から始まるトークンを貼り付け" style="flex: 1;">
+                    <button type="button" id="btnSaveAlexaToken" class="btn btn-secondary btn-sm">保存</button>
+                  </div>
+                </details>
+              </div>
             </div>
           </div>
         </div>
