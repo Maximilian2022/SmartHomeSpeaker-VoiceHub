@@ -446,28 +446,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
       cardsHtml += `
         <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : ''}">
-          <div class="device-card-header">
-            <span class="device-card-title">${escapeHtml(displayName)}</span>
-            ${isDef ? '<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);">★ デフォルト端末</span>' : ''}
-            ${!isAlexa && !isHomePod ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);">Google Home</span>' : ''}
-            ${isAlexa ? '<span class="device-tag alexa">Alexa Echo</span>' : ''}
-            ${isHomePod ? '<span class="device-tag homepod">Apple HomePod</span>' : ''}
+          <div class="device-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div style="min-width:0;flex:1;">
+              <span class="device-card-title" style="font-size:1.05rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;">${escapeHtml(displayName)}</span>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">
+              ${isDef ? '<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.7rem;padding:2px 6px;">★ 標準</span>' : ''}
+              ${!isAlexa && !isHomePod ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
+              ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
+              ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
+            </div>
           </div>
-          <div class="device-card-info">
+          <div class="device-card-info" style="margin-top:8px;">
             <span><strong>識別子/IP:</strong> ${escapeHtml(dev.ip)}</span>
             <span><strong>モデル:</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
           </div>
-          <div class="device-card-actions" style="display:flex;gap:8px;margin-top:12px;align-items:center;">
-            <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" style="flex:1;">
+          <div class="device-card-actions" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
+            <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" style="width:100%;justify-content:center;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               テスト発声
             </button>
             ${isDef ? `
-              <span style="color:#fbbf24;font-size:0.8rem;font-weight:600;padding:6px 12px;border-radius:var(--radius-sm);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);white-space:nowrap;">
-                ★ 標準端末
-              </span>
+              <div style="display:flex;align-items:center;justify-content:center;gap:6px;width:100%;color:#fbbf24;font-size:0.82rem;font-weight:600;padding:7px 12px;border-radius:var(--radius-sm);background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);box-sizing:border-box;">
+                ★ デフォルト (標準) 端末
+              </div>
             ` : `
-              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" title="このスピーカーをデフォルト端末に設定します" style="white-space:nowrap;">
+              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" title="このスピーカーをデフォルト端末に設定します" style="width:100%;justify-content:center;">
                 ★ デフォルトに設定
               </button>
             `}
