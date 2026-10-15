@@ -275,7 +275,9 @@ class CalendarManager {
             const timeStr = `${ev.start.getHours()}時${ev.start.getMinutes() === 0 ? '' : ev.start.getMinutes() + '分'}`;
             const message = `まもなく、${timeStr}から「${ev.summary}」の時間です。`;
             console.log(`[Calendar Reminder] (${cal.name || 'カレンダー'}) 発声: ${message}`);
-            this.speakMessage(message, cal, config);
+            this.speakMessage(message, cal, config, {
+              sourceLabel: `カレンダー通知 (${cal.name || 'カレンダー'}: 直前リマインド)`
+            });
           }
         }
       }
@@ -337,7 +339,9 @@ class CalendarManager {
       message += ' 今日も一日がんばりましょう！';
     }
 
-    return await this.speakMessage(message, cal, globalConfig);
+    return await this.speakMessage(message, cal, globalConfig, {
+      sourceLabel: `カレンダー通知 (${cal.name || 'カレンダー'}: 朝の予定まとめ)`
+    });
   }
 
   /**
@@ -367,13 +371,15 @@ class CalendarManager {
       message += ' 今日も一日がんばりましょう！';
     }
 
-    return await this.speakMessage(message, {}, config);
+    return await this.speakMessage(message, {}, config, {
+      sourceLabel: 'カレンダー通知 (朝の予定まとめ)'
+    });
   }
 
   /**
    * メッセージをターゲットスピーカーへ発声 (個別設定を最優先、全体設定へフォールバック)
    */
-  async speakMessage(text, calConfig = {}, globalConfig = {}) {
+  async speakMessage(text, calConfig = {}, globalConfig = {}, extraOptions = {}) {
     if (!this.executor) return null;
 
     // スピーカーの決定 (カレンダー個別 > 全体設定 > デフォルト)
@@ -394,7 +400,10 @@ class CalendarManager {
       voice,
       rate,
       pitch,
-      volumeLevel
+      volumeLevel,
+      source: 'calendar',
+      sourceLabel: extraOptions.sourceLabel || (calConfig.name ? `カレンダー通知 (${calConfig.name})` : 'カレンダー連携'),
+      ...extraOptions
     });
   }
 }

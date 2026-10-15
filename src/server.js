@@ -11,6 +11,7 @@ const homepodManager = require('./homepod');
 const settingsManager = require('./settings');
 const calendarManager = require('./calendar');
 const dndManager = require('./dnd');
+const historyManager = require('./history');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
@@ -177,6 +178,21 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
 
   // 送信先が 0 台になった場合は早期リターン
   if (activeTargets.length === 0) {
+    historyManager.addEntry({
+      text,
+      source: options.source || 'api',
+      sourceLabel: options.sourceLabel,
+      targets: resolvedTargets.map(d => d.name || d.ip),
+      voice: options.voice,
+      rate: options.rate,
+      pitch: options.pitch,
+      volume: options.volume,
+      volumeLevel: options.volumeLevel,
+      status: 'suppressed',
+      statusMessage: 'おやすみ・会議モード (DND) 発動中のため発話を抑制しました',
+      urgent: !!options.urgent,
+      results: []
+    });
     return {
       success: true,
       dndSuppressed: true,
@@ -253,6 +269,34 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   const detailedResults = results.map(r => r.value || { status: 'error', error: r.reason?.message });
 
   const hasSuccess = detailedResults.some(r => r.status === 'success');
+  const allSuccess = detailedResults.length > 0 && detailedResults.every(r => r.status === 'success');
+
+  let historyStatus = 'error';
+  let historyMessage = '全デバイスへの送信に失敗しました';
+  if (allSuccess) {
+    historyStatus = 'success';
+    historyMessage = `${detailedResults.length} 台のスピーカーへ送信成功`;
+  } else if (hasSuccess) {
+    historyStatus = 'partial';
+    const successCnt = detailedResults.filter(r => r.status === 'success').length;
+    historyMessage = `一部端末のみ成功 (${successCnt}/${detailedResults.length} 台)`;
+  }
+
+  historyManager.addEntry({
+    text,
+    source: options.source || 'api',
+    sourceLabel: options.sourceLabel,
+    targets: resolvedTargets.map(d => d.name || d.ip),
+    voice: options.voice,
+    rate: options.rate,
+    pitch: options.pitch,
+    volume: options.volume,
+    volumeLevel: effectiveVolumeLevel,
+    status: historyStatus,
+    statusMessage: historyMessage,
+    urgent: !!options.urgent,
+    results: detailedResults
+  });
 
   return {
     success: hasSuccess,
@@ -279,7 +323,9 @@ dndManager.setSpeakerExecutor(async (item) => {
   const targets = item.targetDevice ? [item.targetDevice] : [];
   return await speakToMultipleDevices(item.text, targets, {
     ...(item.options || {}),
-    bypassDnd: true
+    bypassDnd: true,
+    source: 'dnd_queue',
+    sourceLabel: 'DND保留再生'
   });
 });
 
@@ -348,6 +394,27 @@ app.post('/api/say', requireWebhookAuth, async (req, res) => {
     const isUrgent = req.body.urgent === true || req.body.urgent === 'true' || req.query.urgent === 'true' ||
                      req.body.bypassDnd === true || req.body.bypassDnd === 'true' || req.query.bypassDnd === 'true';
 
+    // 送信元メタデータの判定
+    let source = req.body.source || req.query.source;
+    let sourceLabel = req.body.sourceLabel || req.query.sourceLabel;
+    if (!source) {
+      if (isTunnelRequest(req)) {
+        source = 'tunnel_webhook';
+        sourceLabel = 'Cloudflare Tunnel (外部)';
+      } else {
+        const referer = req.headers['referer'] || '';
+        const origin = req.headers['origin'] || '';
+        const fetchSite = req.headers['sec-fetch-site'] || '';
+        if (referer.includes(`:${PORT}`) || origin.includes(`:${PORT}`) || fetchSite === 'same-origin') {
+          source = 'web_ui';
+          sourceLabel = 'Web UI (即時発言)';
+        } else {
+          source = 'api';
+          sourceLabel = '外部 API / Webhook';
+        }
+      }
+    }
+
     const result = await speakToMultipleDevices(text, targets, {
       voice: req.body.voice || req.query.voice,
       rate: req.body.rate || req.query.rate,
@@ -355,7 +422,9 @@ app.post('/api/say', requireWebhookAuth, async (req, res) => {
       volume: req.body.volume || req.query.volume,
       volumeLevel: req.body.volumeLevel !== undefined ? parseFloat(req.body.volumeLevel) : undefined,
       urgent: isUrgent,
-      bypassDnd: isUrgent
+      bypassDnd: isUrgent,
+      source,
+      sourceLabel
     });
 
     res.json(result);
@@ -363,6 +432,20 @@ app.post('/api/say', requireWebhookAuth, async (req, res) => {
     console.error('[API Say Error]:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// 発声履歴 API (直近100件)
+app.get('/api/history', (req, res) => {
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : 100;
+  res.json({
+    history: historyManager.getHistory(limit),
+    total: historyManager.history.length
+  });
+});
+
+app.delete('/api/history', (req, res) => {
+  historyManager.clearHistory();
+  res.json({ success: true, message: '発言履歴をクリアしました' });
 });
 
 // 2. システム設定 API

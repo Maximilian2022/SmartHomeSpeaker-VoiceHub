@@ -215,7 +215,9 @@ class SchedulerManager {
                 deviceIps: targets.map(d => (d === 'default' ? undefined : d)).filter(Boolean),
                 voice: sched.voice,
                 rate: sched.rate,
-                pitch: sched.pitch
+                pitch: sched.pitch,
+                source: 'schedule',
+                sourceLabel: `スケジュール (${sched.name})`
               });
             }
             this.addHistory({
@@ -393,7 +395,9 @@ class SchedulerManager {
       deviceIps: targets.map(d => (d === 'default' ? undefined : d)).filter(Boolean),
       voice: sched.voice,
       rate: sched.rate,
-      pitch: sched.pitch
+      pitch: sched.pitch,
+      source: 'schedule',
+      sourceLabel: `スケジュール (${sched.name} テスト)`
     });
   }
 }

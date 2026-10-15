@@ -9,7 +9,9 @@ document.addEventListener('DOMContentLoaded', () => {
     devices: [],
     voices: [],
     schedules: [],
-    history: []
+    history: [],
+    historyFilter: 'all',
+    historySearch: ''
   };
 
   // DOM要素
@@ -22,6 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // タブ
     tabBtns: document.querySelectorAll('.tab-btn'),
     tabPanes: document.querySelectorAll('.tab-pane'),
+    // サブタブ (スケジュール・カレンダー)
+    subTabBtns: document.querySelectorAll('.sub-tab-btn'),
+    subTabPanes: document.querySelectorAll('.sub-tab-pane'),
     // 即時発言
     sayTextInput: document.getElementById('sayTextInput'),
     saySpeakersContainer: document.getElementById('saySpeakersContainer'),
@@ -38,8 +43,16 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSpeakDirect: document.getElementById('btnSpeakDirect'),
     audioPreviewWrapper: document.getElementById('audioPreviewWrapper'),
     audioPreviewPlayer: document.getElementById('audioPreviewPlayer'),
-    recentHistoryList: document.getElementById('recentHistoryList'),
     presetBtns: document.querySelectorAll('.preset-btn'),
+    btnGoToHistoryTab: document.getElementById('btnGoToHistoryTab'),
+    // 発言履歴 (過去100件)
+    tabHistoryCount: document.getElementById('tabHistoryCount'),
+    historyCounterBadge: document.getElementById('historyCounterBadge'),
+    fullHistoryContainer: document.getElementById('fullHistoryContainer'),
+    historyFilterGroup: document.getElementById('historyFilterGroup'),
+    historySearchInput: document.getElementById('historySearchInput'),
+    btnReloadHistory: document.getElementById('btnReloadHistory'),
+    btnClearFullHistory: document.getElementById('btnClearFullHistory'),
     // スケジュール
     scheduleTableBody: document.getElementById('scheduleTableBody'),
     btnOpenNewScheduleModal: document.getElementById('btnOpenNewScheduleModal'),
@@ -101,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
       loadDevices(),
       loadVoices(),
       loadSchedules(),
+      loadHistory(),
       loadAlexaStatus(),
       loadCalendarSettings(),
       loadCalendarEvents(),
@@ -207,13 +221,32 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('スケジュール取得失敗');
       const data = await res.json();
       state.schedules = data.schedules || [];
-      state.history = data.history || [];
 
       renderScheduleTable();
-      renderHistoryList();
     } catch (err) {
       showToast('スケジュールの取得に失敗しました', 'error');
     }
+  }
+
+  // 発言履歴一覧の取得 (直近100件)
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/history?limit=100');
+      if (!res.ok) throw new Error('発言履歴取得失敗');
+      const data = await res.json();
+      state.history = data.history || [];
+
+      renderFullHistory();
+      updateHistoryBadges();
+    } catch (err) {
+      console.warn('発言履歴の取得に失敗:', err.message);
+    }
+  }
+
+  function updateHistoryBadges() {
+    const count = (state.history || []).length;
+    if (el.tabHistoryCount) el.tabHistoryCount.textContent = count;
+    if (el.historyCounterBadge) el.historyCounterBadge.textContent = `${count} / 100 件`;
   }
 
   // ================= 2. レンダリング =================
@@ -493,29 +526,137 @@ document.addEventListener('DOMContentLoaded', () => {
     el.devicesGrid.innerHTML = cardsHtml;
   }
 
-  function renderHistoryList() {
-    if (!state.history.length) {
-      el.recentHistoryList.innerHTML = `<li class="empty-msg">履歴はまだありません</li>`;
+  function renderFullHistory() {
+    if (!el.fullHistoryContainer) return;
+
+    let items = state.history || [];
+
+    // フィルター適用
+    if (state.historyFilter && state.historyFilter !== 'all') {
+      items = items.filter(item => {
+        if (state.historyFilter === 'api') {
+          return item.source === 'api' || item.source === 'tunnel_webhook';
+        }
+        return item.source === state.historyFilter;
+      });
+    }
+
+    // 検索語句適用
+    if (state.historySearch) {
+      const q = state.historySearch.toLowerCase();
+      items = items.filter(item => {
+        const textMatch = (item.text || '').toLowerCase().includes(q);
+        const sourceMatch = (item.sourceLabel || '').toLowerCase().includes(q);
+        const targetsMatch = Array.isArray(item.targets) 
+          ? item.targets.some(t => String(t).toLowerCase().includes(q))
+          : false;
+        return textMatch || sourceMatch || targetsMatch;
+      });
+    }
+
+    if (!items.length) {
+      el.fullHistoryContainer.innerHTML = `<div class="empty-msg">条件に一致する発言履歴はありません</div>`;
       return;
     }
 
-    let itemsHtml = '';
-    state.history.slice(0, 15).forEach(item => {
-      const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
-      const isSuccess = item.status === 'success';
+    let html = '';
+    items.forEach(item => {
+      // 日時フォーマット (YYYY/MM/DD HH:mm:ss)
+      const date = item.timestamp ? new Date(item.timestamp) : new Date();
+      const timeStr = date.toLocaleString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
 
-      itemsHtml += `
-        <li class="history-item">
-          <div class="history-header">
-            <span>${timeStr}</span>
-            <span style="color: ${isSuccess ? 'var(--success)' : 'var(--danger)'}">${isSuccess ? '成功' : '失敗'}</span>
+      // 相対時間
+      const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
+      let relativeTime = '';
+      if (diffSec < 60) relativeTime = `${Math.max(1, diffSec)}秒前`;
+      else if (diffSec < 3600) relativeTime = `${Math.floor(diffSec / 60)}分前`;
+      else if (diffSec < 86400) relativeTime = `${Math.floor(diffSec / 3600)}時間前`;
+      else relativeTime = `${Math.floor(diffSec / 86400)}日前`;
+
+      // 送信元バッジ
+      const sourceClass = `source-${item.source || 'api'}`;
+      const sourceText = escapeHtml(item.sourceLabel || item.source || '不明');
+
+      // ステータスバッジ
+      let statusBadgeHtml = '';
+      let statusClass = 'status-success';
+      if (item.status === 'suppressed') {
+        statusClass = 'status-suppressed';
+        statusBadgeHtml = `<span class="history-status-badge status-suppressed">🌙 DNDサイレント</span>`;
+      } else if (item.status === 'error') {
+        statusClass = 'status-error';
+        statusBadgeHtml = `<span class="history-status-badge status-error">❌ 送信失敗</span>`;
+      } else if (item.status === 'partial') {
+        statusClass = 'status-partial';
+        statusBadgeHtml = `<span class="history-status-badge status-partial">⚠️ 一部送信</span>`;
+      } else {
+        statusBadgeHtml = `<span class="history-status-badge status-success">✓ 送信成功</span>`;
+      }
+
+      // 送信先スピーカー表示
+      const targetsList = Array.isArray(item.targets) ? item.targets : (item.targets ? [item.targets] : ['デフォルト']);
+      const targetsHtml = targetsList.map(t => `<span class="speaker-tag">${escapeHtml(formatSpeakerDisplayName(t))}</span>`).join(' ');
+
+      // 音声オプション
+      const voiceName = (item.voice || '').replace('ja-JP-', '').replace('Neural', '') || '七海';
+      const speechOptions = `${voiceName}${item.urgent ? ' | 🚨緊急' : ''}`;
+
+      html += `
+        <div class="history-card-item ${statusClass}" data-id="${escapeHtml(item.id || '')}">
+          <div class="history-card-top">
+            <div class="history-meta-group">
+              <span class="source-badge ${sourceClass}">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                ${sourceText}
+              </span>
+              <span class="history-time" title="${timeStr}">${relativeTime} (${timeStr})</span>
+            </div>
+            <div>
+              ${statusBadgeHtml}
+            </div>
           </div>
-          <div class="history-text">${escapeHtml(item.text)}</div>
-        </li>
+
+          <div class="history-card-body">
+            ${escapeHtml(item.text)}
+          </div>
+
+          <div class="history-card-footer">
+            <div class="history-targets-info">
+              <span>送信先:</span>
+              ${targetsHtml}
+              <span style="color: var(--text-muted); margin-left: 6px;">[${escapeHtml(speechOptions)}]</span>
+            </div>
+            <div class="history-actions">
+              <button type="button" class="btn-history-action btn-copy-hist" data-text="${escapeHtml(item.text)}" title="発言内容をコピー">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                コピー
+              </button>
+              <button type="button" class="btn-history-action btn-preview-hist" data-text="${escapeHtml(item.text)}" data-voice="${escapeHtml(item.voice || '')}" title="ブラウザで試聴">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                試聴
+              </button>
+              <button type="button" class="btn-history-action btn-repeat" data-text="${escapeHtml(item.text)}" data-voice="${escapeHtml(item.voice || '')}" data-targets='${escapeHtml(JSON.stringify(targetsList))}' title="このテキストで再発言">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                再発言
+              </button>
+            </div>
+          </div>
+        </div>
       `;
     });
 
-    el.recentHistoryList.innerHTML = itemsHtml;
+    el.fullHistoryContainer.innerHTML = html;
+  }
+
+  function renderHistoryList() {
+    renderFullHistory();
   }
 
   // ================= 3. イベントリスナー =================
@@ -529,7 +670,29 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.classList.add('active');
         const targetId = btn.getAttribute('data-tab');
         document.getElementById(targetId)?.classList.add('active');
+
+        // 発言履歴タブを開いた時は最新の履歴を再取得
+        if (targetId === 'tab-history') {
+          loadHistory();
+        }
       });
+    });
+
+    // スケジュール・カレンダー サブタブ切り替え
+    el.subTabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        el.subTabBtns.forEach(b => b.classList.remove('active'));
+        el.subTabPanes.forEach(p => p.classList.remove('active'));
+
+        btn.classList.add('active');
+        const subtabId = btn.getAttribute('data-subtab');
+        document.getElementById(subtabId)?.classList.add('active');
+      });
+    });
+
+    // 即時発言画面から発言履歴タブへのクイック遷移
+    el.btnGoToHistoryTab?.addEventListener('click', () => {
+      document.getElementById('btnTabHistory')?.click();
     });
 
     // ヘッダーの DND チップクリックで DND タブへ移動
@@ -684,13 +847,8 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast(`${selectedSpeakers.length} 台のスピーカーへ送信完了 (${successCount} 台成功)！`, 'success');
         }
 
-        // 履歴に追加
-        state.history.unshift({
-          text,
-          status: data.dndSuppressed ? 'suppressed' : 'success',
-          timestamp: new Date().toISOString()
-        });
-        renderHistoryList();
+        // 最新の発言履歴を取得同期
+        loadHistory();
         // キャッシュ統計の再取得
         loadServerStatus();
       } catch (err) {
@@ -717,10 +875,16 @@ document.addEventListener('DOMContentLoaded', () => {
           const res = await fetch('/api/say', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, devices: [ip] })
+            body: JSON.stringify({
+              text,
+              devices: [ip],
+              source: 'quick_test',
+              sourceLabel: `テスト発声 (${name})`
+            })
           });
           if (!res.ok) throw new Error('送信失敗');
           showToast(`${name} にテスト音声を送信しました！`, 'success');
+          loadHistory();
         } catch (err) {
           showToast(`送信エラー: ${err.message}`, 'error');
         } finally {
@@ -899,11 +1063,118 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // 履歴クリア
-    document.getElementById('btnClearHistory')?.addEventListener('click', () => {
-      state.history = [];
-      renderHistoryList();
-      showToast('発言履歴をクリアしました');
+    // 履歴 送信元フィルター
+    document.querySelectorAll('.history-filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('.history-filter-pill').forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        state.historyFilter = pill.getAttribute('data-filter') || 'all';
+        renderFullHistory();
+      });
+    });
+
+    // 履歴 リアルタイム検索
+    el.historySearchInput?.addEventListener('input', (e) => {
+      state.historySearch = e.target.value.trim();
+      renderFullHistory();
+    });
+
+    // 履歴 手動再読み込み
+    el.btnReloadHistory?.addEventListener('click', async () => {
+      await loadHistory();
+      showToast('発言履歴を最新に更新しました', 'info');
+    });
+
+    // 履歴 全件クリア
+    el.btnClearFullHistory?.addEventListener('click', async () => {
+      if (confirm('過去100件の発言履歴をすべて消去しますか？')) {
+        try {
+          const res = await fetch('/api/history', { method: 'DELETE' });
+          if (!res.ok) throw new Error('クリア処理に失敗しました');
+          state.history = [];
+          renderFullHistory();
+          updateHistoryBadges();
+          showToast('発言履歴をすべてクリアしました', 'success');
+        } catch (err) {
+          showToast('履歴クリア失敗: ' + err.message, 'error');
+        }
+      }
+    });
+
+    // 履歴カード内アクション (イベント委譲: コピー、試聴、再発言)
+    el.fullHistoryContainer?.addEventListener('click', async (e) => {
+      // 1. コピーボタン
+      const copyBtn = e.target.closest('.btn-copy-hist');
+      if (copyBtn) {
+        const text = copyBtn.getAttribute('data-text') || '';
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('発言テキストをクリップボードにコピーしました', 'success');
+        } catch (err) {
+          showToast('コピーに失敗しました', 'error');
+        }
+        return;
+      }
+
+      // 2. 試聴ボタン
+      const previewBtn = e.target.closest('.btn-preview-hist');
+      if (previewBtn) {
+        const text = previewBtn.getAttribute('data-text') || '';
+        const voice = previewBtn.getAttribute('data-voice') || '';
+        playHistoryPreview(text, voice, previewBtn);
+        return;
+      }
+
+      // 3. 再発言ボタン
+      const repeatBtn = e.target.closest('.btn-repeat');
+      if (repeatBtn) {
+        const text = repeatBtn.getAttribute('data-text') || '';
+        const voice = repeatBtn.getAttribute('data-voice') || '';
+        let targets = [];
+        try {
+          targets = JSON.parse(repeatBtn.getAttribute('data-targets') || '[]');
+        } catch (_) {}
+
+        // 即時発言タブへ切り替え
+        document.getElementById('btnTabSay')?.click();
+
+        // フォームへ反映
+        if (el.sayTextInput) {
+          el.sayTextInput.value = text;
+          el.sayTextInput.focus();
+        }
+        if (voice && el.sayVoiceSelect) {
+          el.sayVoiceSelect.value = voice;
+        }
+
+        // スピーカー選択の復元
+        if (Array.isArray(targets) && targets.length && el.saySpeakersContainer) {
+          const checkboxes = el.saySpeakersContainer.querySelectorAll('input[type="checkbox"]');
+          let matchedAny = false;
+          checkboxes.forEach(cb => {
+            const devName = cb.getAttribute('data-name') || '';
+            const devIp = cb.value;
+            const isMatch = targets.some(t => t === devIp || t === devName || (t && devName && devName.includes(t)));
+            if (isMatch) {
+              cb.checked = true;
+              cb.closest('.speaker-chip')?.classList.add('checked');
+              matchedAny = true;
+            } else {
+              cb.checked = false;
+              cb.closest('.speaker-chip')?.classList.remove('checked');
+            }
+          });
+          if (!matchedAny) {
+            checkboxes.forEach(cb => {
+              cb.checked = true;
+              cb.closest('.speaker-chip')?.classList.add('checked');
+            });
+          }
+        }
+
+        showToast('発言内容を即時発言フォームにセットしました', 'info');
+        return;
+      }
     });
 
     // モーダル操作
@@ -2740,6 +3011,35 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ================= 6. ユーティリティ =================
+  async function playHistoryPreview(text, voice, btn) {
+    if (!text) return;
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-pulse"></span> 再生中...`;
+
+    try {
+      const params = new URLSearchParams({
+        text,
+        voice: voice || el.sayVoiceSelect?.value || 'ja-JP-NanamiNeural',
+        rate: '+0%',
+        pitch: '+0Hz'
+      });
+      const audioUrl = `/api/preview?${params.toString()}`;
+
+      if (el.audioPreviewPlayer) {
+        el.audioPreviewPlayer.src = audioUrl;
+        el.audioPreviewWrapper.style.display = 'block';
+        await el.audioPreviewPlayer.play();
+        showToast('試聴音声を再生しました');
+      }
+    } catch (err) {
+      showToast('試聴の再生に失敗しました: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  }
+
   function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
