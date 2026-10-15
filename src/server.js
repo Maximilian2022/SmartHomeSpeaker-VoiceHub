@@ -302,6 +302,26 @@ app.put('/api/settings', (req, res) => {
   }
 });
 
+// デフォルトスピーカー変更 API
+app.post('/api/devices/default', (req, res) => {
+  try {
+    const { ip, id } = req.body;
+    const target = ip || id;
+    if (!target) {
+      return res.status(400).json({ error: 'デバイス識別子 (ip または id) が必要です' });
+    }
+
+    deviceManager.setDefaultDeviceIp(target);
+    console.log(`[Config] デフォルトデバイスを変更しました: ${target}`);
+    res.json({
+      success: true,
+      defaultDeviceIp: deviceManager.getDefaultDeviceIp()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 3. カレンダー連携 API
 app.get('/api/calendar/events', (req, res) => {
   res.json({

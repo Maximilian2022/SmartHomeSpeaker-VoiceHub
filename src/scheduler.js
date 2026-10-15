@@ -35,29 +35,74 @@ function buildCronExpression({ frequency, time, weekdays }) {
   }
 }
 
+const WEEKDAY_NAMES_MAP = {
+  '0': '日', '1': '月', '2': '火', '3': '水', '4': '木', '5': '金', '6': '土', '7': '日'
+};
+
 /**
- * 人間が読みやすいスケジュール表記を生成
+ * 人間が読みやすいスケジュール表記を生成（cron式から自然な日本語を自動解析）
  */
 function formatHumanReadable(sched) {
-  if (sched.readableFrequency) return sched.readableFrequency;
-
-  const time = sched.time || '07:00';
-  switch (sched.frequency) {
-    case 'daily':
-      return `毎日 ${time}`;
-    case 'weekdays':
-      return `平日 (月〜金) ${time}`;
-    case 'weekends':
-      return `土日 ${time}`;
-    case 'custom_days':
-      if (Array.isArray(sched.weekdays) && sched.weekdays.length) {
-        const names = sched.weekdays.map(d => WEEKDAY_NAMES[d] || d).join('・');
-        return `毎週 ${names}曜日 ${time}`;
-      }
-      return `指定曜日 ${time}`;
-    default:
-      return `${time} (${sched.cron || ''})`;
+  // 1. frequency と time が指定されている場合
+  if (sched.frequency && sched.time) {
+    const time = sched.time;
+    switch (sched.frequency) {
+      case 'daily':
+        return `毎日 ${time}`;
+      case 'weekdays':
+        return `平日 (月〜金) ${time}`;
+      case 'weekends':
+        return `土日 ${time}`;
+      case 'custom_days':
+        if (Array.isArray(sched.weekdays) && sched.weekdays.length) {
+          const names = sched.weekdays.map(d => WEEKDAY_NAMES_MAP[d] || d).join('・');
+          return `毎週 ${names} ${time}`;
+        }
+        return `指定曜日 ${time}`;
+    }
   }
+
+  // 2. cron 式から自然な日本語を自動解析
+  const cron = (sched.cron || '').trim();
+  if (cron) {
+    const parts = cron.split(/\s+/);
+    if (parts.length === 5) {
+      const [m, h, dom, mon, dow] = parts;
+
+      // 分と時が具体的な数値の場合 (例: 0 7, 30 7)
+      if (/^\d+$/.test(m) && /^\d+$/.test(h)) {
+        const timeStr = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+
+        if (dom === '*' && mon === '*') {
+          if (dow === '*') {
+            return `毎日 ${timeStr}`;
+          }
+          if (dow === '1-5' || dow === '1,2,3,4,5') {
+            return `平日 (月〜金) ${timeStr}`;
+          }
+          if (dow === '0,6' || dow === '6,0') {
+            return `土日 ${timeStr}`;
+          }
+          // 指定曜日 (例: 2,5 や 1,3,5)
+          const days = dow.split(',').map(d => WEEKDAY_NAMES_MAP[d.trim()] || d).filter(Boolean);
+          if (days.length) {
+            return `毎週 ${days.join('・')} ${timeStr}`;
+          }
+        }
+      }
+
+      // 毎時・間隔指定の解析
+      if (m.startsWith('*/') && h === '*' && dom === '*' && mon === '*' && dow === '*') {
+        return `${m.slice(2)}分ごと`;
+      }
+      if (m === '0' && h === '*' && dom === '*' && mon === '*' && dow === '*') {
+        return `毎時 00分`;
+      }
+    }
+    return cron;
+  }
+
+  return sched.time || '未設定';
 }
 
 // 初期サンプルスケジュール

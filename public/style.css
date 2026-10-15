@@ -608,6 +608,18 @@ body {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
+.btn-outline-gold {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+}
+
+.btn-outline-gold:hover {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.6);
+  transform: translateY(-1px);
+}
+
 .action-btn-group {
   display: flex;
   gap: 12px;
@@ -707,6 +719,25 @@ body {
 
 .schedule-table tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+.sched-freq-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.sched-freq-badge svg {
+  margin-right: 5px;
+  color: #818cf8;
 }
 
 /* Toggle Switch */

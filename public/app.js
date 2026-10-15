@@ -313,6 +313,70 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // cron式から人間が直感的に理解できる自然な日本語を解析
+  function formatHumanReadableCron(sched) {
+    if (!sched) return '未設定';
+
+    const WEEKDAY_NAMES_MAP = {
+      '0': '日', '1': '月', '2': '火', '3': '水', '4': '木', '5': '金', '6': '土', '7': '日'
+    };
+
+    // 1. frequency と time が指定されている場合
+    if (sched.frequency && sched.time) {
+      const time = sched.time;
+      switch (sched.frequency) {
+        case 'daily':
+          return `毎日 ${time}`;
+        case 'weekdays':
+          return `平日 (月〜金) ${time}`;
+        case 'weekends':
+          return `土日 ${time}`;
+        case 'custom_days':
+          if (Array.isArray(sched.weekdays) && sched.weekdays.length) {
+            const names = sched.weekdays.map(d => WEEKDAY_NAMES_MAP[d] || d).join('・');
+            return `毎週 ${names} ${time}`;
+          }
+          return `指定曜日 ${time}`;
+      }
+    }
+
+    // 2. 既に自然な日本語になっている場合はそれを使用 (古い raw 形式は除外)
+    if (sched.readableFrequency && !sched.readableFrequency.includes('(') && !sched.readableFrequency.includes('*')) {
+      return sched.readableFrequency;
+    }
+
+    // 3. cron 式から自然な日本語を自動解析
+    const cron = (sched.cron || '').trim();
+    if (cron) {
+      const parts = cron.split(/\s+/);
+      if (parts.length === 5) {
+        const [m, h, dom, mon, dow] = parts;
+
+        if (/^\d+$/.test(m) && /^\d+$/.test(h)) {
+          const timeStr = `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+
+          if (dom === '*' && mon === '*') {
+            if (dow === '*') return `毎日 ${timeStr}`;
+            if (dow === '1-5' || dow === '1,2,3,4,5') return `平日 (月〜金) ${timeStr}`;
+            if (dow === '0,6' || dow === '6,0') return `土日 ${timeStr}`;
+            const days = dow.split(',').map(d => WEEKDAY_NAMES_MAP[d.trim()] || d).filter(Boolean);
+            if (days.length) return `毎週 ${days.join('・')} ${timeStr}`;
+          }
+        }
+
+        if (m.startsWith('*/') && h === '*' && dom === '*' && mon === '*' && dow === '*') {
+          return `${m.slice(2)}分ごと`;
+        }
+        if (m === '0' && h === '*' && dom === '*' && mon === '*' && dow === '*') {
+          return `毎時 00分`;
+        }
+      }
+      return cron;
+    }
+
+    return sched.readableFrequency || sched.time || '未設定';
+  }
+
   function renderScheduleTable() {
     if (!state.schedules.length) {
       el.scheduleTableBody.innerHTML = `<tr><td colspan="6" class="text-center empty-msg">登録されたスケジュールはありません</td></tr>`;
@@ -331,6 +395,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return found ? formatSpeakerDisplayName(found.name) : t;
       }).join(', ');
 
+      const freqText = formatHumanReadableCron(sched);
+
       rowsHtml += `
         <tr>
           <td>
@@ -340,7 +406,12 @@ document.addEventListener('DOMContentLoaded', () => {
             </label>
           </td>
           <td><strong>${escapeHtml(sched.name)}</strong></td>
-          <td><span class="badge-tech" style="font-size:0.82rem; text-transform:none;">${escapeHtml(sched.readableFrequency || sched.cron)}</span></td>
+          <td>
+            <span class="sched-freq-badge" title="cron: ${escapeHtml(sched.cron || '')}">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              ${escapeHtml(freqText)}
+            </span>
+          </td>
           <td><span style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(devNames)}</span></td>
           <td>${escapeHtml(sched.text)}</td>
           <td>
@@ -374,10 +445,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const displayName = formatSpeakerDisplayName(dev.name);
 
       cardsHtml += `
-        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''}">
+        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : ''}">
           <div class="device-card-header">
             <span class="device-card-title">${escapeHtml(displayName)}</span>
-            ${isDef ? '<span class="device-tag">デフォルト</span>' : ''}
+            ${isDef ? '<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);">★ デフォルト端末</span>' : ''}
             ${!isAlexa && !isHomePod ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);">Google Home</span>' : ''}
             ${isAlexa ? '<span class="device-tag alexa">Alexa Echo</span>' : ''}
             ${isHomePod ? '<span class="device-tag homepod">Apple HomePod</span>' : ''}
@@ -386,10 +457,21 @@ document.addEventListener('DOMContentLoaded', () => {
             <span><strong>識別子/IP:</strong> ${escapeHtml(dev.ip)}</span>
             <span><strong>モデル:</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" style="margin-top: 6px;">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            テスト発声
-          </button>
+          <div class="device-card-actions" style="display:flex;gap:8px;margin-top:12px;align-items:center;">
+            <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" style="flex:1;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              テスト発声
+            </button>
+            ${isDef ? `
+              <span style="color:#fbbf24;font-size:0.8rem;font-weight:600;padding:6px 12px;border-radius:var(--radius-sm);background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);white-space:nowrap;">
+                ★ 標準端末
+              </span>
+            ` : `
+              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" title="このスピーカーをデフォルト端末に設定します" style="white-space:nowrap;">
+                ★ デフォルトに設定
+              </button>
+            `}
+          </div>
         </div>
       `;
     });
@@ -572,29 +654,73 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // デバイス一覧内クイックテストボタン (イベント委譲)
     el.devicesGrid.addEventListener('click', async (e) => {
-      const btn = e.target.closest('.btn-quick-ping');
-      if (!btn) return;
+      // 1. テスト発声ボタン
+      const pingBtn = e.target.closest('.btn-quick-ping');
+      if (pingBtn) {
+        const ip = pingBtn.getAttribute('data-ip');
+        const name = pingBtn.getAttribute('data-name');
+        const text = `${name}のテストです。音声通知は正常に動作しています。`;
 
-      const ip = btn.getAttribute('data-ip');
-      const name = btn.getAttribute('data-name');
-      const text = `${name}のテストです。音声通知は正常に動作しています。`;
+        pingBtn.disabled = true;
+        pingBtn.textContent = '送信中...';
 
-      btn.disabled = true;
-      btn.textContent = '送信中...';
+        try {
+          const res = await fetch('/api/say', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, devices: [ip] })
+          });
+          if (!res.ok) throw new Error('送信失敗');
+          showToast(`${name} にテスト音声を送信しました！`, 'success');
+        } catch (err) {
+          showToast(`送信エラー: ${err.message}`, 'error');
+        } finally {
+          pingBtn.disabled = false;
+          pingBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> テスト発声`;
+        }
+        return;
+      }
 
-      try {
-        const res = await fetch('/api/say', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, devices: [ip] })
-        });
-        if (!res.ok) throw new Error('送信失敗');
-        showToast(`${name} にテスト音声を送信しました！`, 'success');
-      } catch (err) {
-        showToast(`送信エラー: ${err.message}`, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> テスト発声`;
+      // 2. デフォルトに設定ボタン
+      const defBtn = e.target.closest('.btn-set-default');
+      if (defBtn) {
+        const ip = defBtn.getAttribute('data-ip');
+        const name = defBtn.getAttribute('data-name');
+
+        defBtn.disabled = true;
+        defBtn.textContent = '設定中...';
+
+        try {
+          const res = await fetch('/api/devices/default', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip })
+          });
+          if (!res.ok) throw new Error('デフォルト設定に失敗しました');
+          const data = await res.json();
+
+          if (state.serverInfo) {
+            state.serverInfo.defaultDeviceIp = data.defaultDeviceIp;
+          }
+
+          // 即時発言の初期選択や表示を更新
+          if (el.defaultDeviceText) {
+            el.defaultDeviceText.textContent = `デフォルト: ${name} (${data.defaultDeviceIp})`;
+          }
+
+          // 全UIを再描画
+          renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', [data.defaultDeviceIp]);
+          renderDevicesGrid();
+          renderBuilderSpeakers();
+          const calContainer = document.getElementById('calSpeakersContainer');
+          if (calContainer) renderCalendarSpeakers(['default']);
+
+          showToast(`デフォルトスピーカーを「${name}」に変更しました！`, 'success');
+        } catch (err) {
+          showToast(`デフォルト設定エラー: ${err.message}`, 'error');
+          defBtn.disabled = false;
+          defBtn.textContent = '★ デフォルトに設定';
+        }
       }
     });
 
