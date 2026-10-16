@@ -3,6 +3,7 @@ const http = require('http');
 const { URL } = require('url');
 const settingsManager = require('./settings');
 const aiManager = require('./ai');
+const disasterManager = require('./disaster');
 
 /**
  * iCal 日付文字列を Date オブジェクトに変換
@@ -323,15 +324,24 @@ class CalendarManager {
     let message = '';
     const calLabel = cal.name ? `${cal.name}の` : '';
 
+    const disasterConfig = settingsManager.getDisasterSettings();
+    let weatherInfo = null;
+    if (disasterConfig.enabled && disasterConfig.dailyWeather?.enabled) {
+      try {
+        weatherInfo = await disasterManager.getTodayWeather();
+      } catch (_) {}
+    }
+
     const aiConfig = settingsManager.get().ai || {};
     const useAi = aiConfig.enabled !== false && aiConfig.summarizeDailyCalendar !== false && aiManager.isAvailable();
 
-    if (useAi && todayEvents.length > 0) {
+    if (useAi && (todayEvents.length > 0 || weatherInfo)) {
       try {
         console.log(`[Calendar Daily Summary] (${cal.name || 'カレンダー'}) AIによる朝の予定まとめ要約を生成中...`);
         message = await aiManager.summarizeCalendarEvents(todayEvents, {
           calName: cal?.name,
-          promptHint: aiConfig.dailyCalendarPrompt
+          promptHint: aiConfig.dailyCalendarPrompt,
+          weatherInfo
         });
       } catch (err) {
         console.warn(`[Calendar Daily Summary] (${cal.name || 'カレンダー'}) AI要約生成失敗、通常のアナウンスにフォールバック:`, err.message);
@@ -340,10 +350,11 @@ class CalendarManager {
     }
 
     if (!message) {
+      const weatherPrefix = (weatherInfo && weatherInfo.summaryText) ? `${weatherInfo.summaryText} ` : '';
       if (todayEvents.length === 0) {
-        message = `おはようございます。${calLabel}本日の予定は登録されていません。良い一日を！`;
+        message = `${weatherPrefix}おはようございます。${calLabel}本日の予定は登録されていません。良い一日を！`;
       } else {
-        message = `おはようございます。${calLabel}本日の予定は ${todayEvents.length} 件あります。`;
+        message = `${weatherPrefix}おはようございます。${calLabel}本日の予定は ${todayEvents.length} 件あります。`;
         for (const ev of todayEvents) {
           if (ev.isAllDay) {
             message += ` 終日、${ev.summary}。`;
@@ -373,14 +384,23 @@ class CalendarManager {
     const todayEvents = this.getTodayEvents();
 
     let message = '';
+    const disasterConfig = settingsManager.getDisasterSettings();
+    let weatherInfo = null;
+    if (disasterConfig.enabled && disasterConfig.dailyWeather?.enabled) {
+      try {
+        weatherInfo = await disasterManager.getTodayWeather();
+      } catch (_) {}
+    }
+
     const aiConfig = settingsManager.get().ai || {};
     const useAi = aiConfig.enabled !== false && aiConfig.summarizeDailyCalendar !== false && aiManager.isAvailable();
 
-    if (useAi && todayEvents.length > 0) {
+    if (useAi && (todayEvents.length > 0 || weatherInfo)) {
       try {
         console.log('[Calendar Daily Summary] AIによる本日の予定まとめ要約を生成中...');
         message = await aiManager.summarizeCalendarEvents(todayEvents, {
-          promptHint: aiConfig.dailyCalendarPrompt
+          promptHint: aiConfig.dailyCalendarPrompt,
+          weatherInfo
         });
       } catch (err) {
         console.warn('[Calendar Daily Summary] AI要約生成失敗、通常のアナウンスにフォールバック:', err.message);
@@ -389,10 +409,11 @@ class CalendarManager {
     }
 
     if (!message) {
+      const weatherPrefix = (weatherInfo && weatherInfo.summaryText) ? `${weatherInfo.summaryText} ` : '';
       if (todayEvents.length === 0) {
-        message = 'おはようございます。本日の予定は登録されていません。良い一日を！';
+        message = `${weatherPrefix}おはようございます。本日の予定は登録されていません。良い一日を！`;
       } else {
-        message = `おはようございます。本日の予定は ${todayEvents.length} 件あります。`;
+        message = `${weatherPrefix}おはようございます。本日の予定は ${todayEvents.length} 件あります。`;
         for (const ev of todayEvents) {
           if (ev.isAllDay) {
             message += ` 終日、${ev.summary}。`;

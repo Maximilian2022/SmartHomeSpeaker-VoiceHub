@@ -616,6 +616,10 @@
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             🌐 Webhook & Tunnel
           </button>
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-disaster" id="btnSubtabSettingsDisaster">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            🚨 緊急速報・天気
+          </button>
         </div>
 
         <!-- 1. 音声・機能拡張 サブペイン -->
@@ -1623,6 +1627,283 @@ Body:
             </div>
           </div>
         </div>
+
+        <!-- 5. 防災・緊急速報 & 天気 サブペイン -->
+        <div id="subtab-settings-disaster" class="sub-tab-pane">
+          <!-- 上部ヘッダー / 全体マスター設定 & ステータス -->
+          <div class="card glass-card" style="margin-bottom: 24px;">
+            <div class="card-header flex-between">
+              <div>
+                <h2>🚨 緊急速報・気象アラート & 天気予報</h2>
+                <span class="card-sub">P2P地震情報 (緊急地震速報・震度速報) および 気象庁防災情報・天気予報と自動連動します</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 16px;">
+                <div id="disasterStatusBadge" class="status-chip-sub" style="font-size: 0.8rem;">
+                  <span class="status-dot"></span>
+                  <span id="disasterStatusText">状態確認中...</span>
+                </div>
+                <label class="switch" title="防災・気象アラート機能を全体で有効化">
+                  <input type="checkbox" id="settingDisasterEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="two-col-layout">
+            <!-- 左カラム: 地域設定 & 朝のサマリー連携 -->
+            <div class="col">
+              <!-- 1. 対象地域設定 -->
+              <div class="card glass-card">
+                <div class="card-header">
+                  <h2>📍 防災・気象の対象地域</h2>
+                  <span class="card-sub">地震の震度判定、気象警報、毎朝の天気予報の基準となる地域を設定します</span>
+                </div>
+                <div class="card-body">
+                  <div class="form-group">
+                    <label for="settingDisasterPref" class="form-label">都道府県 *</label>
+                    <select id="settingDisasterPref" class="form-select">
+                      <option value="">読み込み中...</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="settingDisasterCity" class="form-label">市区町村 (警報・天気の高精度絞り込み)</label>
+                    <select id="settingDisasterCity" class="form-select">
+                      <option value="">都道府県全域 (指定なし)</option>
+                    </select>
+                    <small class="help-text">💡 市区町村を選択すると、遠く離れた地域の大雨警報で鳴ってしまうのを防ぎます。</small>
+                  </div>
+
+                  <!-- 現在の天気リアルタイムプレビュー -->
+                  <div class="weather-preview-box" id="weatherLivePreviewBox" style="margin-top: 16px; padding: 14px 16px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: var(--radius-md);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                      <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted);">🌤️ 設定地域の現在の天気予報プレビュー</span>
+                      <button type="button" id="btnRefreshWeatherPreview" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;">更新</button>
+                    </div>
+                    <div id="weatherPreviewContent" style="font-size: 0.9rem; line-height: 1.5; color: var(--text-main);">
+                      読み込み中...
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. 通知先スピーカー設定 -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header">
+                  <h2>📢 通知先スピーカー</h2>
+                  <span class="card-sub">緊急地震速報・震度速報・気象警報をアナウンスするスピーカーを指定します</span>
+                </div>
+                <div class="card-body">
+                  <div class="radio-pill-group" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+                    <label class="pill-radio">
+                      <input type="radio" name="disasterTargetScope" value="all" checked>
+                      <span>🏠 家中すべてのスピーカー (推奨: 全室一斉発話)</span>
+                    </label>
+                    <label class="pill-radio">
+                      <input type="radio" name="disasterTargetScope" value="default">
+                      <span>🔊 標準スピーカーのみ</span>
+                    </label>
+                    <label class="pill-radio">
+                      <input type="radio" name="disasterTargetScope" value="specific">
+                      <span>🎯 特定のスピーカーを個別選択</span>
+                    </label>
+                  </div>
+
+                  <!-- スピーカー個別チェックボックス -->
+                  <div id="disasterSpeakersWrapper" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px;">
+                    <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 8px;">通知対象にするスピーカーを選択してください:</span>
+                    <div id="disasterSpeakersContainer" class="speaker-checkbox-grid" style="grid-template-columns: 1fr; max-height: 180px; overflow-y: auto;">
+                      <!-- JSで動的生成 -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. 朝の予定まとめ・天気予報連携 -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2>☀️ 朝の予定まとめ・天気連携</h2>
+                    <span class="card-sub">毎朝のカレンダー予定サマリーに今日の天気・気温・降水確率を自動追加します</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settingDailyWeatherEnabled" checked>
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+                <div class="card-body">
+                  <div class="form-group flex-between" style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">傘・服装のアドバイスを含める</div>
+                      <small style="color: var(--text-muted);">降水確率が高い場合に「折りたたみ傘をお持ちください」などの助言をAIが付加します</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingDailyWeatherAdvice" checked>
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+                  <div style="margin-top: 12px; font-size: 0.8rem; color: var(--text-muted);">
+                    ※ 読み上げ時刻は「スケジュール・カレンダー」タブの「朝の予定まとめ時刻」と連動します。
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右カラム: 緊急地震速報 & 震度速報 & 気象警報 & テスト -->
+            <div class="col">
+              <!-- 3. 緊急地震速報 (EEW) -->
+              <div class="card glass-card">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2>⚡ 緊急地震速報 (EEW)</h2>
+                    <span class="card-sub">気象庁発表の緊急地震速報（警報）をミリ秒単位でリアルタイム受信・発報</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settingEewEnabled" checked>
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+                <div class="card-body">
+                  <div class="form-group flex-between" style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">Urgent モード (DND・会議・ミュート貫通)</div>
+                      <small style="color: var(--text-muted);">生命の危険に関わるため、ミュート中や会議中でも音声を強制発声します</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingEewUrgent" checked>
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+                  <div class="form-group" style="margin-top: 12px;">
+                    <label for="settingEewVolume" class="form-label">発報時音量: <span id="eewVolumeDisplay">80%</span></label>
+                    <input type="range" id="settingEewVolume" class="form-range" min="50" max="100" step="5" value="80">
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. 地震情報 (震度速報) -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2>🌊 地震情報 (震度速報)</h2>
+                    <span class="card-sub">地震発生後の各地の震度・震源地・津波有無を自動アナウンス</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settingQuakeReportEnabled" checked>
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+                <div class="card-body">
+                  <div class="form-group">
+                    <label for="settingQuakeMinScale" class="form-label">通知する最小震度</label>
+                    <select id="settingQuakeMinScale" class="form-select">
+                      <option value="10">震度1 以上 (すべて通知)</option>
+                      <option value="20">震度2 以上</option>
+                      <option value="30" selected>震度3 以上 (おすすめ・日常の揺れ)</option>
+                      <option value="40">震度4 以上 (警戒レベル)</option>
+                      <option value="45">震度5弱 以上 (非常災害)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="settingQuakeTargetScope" class="form-label">通知対象範囲</label>
+                    <select id="settingQuakeTargetScope" class="form-select">
+                      <option value="local" selected>設定した自地域のみ (おすすめ)</option>
+                      <option value="all">全国の地震 (閾値以上の地震すべて)</option>
+                    </select>
+                  </div>
+                  <div class="form-group flex-between" style="padding: 8px 0;">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">Urgent モード (DND貫通)</div>
+                      <small style="color: var(--text-muted);">深夜のDND中でも震度速報を即時発報します（OFFの場合はキューに保留）</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingQuakeReportUrgent">
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 5. 気象警報アラート -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2>⛈️ 気象警報・注意報アラート</h2>
+                    <span class="card-sub">大雨・洪水・暴風などの警報発表・解除を気象庁から自動検知</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settingWeatherWarningEnabled" checked>
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+                <div class="card-body">
+                  <div class="form-group">
+                    <label for="settingWeatherWarningLevel" class="form-label">通知対象レベル</label>
+                    <select id="settingWeatherWarningLevel" class="form-select">
+                      <option value="special">特別警報のみ (生命の危険)</option>
+                      <option value="warning" selected>警報以上 (大雨・洪水・暴風警報など・推奨)</option>
+                      <option value="advisory">注意報も含む (強風・雷・乾燥注意報など)</option>
+                    </select>
+                  </div>
+                  <div class="form-group flex-between" style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">警報解除時も通知する</div>
+                      <small style="color: var(--text-muted);">「大雨警報は解除されました」とアナウンスします</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingWeatherWarningNotifyClear" checked>
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+                  <div class="form-group flex-between" style="padding: 8px 0;">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">Urgent モード (DND貫通)</div>
+                      <small style="color: var(--text-muted);">警報発令時にミュート・DNDを無視して発声します</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingWeatherWarningUrgent">
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 6. テスト発話・シミュレーション -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header">
+                  <h2>🧪 テスト発話・シミュレーション</h2>
+                  <span class="card-sub">スピーカーから各防災アラートがどう鳴るか事前にテスト確認できます</span>
+                </div>
+                <div class="card-body">
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                    <button type="button" id="btnTestEew" class="btn btn-secondary" style="border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
+                      ⚡ EEW テスト発報
+                    </button>
+                    <button type="button" id="btnTestEewCancel" class="btn btn-secondary" style="border-color: rgba(245, 158, 11, 0.4); color: #fde68a;">
+                      🛑 EEW 取消テスト
+                    </button>
+                    <button type="button" id="btnTestQuake" class="btn btn-secondary">
+                      🌊 震度速報テスト
+                    </button>
+                    <button type="button" id="btnTestWarning" class="btn btn-secondary">
+                      ⛈️ 気象警報テスト
+                    </button>
+                    <button type="button" id="btnTestWeatherSummary" class="btn btn-secondary">
+                      ☀️ 朝の天気サマリー
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 保存ボタン -->
+              <div style="margin-top: 24px; text-align: right;">
+                <button type="button" id="btnSaveDisasterSettings" class="btn btn-primary" style="padding: 12px 28px; font-size: 1rem;">
+                  💾 防災・気象設定を保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 
@@ -1897,6 +2178,6 @@ Body:
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.3"></script>
 </body>
 </html>

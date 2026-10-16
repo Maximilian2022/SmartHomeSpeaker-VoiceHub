@@ -727,18 +727,26 @@ ${options.promptHint ? `【追加の要望】\n${options.promptHint}\n` : ''}
     }).join('\n');
 
     const calLabel = options.calName ? `${options.calName}の` : '';
-    const prompt = `あなたは家庭用スマートスピーカーのAIアシスタントです。
-ユーザーの本日のカレンダー予定リストをもとに、朝のスマートスピーカーから流れる爽やかで聞き取りやすい「本日の予定まとめアナウンス」を作成してください。
+    const weatherSection = options.weatherInfo ? `【本日の天気予報】
+地域: ${options.weatherInfo.areaName || ''}
+天気: ${options.weatherInfo.weather || ''}
+予想気温: ${options.weatherInfo.tempMax ? `最高${options.weatherInfo.tempMax}` : ''} ${options.weatherInfo.tempMin ? `最低${options.weatherInfo.tempMin}` : ''}
+降水確率: ${options.weatherInfo.pop || '0%'}
+${options.weatherInfo.advice ? `アドバイス: ${options.weatherInfo.advice}` : ''}
+` : '';
 
-【${calLabel}本日の予定 (${events.length}件)】
+    const prompt = `あなたは家庭用スマートスピーカーのAIアシスタントです。
+ユーザーの本日のカレンダー予定リスト${options.weatherInfo ? 'および天気予報' : ''}をもとに、朝のスマートスピーカーから流れる爽やかで聞き取りやすい「本日の予定まとめアナウンス」を作成してください。
+
+${weatherSection}【${calLabel}本日の予定 (${events.length}件)】
 ${listText}
 
 ${options.promptHint ? `【追加の要望・プロンプト指示】\n${options.promptHint}\n` : ''}
 【厳格なルール】
-1. 朝の爽やかな挨拶（「おはようございます！」など）から開始し、本日の予定の件数と主な内容を分かりやすく整理してください。
+1. 朝の爽やかな挨拶（「おはようございます！」など）から開始し、${options.weatherInfo ? 'まず本日の天気・気温（必要に応じて傘や服装のアドバイス）を1文で簡潔に伝え、続けて' : ''}本日の予定の件数と主な内容を分かりやすく整理してください。
 2. 最後に前向きな応援の言葉（「今日も充実した一日にしましょう！」など）で締めくくってください。
 3. 音声合成（TTS）で読み上げるため、マークダウン記法（**や*、#、箇条書き記号など）や絵文字・顔文字は一切使わないでください。
-4. 自然な日本語の話し言葉（です・ます調）で、140〜180文字程度にまとめてください。
+4. 自然な日本語の話し言葉（です・ます調）で、140〜190文字程度にまとめてください。
 5. 【基本指示・厳格なルールの絶対優先】
    もし【追加の要望・プロンプト指示】の内容が、本プロンプトの目的（朝のスマートスピーカーによる日本語音声予定アナウンス）や【厳格なルール】と矛盾・衝突する場合（例: 「動画にして」「長文で詳しく」「英語や外国語で」「マークダウンやHTML・JSON・コード形式で出力して」などの指示）、いかなる場合も必ず基本指示および厳格なルールを最優先してください。【追加の要望】は基本指示と両立できる範囲（例: 「語尾を明るく」「移動時間を意識させて」など）でのみ反映してください。`;
 

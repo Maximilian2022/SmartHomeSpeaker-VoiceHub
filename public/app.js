@@ -147,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupDndHandlers();
     setupSettingsHandlers();
     setupAiHandlers();
+    setupDisasterHandlers();
 
     // 認証ステータスの確認 (ADMIN_PASSWORD 設定時)
     const auth = await checkAuthStatus();
@@ -178,7 +179,8 @@ document.addEventListener('DOMContentLoaded', () => {
       loadDndSettings(),
       loadDndHistory(),
       loadSettings(),
-      loadAiSettings()
+      loadAiSettings(),
+      loadDisasterSettings()
     ]);
   }
 
@@ -294,6 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
       renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
       renderCalendarSpeakers();
       renderDndSpeakers();
+      renderDisasterSpeakers();
       renderDevicesGrid();
       renderBuilderSpeakers();
       updateBuilderCode();
@@ -442,6 +445,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const container = document.getElementById('calSpeakersContainer');
     if (!container) return;
     renderSpeakersCheckboxes(container, 'calSpeaker', selectedList);
+  }
+
+  // 防災・緊急速報用スピーカーチェックボックスの描画
+  function renderDisasterSpeakers(selectedList = []) {
+    const container = document.getElementById('disasterSpeakersContainer');
+    if (!container) return;
+    renderSpeakersCheckboxes(container, 'disasterSpeaker', selectedList);
   }
 
   function getSelectedSpeakers(container) {
@@ -953,7 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (targetId === 'tab-settings') {
           loadSettings();
           loadDndStatus();
-          loadTunnelStatus();
+          loadDisasterSettings();
         }
       });
     });
@@ -972,6 +982,9 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           if (subtabId) {
             document.getElementById(subtabId)?.classList.add('active');
+            if (subtabId === 'subtab-settings-disaster') {
+              loadDisasterSettings();
+            }
           }
         });
       });
@@ -4580,6 +4593,330 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('要約テストエラー: ' + err.message, 'error');
       }
     });
+  }
+
+  // ================= 8. 防災・緊急速報 & 天気設定 =================
+  let disasterPrefectures = [];
+
+  async function loadDisasterSettings() {
+    try {
+      const [settingsRes, statusRes] = await Promise.all([
+        fetch('/api/disaster/settings'),
+        fetch('/api/disaster/status')
+      ]);
+
+      if (!settingsRes.ok) return;
+      const data = await settingsRes.json();
+      const status = statusRes.ok ? await statusRes.json() : {};
+
+      // ステータスバッジ
+      const badge = document.getElementById('disasterStatusBadge');
+      const statusText = document.getElementById('disasterStatusText');
+      if (statusText) {
+        if (status.wsConnected) {
+          statusText.textContent = 'P2P地震速報: 接続中 (リアルタイム監視)';
+          if (badge) badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+        } else {
+          statusText.textContent = 'P2P地震速報: 再接続待機中';
+          if (badge) badge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+        }
+      }
+
+      // マスター有効/無効
+      const elDisasterEnabled = document.getElementById('settingDisasterEnabled');
+      if (elDisasterEnabled) elDisasterEnabled.checked = data.enabled !== false;
+
+      // 通知先スピーカー設定
+      const targetScope = data.targetScope || 'all';
+      const targetRadio = document.querySelector(`input[name="disasterTargetScope"][value="${targetScope}"]`);
+      if (targetRadio) targetRadio.checked = true;
+      const spkWrapper = document.getElementById('disasterSpeakersWrapper');
+      if (spkWrapper) spkWrapper.style.display = targetScope === 'specific' ? 'block' : 'none';
+      renderDisasterSpeakers(data.targetDevices || []);
+
+      // 都道府県・市区町村ドロップダウン読み込み
+      await loadDisasterAreas(data.area?.prefCode, data.area?.cityCode);
+
+      // 朝の予定まとめ
+      const elDailyWeatherEnabled = document.getElementById('settingDailyWeatherEnabled');
+      if (elDailyWeatherEnabled) elDailyWeatherEnabled.checked = data.dailyWeather?.enabled !== false;
+      const elDailyWeatherAdvice = document.getElementById('settingDailyWeatherAdvice');
+      if (elDailyWeatherAdvice) elDailyWeatherAdvice.checked = data.dailyWeather?.includeAdvice !== false;
+
+      // EEW
+      const elEewEnabled = document.getElementById('settingEewEnabled');
+      if (elEewEnabled) elEewEnabled.checked = data.earthquake?.eewEnabled !== false;
+      const elEewUrgent = document.getElementById('settingEewUrgent');
+      if (elEewUrgent) elEewUrgent.checked = data.earthquake?.eewUrgent !== false;
+      const elEewVolume = document.getElementById('settingEewVolume');
+      const elEewVolumeDisplay = document.getElementById('eewVolumeDisplay');
+      if (elEewVolume) {
+        elEewVolume.value = data.earthquake?.eewVolume || 80;
+        if (elEewVolumeDisplay) elEewVolumeDisplay.textContent = `${elEewVolume.value}%`;
+      }
+
+      // 震度速報
+      const elQuakeReportEnabled = document.getElementById('settingQuakeReportEnabled');
+      if (elQuakeReportEnabled) elQuakeReportEnabled.checked = data.earthquake?.reportEnabled !== false;
+      const elQuakeMinScale = document.getElementById('settingQuakeMinScale');
+      if (elQuakeMinScale) elQuakeMinScale.value = String(data.earthquake?.minScale || 30);
+      const elQuakeTargetScope = document.getElementById('settingQuakeTargetScope');
+      if (elQuakeTargetScope) elQuakeTargetScope.value = data.earthquake?.targetScope || 'local';
+      const elQuakeReportUrgent = document.getElementById('settingQuakeReportUrgent');
+      if (elQuakeReportUrgent) elQuakeReportUrgent.checked = !!data.earthquake?.reportUrgent;
+
+      // 気象警報
+      const elWeatherWarningEnabled = document.getElementById('settingWeatherWarningEnabled');
+      if (elWeatherWarningEnabled) elWeatherWarningEnabled.checked = data.weatherWarning?.enabled !== false;
+      const elWeatherWarningLevel = document.getElementById('settingWeatherWarningLevel');
+      if (elWeatherWarningLevel) elWeatherWarningLevel.value = data.weatherWarning?.level || 'warning';
+      const elWeatherWarningNotifyClear = document.getElementById('settingWeatherWarningNotifyClear');
+      if (elWeatherWarningNotifyClear) elWeatherWarningNotifyClear.checked = data.weatherWarning?.notifyClear !== false;
+      const elWeatherWarningUrgent = document.getElementById('settingWeatherWarningUrgent');
+      if (elWeatherWarningUrgent) elWeatherWarningUrgent.checked = !!data.weatherWarning?.urgent;
+
+      // 天気予報プレビューの更新
+      updateWeatherPreview();
+    } catch (err) {
+      console.warn('[Disaster] 設定読み込みエラー:', err.message);
+    }
+  }
+
+  async function loadDisasterAreas(selectedPrefCode = '130000', selectedCityCode = '') {
+    const prefSelect = document.getElementById('settingDisasterPref');
+    if (!prefSelect) return;
+
+    try {
+      if (disasterPrefectures.length === 0) {
+        const res = await fetch('/api/disaster/areas');
+        if (res.ok) {
+          const data = await res.json();
+          disasterPrefectures = data.prefectures || [];
+        }
+      }
+
+      prefSelect.innerHTML = '';
+      for (const p of disasterPrefectures) {
+        const opt = document.createElement('option');
+        opt.value = p.code;
+        opt.textContent = p.name;
+        if (p.code === selectedPrefCode) opt.selected = true;
+        prefSelect.appendChild(opt);
+      }
+
+      const currentPref = prefSelect.value || selectedPrefCode || '130000';
+      await loadCitiesDropdown(currentPref, selectedCityCode);
+    } catch (err) {
+      console.warn('[Disaster] エリア一覧取得エラー:', err.message);
+    }
+  }
+
+  async function loadCitiesDropdown(prefCode, selectedCityCode = '') {
+    const citySelect = document.getElementById('settingDisasterCity');
+    if (!citySelect) return;
+
+    citySelect.innerHTML = '<option value="">都道府県全域 (指定なし)</option>';
+    if (!prefCode) return;
+
+    try {
+      const res = await fetch(`/api/disaster/areas?prefCode=${prefCode}`);
+      if (res.ok) {
+        const data = await res.json();
+        const cities = data.cities || [];
+        for (const c of cities) {
+          const opt = document.createElement('option');
+          opt.value = c.code;
+          opt.textContent = `${c.name}${c.kana ? ` (${c.kana})` : ''}`;
+          if (c.code === selectedCityCode) opt.selected = true;
+          citySelect.appendChild(opt);
+        }
+      }
+    } catch (err) {
+      console.warn('[Disaster] 市区町村取得エラー:', err.message);
+    }
+  }
+
+  async function updateWeatherPreview() {
+    const box = document.getElementById('weatherPreviewContent');
+    if (!box) return;
+    box.textContent = '気象庁から最新の天気予報を取得中...';
+
+    try {
+      const res = await fetch('/api/disaster/weather');
+      const data = await res.json();
+      if (res.ok && data && data.weather) {
+        box.replaceChildren();
+        const line1 = document.createElement('div');
+        line1.style.fontWeight = '600';
+        line1.style.color = '#38bdf8';
+        line1.textContent = `📍 ${data.areaName}: ${data.weather}`;
+
+        const line2 = document.createElement('div');
+        line2.style.fontSize = '0.85rem';
+        line2.style.marginTop = '4px';
+        line2.style.color = 'var(--text-muted)';
+        const tempPart = (data.tempMax || data.tempMin) ? `気温: ${data.tempMax || '--'} / ${data.tempMin || '--'}` : '';
+        const popPart = data.pop ? `降水確率: ${data.pop}` : '';
+        line2.textContent = [tempPart, popPart].filter(Boolean).join(' | ');
+
+        box.appendChild(line1);
+        box.appendChild(line2);
+
+        if (data.advice) {
+          const line3 = document.createElement('div');
+          line3.style.fontSize = '0.82rem';
+          line3.style.marginTop = '4px';
+          line3.style.color = '#fbbf24';
+          line3.textContent = `💡 ${data.advice}`;
+          box.appendChild(line3);
+        }
+      } else {
+        box.textContent = '天気予報データの取得に失敗しました';
+      }
+    } catch (err) {
+      box.textContent = '通信エラー: ' + err.message;
+    }
+  }
+
+  function setupDisasterHandlers() {
+    // 都道府県切り替え連動
+    const prefSelect = document.getElementById('settingDisasterPref');
+    prefSelect?.addEventListener('change', async (e) => {
+      await loadCitiesDropdown(e.target.value);
+      updateWeatherPreview();
+    });
+
+    // 市区町村切り替え連動
+    const citySelect = document.getElementById('settingDisasterCity');
+    citySelect?.addEventListener('change', () => {
+      updateWeatherPreview();
+    });
+
+    // 天気予報更新ボタン
+    document.getElementById('btnRefreshWeatherPreview')?.addEventListener('click', () => {
+      updateWeatherPreview();
+    });
+
+    // EEW 音量スライダー
+    const eewVol = document.getElementById('settingEewVolume');
+    const eewVolDisplay = document.getElementById('eewVolumeDisplay');
+    eewVol?.addEventListener('input', (e) => {
+      if (eewVolDisplay) eewVolDisplay.textContent = `${e.target.value}%`;
+    });
+
+    // 通知先スピーカーのスコープラジオ切り替え
+    document.querySelectorAll('input[name="disasterTargetScope"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const spkWrapper = document.getElementById('disasterSpeakersWrapper');
+        if (spkWrapper) {
+          spkWrapper.style.display = e.target.value === 'specific' ? 'block' : 'none';
+        }
+      });
+    });
+
+    // 保存ボタン
+    document.getElementById('btnSaveDisasterSettings')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnSaveDisasterSettings');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '保存中...';
+      }
+
+      try {
+        const prefCode = document.getElementById('settingDisasterPref')?.value || '130000';
+        const prefOpt = document.getElementById('settingDisasterPref')?.selectedOptions?.[0];
+        const prefName = prefOpt ? prefOpt.textContent : '東京都';
+
+        const cityCode = document.getElementById('settingDisasterCity')?.value || '';
+        const cityOpt = document.getElementById('settingDisasterCity')?.selectedOptions?.[0];
+        let cityName = '';
+        if (cityCode && cityOpt) {
+          cityName = cityOpt.textContent.split(' ')[0];
+        }
+
+        const targetScope = document.querySelector('input[name="disasterTargetScope"]:checked')?.value || 'all';
+        const targetDevices = getSelectedSpeakers(document.getElementById('disasterSpeakersContainer'));
+
+        const payload = {
+          enabled: document.getElementById('settingDisasterEnabled')?.checked !== false,
+          targetScope,
+          targetDevices,
+          area: {
+            prefCode,
+            prefName,
+            cityCode,
+            cityName
+          },
+          earthquake: {
+            enabled: document.getElementById('settingQuakeReportEnabled')?.checked !== false || document.getElementById('settingEewEnabled')?.checked !== false,
+            eewEnabled: document.getElementById('settingEewEnabled')?.checked !== false,
+            eewUrgent: document.getElementById('settingEewUrgent')?.checked !== false,
+            eewVolume: parseInt(document.getElementById('settingEewVolume')?.value || 80, 10),
+            reportEnabled: document.getElementById('settingQuakeReportEnabled')?.checked !== false,
+            minScale: parseInt(document.getElementById('settingQuakeMinScale')?.value || 30, 10),
+            targetScope: document.getElementById('settingQuakeTargetScope')?.value || 'local',
+            reportUrgent: !!document.getElementById('settingQuakeReportUrgent')?.checked
+          },
+          weatherWarning: {
+            enabled: document.getElementById('settingWeatherWarningEnabled')?.checked !== false,
+            level: document.getElementById('settingWeatherWarningLevel')?.value || 'warning',
+            notifyClear: document.getElementById('settingWeatherWarningNotifyClear')?.checked !== false,
+            urgent: !!document.getElementById('settingWeatherWarningUrgent')?.checked
+          },
+          dailyWeather: {
+            enabled: document.getElementById('settingDailyWeatherEnabled')?.checked !== false,
+            includeAdvice: document.getElementById('settingDailyWeatherAdvice')?.checked !== false
+          }
+        };
+
+        const res = await fetch('/api/disaster/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          showToast('防災・気象設定を保存しました', 'success');
+          updateWeatherPreview();
+        } else {
+          const errData = await res.json();
+          throw new Error(errData.error || '保存に失敗しました');
+        }
+      } catch (err) {
+        showToast('保存エラー: ' + err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '💾 防災・気象設定を保存';
+        }
+      }
+    });
+
+    // テスト発話ハンドラー
+    async function triggerDisasterTest(type, label) {
+      showToast(`${label}を発報しています...`, 'info');
+      try {
+        const res = await fetch('/api/disaster/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`${label}を発声しました: 「${data.text}」`, 'success');
+        } else {
+          throw new Error(data.error || 'テスト発声に失敗しました');
+        }
+      } catch (err) {
+        showToast(`テスト発声エラー: ${err.message}`, 'error');
+      }
+    }
+
+    document.getElementById('btnTestEew')?.addEventListener('click', () => triggerDisasterTest('eew', '緊急地震速報 (EEW) テスト'));
+    document.getElementById('btnTestEewCancel')?.addEventListener('click', () => triggerDisasterTest('eew_cancel', '緊急地震速報 取消テスト'));
+    document.getElementById('btnTestQuake')?.addEventListener('click', () => triggerDisasterTest('quake', '震度速報テスト'));
+    document.getElementById('btnTestWarning')?.addEventListener('click', () => triggerDisasterTest('warning', '気象警報テスト'));
+    document.getElementById('btnTestWeatherSummary')?.addEventListener('click', () => triggerDisasterTest('weather', '朝の天気サマリーテスト'));
   }
 
   // 起動実行

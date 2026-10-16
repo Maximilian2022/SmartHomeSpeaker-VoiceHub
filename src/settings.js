@@ -106,6 +106,38 @@ const DEFAULT_SETTINGS = {
       homepodAvgRttMs: 850,
       sampleCount: 5
     }
+  },
+  disaster: {
+    enabled: true,
+    targetScope: 'all', // 'all' (家中すべて) | 'default' (標準スピーカー) | 'specific' (個別選択)
+    targetDevices: ['ALL'],
+    area: {
+      prefCode: '130000', // 東京都
+      prefName: '東京都',
+      cityCode: '1310100', // 千代田区 (任意: 空文字なら都道府県全域)
+      cityName: '千代田区'
+    },
+    earthquake: {
+      enabled: true,
+      eewEnabled: true,
+      eewUrgent: true,
+      eewVolume: 80,
+      reportEnabled: true,
+      minScale: 30, // 30: 震度3以上 (10: 震度1, 20: 震度2, 30: 震度3, 40: 震度4, 45: 震度5弱...)
+      reportUrgent: false,
+      targetScope: 'local' // 'local' (自地域のみ) | 'all' (全国)
+    },
+    weatherWarning: {
+      enabled: true,
+      level: 'warning', // 'special' (特別警報) | 'warning' (警報以上) | 'advisory' (注意報含む)
+      notifyClear: true, // 解除時も通知
+      urgent: false,
+      checkIntervalMinutes: 5
+    },
+    dailyWeather: {
+      enabled: true,
+      includeAdvice: true // 傘・気温アドバイスを含める
+    }
   }
 };
 
@@ -195,6 +227,15 @@ class SettingsManager {
         if (!this.settings.dnd.topMuteDuration) {
           this.settings.dnd.topMuteDuration = DEFAULT_SETTINGS.dnd.topMuteDuration;
         }
+
+        if (this.settings.disaster) {
+          if (!this.settings.disaster.targetScope) {
+            this.settings.disaster.targetScope = DEFAULT_SETTINGS.disaster.targetScope;
+          }
+          if (!Array.isArray(this.settings.disaster.targetDevices)) {
+            this.settings.disaster.targetDevices = [...DEFAULT_SETTINGS.disaster.targetDevices];
+          }
+        }
       } else {
         this.settings = { ...DEFAULT_SETTINGS };
         this.save();
@@ -273,6 +314,28 @@ class SettingsManager {
         ...updates.ai
       };
     }
+    if (updates.disaster) {
+      this.settings.disaster = {
+        ...this.settings.disaster,
+        ...updates.disaster,
+        area: {
+          ...((this.settings.disaster && this.settings.disaster.area) || {}),
+          ...((updates.disaster && updates.disaster.area) || {})
+        },
+        earthquake: {
+          ...((this.settings.disaster && this.settings.disaster.earthquake) || {}),
+          ...((updates.disaster && updates.disaster.earthquake) || {})
+        },
+        weatherWarning: {
+          ...((this.settings.disaster && this.settings.disaster.weatherWarning) || {}),
+          ...((updates.disaster && updates.disaster.weatherWarning) || {})
+        },
+        dailyWeather: {
+          ...((this.settings.disaster && this.settings.disaster.dailyWeather) || {}),
+          ...((updates.disaster && updates.disaster.dailyWeather) || {})
+        }
+      };
+    }
     this.save();
     return this.settings;
   }
@@ -326,6 +389,10 @@ class SettingsManager {
     this.settings.webhookToken = token;
     this.save();
     return this.settings.webhookToken;
+  }
+
+  getDisasterSettings() {
+    return this.settings.disaster || DEFAULT_SETTINGS.disaster;
   }
 }
 

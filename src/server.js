@@ -16,6 +16,7 @@ const dndManager = require('./dnd');
 const historyManager = require('./history');
 const aiManager = require('./ai');
 const webhookQueue = require('./queue');
+const disasterManager = require('./disaster');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
@@ -127,7 +128,13 @@ app.use((req, res, next) => {
 
 // 静的ファイルの提供
 const PUBLIC_DIR = path.resolve(__dirname, '../public');
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, {
+  etag: false,
+  maxAge: 0,
+  setHeaders: (res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  }
+}));
 
 // ルートパスで index.html を確実に配信
 app.get('/', (req, res) => {
@@ -197,10 +204,12 @@ function getAutoVolumeLevel(now = new Date()) {
  * @param {Object} options voice, rate, pitch, volume, volumeLevel, chime
  */
 async function speakToMultipleDevices(text, targetList = [], options = {}) {
-  // リストが空の場合はデフォルト
+  // リストが空、または 'default' の場合はデフォルトデバイスIPに変換
   let targets = Array.isArray(targetList) ? targetList.filter(Boolean) : [targetList];
   if (!targets.length) {
     targets = [deviceManager.getDefaultDeviceIp()];
+  } else {
+    targets = targets.map(t => (typeof t === 'string' && t.toLowerCase() === 'default' ? deviceManager.getDefaultDeviceIp() : t));
   }
 
   // 利用可能な全デバイス一覧を取得し、短縮マクロ (ALL, GH:ALL, AL:ALL, HP:ALL) およびカスタム部屋グループ (1F, 2F, LDK等) を解決
@@ -275,6 +284,14 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
       } else {
         const hpDevs = allAvailableDevices.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
         expandedTargets.push(...hpDevs);
+      }
+    } else if (upper === 'DEFAULT') {
+      const defIp = deviceManager.getDefaultDeviceIp();
+      const defDev = deviceManager.findDevice(defIp);
+      if (defDev) {
+        expandedTargets.push(defDev);
+      } else {
+        expandedTargets.push({ id: defIp, name: 'Default', ip: defIp, type: 'google' });
       }
     } else {
       // カスタム部屋グループ（大文字小文字問わずマッチ）
@@ -615,6 +632,14 @@ dndManager.setSpeakerExecutor(async (item) => {
 // 永続化 Webhook 再生キューエンジンを紐付け
 webhookQueue.setExecutor(async (text, targets, options) => {
   return await speakToMultipleDevices(text, targets, options);
+});
+
+// 防災・緊急速報マネージャーを紐付け & 初期化
+disasterManager.setSpeechExecutor(async (text, targets, options) => {
+  return await speakToMultipleDevices(text, targets, options);
+});
+disasterManager.init().catch(err => {
+  console.warn('[Disaster] 初期化警告:', err.message);
 });
 
 // 初期カレンダーイベントの同期開始 (同期完了後に DND 起動時キュー判定を行うことで、会議中の誤再生・誤解除を防止)
@@ -1149,6 +1174,73 @@ app.post('/api/ai/calendar-test', async (req, res) => {
     res.json({ success: true, summary, sampleCount: sampleEvents.length });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ================= 4.6. 防災・緊急速報 & 天気 API =================
+app.get('/api/disaster/areas', (req, res) => {
+  const prefCode = req.query.prefCode;
+  const prefectures = disasterManager.getPrefectures();
+  let cities = [];
+  if (prefCode) {
+    cities = disasterManager.getCitiesForPrefecture(prefCode);
+  }
+  res.json({ prefectures, cities });
+});
+
+app.get('/api/disaster/settings', (req, res) => {
+  res.json(settingsManager.getDisasterSettings());
+});
+
+app.put('/api/disaster/settings', (req, res) => {
+  try {
+    const updated = settingsManager.update({ disaster: req.body });
+    if (updated.disaster?.enabled && updated.disaster?.earthquake?.enabled) {
+      if (!disasterManager.isWsConnected) {
+        disasterManager.startP2PQuakeWebSocket();
+      }
+    } else if (disasterManager.ws) {
+      try { disasterManager.ws.close(); } catch (_) {}
+    }
+    res.json(updated.disaster);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/disaster/weather', async (req, res) => {
+  try {
+    const weather = await disasterManager.getTodayWeather();
+    res.json(weather || { error: '天気予報の取得に失敗しました' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/disaster/status', (req, res) => {
+  res.json(disasterManager.getStatus());
+});
+
+app.post('/api/disaster/test', async (req, res) => {
+  try {
+    const { type } = req.body || {};
+    let result = { success: true };
+    if (type === 'eew') {
+      result = await disasterManager.testEew();
+    } else if (type === 'eew_cancel') {
+      result = await disasterManager.testEewCancel();
+    } else if (type === 'quake') {
+      result = await disasterManager.testQuake();
+    } else if (type === 'warning') {
+      result = await disasterManager.testWarning();
+    } else if (type === 'weather') {
+      result = await disasterManager.testWeatherSummary();
+    } else {
+      return res.status(400).json({ error: '無効なテストタイプです (eew, eew_cancel, quake, warning, weather)' });
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
