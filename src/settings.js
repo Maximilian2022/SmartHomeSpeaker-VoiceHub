@@ -93,19 +93,11 @@ const DEFAULT_SETTINGS = {
     ]
   },
   ipAliases: {}, // { "192.168.1.50": "ラズパイ", ... }
-  syncEngine: {
+  onvif: {
     enabled: true,
-    dynamicAutoAdjust: true,
-    preferNativeGroups: true,
-    alexaDelayMs: 0,
-    homepodDelayMs: 650,
-    googleDelayMs: 1100,
-    stats: {
-      alexaAvgRttMs: 1600,
-      googleAvgRttMs: 420,
-      homepodAvgRttMs: 850,
-      sampleCount: 5
-    }
+    defaultUsername: 'admin',
+    defaultPassword: '',
+    registeredDevices: []
   },
   disaster: {
     enabled: true,
@@ -165,13 +157,9 @@ class SettingsManager {
             ...DEFAULT_SETTINGS.autoVolume,
             ...(parsed.autoVolume || {})
           },
-          syncEngine: {
-            ...DEFAULT_SETTINGS.syncEngine,
-            ...(parsed.syncEngine || {}),
-            stats: {
-              ...DEFAULT_SETTINGS.syncEngine.stats,
-              ...((parsed.syncEngine && parsed.syncEngine.stats) || {})
-            }
+          onvif: {
+            ...DEFAULT_SETTINGS.onvif,
+            ...(parsed.onvif || {})
           },
           ipAliases: parsed.ipAliases || {},
           calendar: {
@@ -286,14 +274,13 @@ class SettingsManager {
         ...updates.autoVolume
       };
     }
-    if (updates.syncEngine) {
-      this.settings.syncEngine = {
-        ...this.settings.syncEngine,
-        ...updates.syncEngine,
-        stats: {
-          ...this.settings.syncEngine.stats,
-          ...((updates.syncEngine && updates.syncEngine.stats) || {})
-        }
+    if (updates.onvif) {
+      this.settings.onvif = {
+        ...this.settings.onvif,
+        ...updates.onvif,
+        registeredDevices: Array.isArray(updates.onvif.registeredDevices)
+          ? updates.onvif.registeredDevices
+          : (this.settings.onvif.registeredDevices || [])
       };
     }
     if (updates.calendar) {
@@ -338,37 +325,6 @@ class SettingsManager {
     }
     this.save();
     return this.settings;
-  }
-
-  recordPlatformLatency(platform, rttMs) {
-    if (!this.settings.syncEngine || typeof rttMs !== 'number' || isNaN(rttMs)) return;
-    const stats = this.settings.syncEngine.stats = this.settings.syncEngine.stats || {
-      alexaAvgRttMs: 1600,
-      googleAvgRttMs: 420,
-      homepodAvgRttMs: 850,
-      sampleCount: 0
-    };
-
-    const key = `${platform}AvgRttMs`;
-    if (stats[key] !== undefined && rttMs >= 50 && rttMs <= 8000) {
-      const prev = stats[key] || rttMs;
-      // 指数移動平均 (EMA) で直近の遅延変動を学習 (alpha = 0.25)
-      stats[key] = Math.round(prev * 0.75 + rttMs * 0.25);
-      stats.sampleCount = (stats.sampleCount || 0) + 1;
-
-      // dynamicAutoAdjust が有効ならオフセット遅延を自動計算
-      if (this.settings.syncEngine.dynamicAutoAdjust) {
-        const alexaRtt = stats.alexaAvgRttMs || 1600;
-        const googleRtt = stats.googleAvgRttMs || 420;
-        const homepodRtt = stats.homepodAvgRttMs || 850;
-
-        const maxRtt = Math.max(alexaRtt, googleRtt, homepodRtt);
-        this.settings.syncEngine.alexaDelayMs = Math.max(0, maxRtt - alexaRtt);
-        this.settings.syncEngine.homepodDelayMs = Math.max(0, maxRtt - homepodRtt);
-        this.settings.syncEngine.googleDelayMs = Math.max(0, maxRtt - googleRtt);
-      }
-      this.save();
-    }
   }
 
   getDefaultDeviceId() {

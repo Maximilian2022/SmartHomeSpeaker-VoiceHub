@@ -2,6 +2,7 @@ const { exec } = require('child_process');
 const alexaManager = require('./alexa');
 const homepodManager = require('./homepod');
 const settingsManager = require('./settings');
+const onvifManager = require('./onvif');
 
 // 事前に検出確認済みのデバイス一覧（空配列にして mDNS / Avahi による完全自動検出とする）
 const KNOWN_DEVICES = [];
@@ -79,6 +80,7 @@ class DeviceManager {
       if (type === 'google') return 4; // GH
       if (type === 'alexa') return 5;  // Alexa
       if (type === 'homepod') return 6;// HomePod
+      if (type === 'onvif') return 7;  // ONVIF Camera
       return 4;
     }
   }
@@ -108,7 +110,28 @@ class DeviceManager {
       console.warn('HomePod デバイス一覧取得エラー:', e.message);
     }
 
-    // 順序付け: Group GH -> Group Alexa -> Group Homepod -> GH -> Alexa -> Homepod
+    // ONVIF 登録済みカメラの追加
+    const onvifConfig = settingsManager.get().onvif || {};
+    if (onvifConfig.enabled !== false && Array.isArray(onvifConfig.registeredDevices)) {
+      for (const cam of onvifConfig.registeredDevices) {
+        if (cam.enabled !== false) {
+          result.push({
+            id: cam.id || `onvif_${cam.ip.replace(/\./g, '_')}`,
+            name: cam.name || cam.friendlyName || `ONVIF (${cam.ip})`,
+            ip: `onvif:${cam.ip}`,
+            rawIp: cam.ip,
+            port: cam.port || 8000,
+            model: cam.model || 'ONVIF Speaker',
+            type: 'onvif',
+            username: cam.username,
+            password: cam.password,
+            isDefault: `onvif:${cam.ip}` === defaultIp
+          });
+        }
+      }
+    }
+
+    // 順序付け: Group GH -> Group Alexa -> Group Homepod -> GH -> Alexa -> Homepod -> ONVIF
     result.sort((a, b) => {
       const orderA = this.getDeviceCategoryOrder(a);
       const orderB = this.getDeviceCategoryOrder(b);
@@ -124,6 +147,27 @@ class DeviceManager {
   findDevice(query) {
     if (!query) return null;
     const normalized = query.trim();
+
+    // ONVIF カメラ指定の場合
+    const onvifConfig = settingsManager.get().onvif || {};
+    const regCams = (onvifConfig.registeredDevices || []).filter(c => c.enabled !== false);
+    if (normalized.startsWith('onvif:')) {
+      const targetIp = normalized.slice(6);
+      const found = regCams.find(c => c.ip === targetIp || c.id === targetIp);
+      if (found) {
+        return {
+          id: found.id || `onvif_${found.ip.replace(/\./g, '_')}`,
+          name: found.name || `ONVIF (${found.ip})`,
+          ip: `onvif:${found.ip}`,
+          rawIp: found.ip,
+          port: found.port || 8000,
+          model: found.model || 'ONVIF Speaker',
+          type: 'onvif',
+          username: found.username,
+          password: found.password
+        };
+      }
+    }
 
     // HomePod デバイス指定の場合
     if (normalized.startsWith('homepod:') || normalized.toLowerCase().includes('homepod')) {
@@ -151,6 +195,23 @@ class DeviceManager {
         model: 'Amazon Echo',
         type: 'alexa'
       };
+    }
+
+    // ONVIF 名前一致 (完全または部分)
+    for (const cam of regCams) {
+      if ((cam.name && cam.name.toLowerCase() === normalized.toLowerCase()) || cam.ip === normalized) {
+        return {
+          id: cam.id || `onvif_${cam.ip.replace(/\./g, '_')}`,
+          name: cam.name,
+          ip: `onvif:${cam.ip}`,
+          rawIp: cam.ip,
+          port: cam.port || 8000,
+          model: cam.model || 'ONVIF Speaker',
+          type: 'onvif',
+          username: cam.username,
+          password: cam.password
+        };
+      }
     }
 
     // IP完全一致 または host:port 一致
@@ -256,6 +317,15 @@ class DeviceManager {
 
   getIndividualGoogleDevices() {
     return Array.from(this.devices.values()).filter(d => d.type === 'google' && !d.isGroup);
+  }
+
+  /**
+   * ONVIF カメラデバイスの再読み込み
+   */
+  async reloadOnvifDevices() {
+    // getDevices() 時に settingsManager の registeredDevices を動的に取得するため、
+    // ここで最新のデバイス一覧を取得して返す
+    return this.getDevices();
   }
 }
 

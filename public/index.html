@@ -115,22 +115,18 @@
                 <button type="button" class="preset-btn" data-text="そろそろ就寝の時間です。おやすみなさい。">おやすみ</button>
               </div>
 
-              <!-- 送信先スピーカーの複数選択 (4列グリッド) -->
+              <!-- 送信先スピーカーの複数選択 -->
               <div class="form-group">
-                <div class="flex-between" style="margin-bottom: 8px;">
-                  <label class="form-label" style="margin-bottom: 0;">
+                <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                  <label class="form-label" style="margin-bottom: 0; display: flex; align-items: center; gap: 6px;">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/></svg>
                     送信先スピーカー (複数選択可)
                   </label>
-                  <div class="btn-group-sm">
-                    <button type="button" id="btnSelectAllSpeakers" class="btn-text">全室選択</button>
-                    <span class="divider">|</span>
-                    <button type="button" id="btnClearSpeakers" class="btn-text">クリア</button>
-                  </div>
+                  <div id="sayMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
                 </div>
 
-                <div id="saySpeakersContainer" class="speaker-checkbox-grid four-col-grid">
-                  <!-- JSでチェックボックスを動的生成 -->
+                <div id="saySpeakersContainer" class="builder-speakers-grid">
+                  <!-- JSでチップボタングループを動的生成 -->
                   <span class="text-sub">スピーカー一覧を読み込み中...</span>
                 </div>
               </div>
@@ -359,9 +355,12 @@
 
                   <!-- 送信先スピーカー & 音声ボイス -->
                   <div class="settings-grid" style="margin-top: 16px;">
-                    <div class="form-group">
-                      <label class="form-label">通知先スピーカー</label>
-                      <div id="calSpeakersContainer" class="speaker-checkbox-grid" style="grid-template-columns: 1fr; max-height: 180px; overflow-y: auto;">
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                      <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                        <label class="form-label" style="margin: 0;">通知先スピーカー (複数選択可)</label>
+                        <div id="calMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                      </div>
+                      <div id="calSpeakersContainer" class="builder-speakers-grid">
                         <!-- JSで動的生成 -->
                       </div>
                     </div>
@@ -462,14 +461,14 @@
       <!-- 4. 接続デバイスパネル -->
       <section id="tab-devices" class="tab-pane">
         <div class="card glass-card">
-          <div class="card-header flex-between">
+          <div class="card-header flex-between" style="flex-wrap: wrap; gap: 10px;">
             <div>
-              <h2>宅内接続デバイス一覧 (Google Home & Alexa)</h2>
-              <span class="card-sub">ネットワーク内に検出されたスマートスピーカーです</span>
+              <h2>宅内接続デバイス一覧 (Google Home / Alexa / HomePod / ONVIF)</h2>
+              <span class="card-sub">ネットワーク内に検出されたスマートスピーカーおよび登録カメラです</span>
             </div>
-            <button type="button" id="btnRefreshDevices" class="btn btn-secondary btn-sm">
+            <button type="button" id="btnRefreshDevices" class="btn btn-primary btn-sm">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-              再スキャン
+              全デバイス一括再スキャン
             </button>
           </div>
 
@@ -478,118 +477,10 @@
               <!-- JSで動的レンダリング -->
             </div>
 
-            <!-- Amazon Alexa 連携コントロールカード -->
-            <div class="alexa-auth-card" id="alexaAuthCard">
-              <div class="alexa-card-header">
-                <div class="alexa-title-group">
-                  <span class="alexa-icon">🗣️</span>
-                  <div>
-                    <h3>Amazon Alexa / Echo 連携</h3>
-                    <p class="alexa-desc">Echo シリーズへの音声アナウンス・一括発言を有効化します</p>
-                  </div>
-                </div>
-                <div id="alexaStatusBadge" class="badge-tech">未連携</div>
-              </div>
-
-              <!-- 1. 未連携状態 -->
-              <div id="alexaStateUnlinked" class="alexa-state-box">
-                <p>Amazon アカウントと連携すると、宅内の Amazon Echo デバイスへも同時に喋らせることができるようになります。</p>
-                <button type="button" id="btnStartAlexaAuth" class="btn btn-primary">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
-                  Amazon ログインを開始して Alexa と連携
-                </button>
-              </div>
-
-              <!-- 2. 認証待機中状態 (プロキシ稼働中) -->
-              <div id="alexaStateWaiting" class="alexa-state-box alert-waiting" style="display: none;">
-                <div class="waiting-header">
-                  <span class="spinner-pulse"></span>
-                  <strong>認証待機中: 手元のブラウザでログインを完了してください</strong>
-                </div>
-                <p>以下のリンクをクリックして、手元のブラウザ（PC・スマートフォン）で Amazon にログインしてください。ログインが完了すると、自動的にこの画面が切り替わります。</p>
-                <div class="auth-link-box">
-                  <a id="alexaLoginLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-success btn-lg">
-                    👉 Amazon ログイン画面を開く (<span id="alexaLoginUrlText">http://&lt;SERVER_IP&gt;:8081</span>)
-                  </a>
-                  <button type="button" id="btnCancelAlexaAuth" class="btn btn-secondary btn-sm" style="margin-left: 12px;">キャンセル</button>
-                </div>
-                <small style="color: var(--text-dim); display: block; margin-top: 8px;">※2段階認証（OTP）や画像認証が表示された場合も、そのままブラウザ上で完了させてください。</small>
-              </div>
-
-              <!-- 3. 連携済み状態 -->
-              <div id="alexaStateLinked" class="alexa-state-box alert-linked" style="display: none;">
-                <div class="flex-between">
-                  <div>
-                    <span class="badge-success">連携完了</span>
-                    <strong style="margin-left: 8px;">Amazon アカウント認証済み</strong>
-                    <p style="margin-top: 4px; color: var(--text-muted);">Echo デバイスへの発言および一括アナウンスが利用可能です。</p>
-                  </div>
-                  <div class="action-btn-group">
-                    <button type="button" id="btnRefreshAlexaDevices" class="btn btn-secondary btn-sm">デバイス再取得</button>
-                    <button type="button" id="btnLogoutAlexa" class="btn btn-danger btn-sm">連携解除</button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 手動トークン入力オプション (救済用) -->
-              <div class="alexa-manual-toggle" style="margin-top: 16px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px;">
-                <details style="cursor: pointer;">
-                  <summary style="font-size: 0.85rem; color: var(--text-muted); outline: none;">
-                    🔧 手動でリフレッシュトークン（Atnr|...）を取得・直接登録する場合の手順
-                  </summary>
-                  <div style="margin-top: 12px; background: rgba(0,0,0,0.25); border-radius: 8px; padding: 12px; font-size: 0.82rem; line-height: 1.6; color: var(--text-muted);">
-                    <strong style="color: var(--accent); display: block; margin-bottom: 4px;">📖 手動リフレッシュトークンの取得方法:</strong>
-                    ブラウザプロキシログインでうまく行かない場合、以下の手順でトークンを手動取得できます：
-                    <ol style="margin: 6px 0 10px 18px; padding: 0;">
-                      <li>ターミナルでコンテナに入り、以下を実行します:<br>
-                        <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">docker exec -it google-home-voicetext npx alexa-cookie2</code><br>
-                        （または手元のPCのターミナルで <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">npx alexa-cookie2</code>）
-                      </li>
-                      <li>ドメイン選択で <strong>amazon.co.jp</strong> を選び、Amazon アカウントのメール/パスワードでログインします（2段階認証も可）。</li>
-                      <li>ログイン成功後にコンソールに表示される <code style="color: #60a5fa;">Refresh Token: Atnr|...</code> をコピーします。</li>
-                      <li>下記の入力欄に貼り付けて「保存」を押すか、<code style="color: #60a5fa;">.my.env</code> に <code style="color: #60a5fa;">REFRESH_TOKEN=Atnr|...</code> を追記してください。</li>
-                    </ol>
-                    <div style="display: flex; gap: 8px; margin-top: 8px;">
-                      <input type="password" id="inputAlexaToken" class="form-input" placeholder="Atnr|... から始まるトークンを貼り付け" style="flex: 1;">
-                      <button type="button" id="btnSaveAlexaToken" class="btn btn-secondary btn-sm">トークンを保存</button>
-                    </div>
-                  </div>
-                </details>
-              </div>
-            </div>
-
-            <!-- Apple HomePod 連携コントロールカード -->
-            <div class="homepod-card" id="homepodCard" style="margin-top: 20px;">
-              <div class="alexa-card-header">
-                <div class="alexa-title-group">
-                  <span class="alexa-icon">🍏</span>
-                  <div>
-                    <h3>Apple HomePod 連携</h3>
-                    <p class="alexa-desc">AirPlay 2 / RAOP プロトコル（pyatv）による HomePod / mini への高音質ストリーミング</p>
-                  </div>
-                </div>
-                <div id="homepodStatusBadge" class="badge-tech">4 台認識済み</div>
-              </div>
-              <div class="alexa-state-box alert-linked" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1);">
-                <div class="flex-between">
-                  <div>
-                    <span class="badge-success" style="background: rgba(255,255,255,0.15); color: #fff;">AirPlay 有効</span>
-                    <strong style="margin-left: 8px;">パスワード不要・即時再生可能</strong>
-                    <p style="margin-top: 4px; color: var(--text-muted);">
-                      宅内の HomePod（部屋、リビング、寝室等）が検出されています。「即時発言」や「スケジュール」「Webhook」から Google Home や Alexa と同時にアナウンスできます。
-                    </p>
-                    <div style="margin-top: 8px; padding: 8px 12px; background: rgba(245, 158, 11, 0.08); border-left: 3px solid #f59e0b; border-radius: 4px; font-size: 0.8rem; color: #fbbf24;">
-                      ⚠️ <strong>ネットワーク接続に関する重要注意:</strong><br>
-                      本サーバー（Docker）と Apple HomePod は、必ず<strong>同一ローカルネットワーク（同じLAN / Wi-Fi・同一サブネット内）</strong>に接続されている必要があります（Docker は <code>network_mode: host</code> を推奨）。ゲストWi-Fiや別VLANなどネットワークセグメントが跨がっている場合、マルチキャストDNS（Bonjour/mDNS）が届かず、HomePod の自動検出および AirPlay 音声ストリーミングができません。
-                    </div>
-                  </div>
-                  <div class="action-btn-group" style="align-self: flex-start;">
-                    <button type="button" id="btnRescanHomePod" class="btn btn-secondary btn-sm">
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                      HomePod 再スキャン
-                    </button>
-                  </div>
-                </div>
+            <!-- 外部連携・カメラ連携への案内バナー -->
+            <div style="margin-top: 24px; padding: 14px 18px; background: rgba(255, 255, 255, 0.03); border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+              <div style="font-size: 0.85rem; color: var(--text-muted);">
+                💡 Amazon Alexa や Apple HomePod の認証・設定は「<a href="#" id="linkGoToIntegrations" style="color: var(--accent); text-decoration: underline;">外部連携</a>」、ONVIF カメラの検出・登録は「<a href="#" id="linkGoToOnvif" style="color: var(--accent); text-decoration: underline;">📷 ONVIF カメラ</a>」設定で行えます。
               </div>
             </div>
           </div>
@@ -608,12 +499,16 @@
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
             🔕 おやすみ・会議 (DND)
           </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-ai" id="btnSubtabSettingsAi">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M9 13v2"/><path d="M15 13v2"/><path d="M2 14h2"/><path d="M20 14h2"/></svg>
-            🤖 AI 連携・API Key
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-integrations" id="btnSubtabSettingsIntegrations">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            🔗 外部連携 (AI / Alexa / HomePod)
+          </button>
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-onvif" id="btnSubtabSettingsOnvif">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            📷 ONVIF カメラ
           </button>
           <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-webhook" id="btnSubtabSettingsWebhook">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
             🌐 Webhook & Tunnel
           </button>
           <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-disaster" id="btnSubtabSettingsDisaster">
@@ -719,98 +614,6 @@
                 </div>
                 <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 10px;">
                   ※ APIや即時発言で個別に音量パーセントが指定されている場合は、個別指定が優先されます。
-                </div>
-              </div>
-            </div>
-
-            <!-- ⏱️ マルチスピーカー同調再生 & 自動オフセット調整 (Sync Engine) -->
-            <div class="card glass-card" style="margin-top: 20px;">
-              <div class="card-header flex-between">
-                <div>
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.25rem;">⏱️</span>
-                    <h2 style="margin: 0;">マルチスピーカー同調再生 (Sync Engine)</h2>
-                    <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem; padding: 2px 8px; border-radius: 9999px;">ハイブリッド同期</span>
-                  </div>
-                  <span class="card-sub">Google / Alexa / HomePod 複数再生時の「やまびこ・輪唱（ズレ）」を自動解消します</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="settingSyncEnabled" checked>
-                  <span class="slider round"></span>
-                </label>
-              </div>
-              <div class="card-body">
-                <!-- 1. 純正グループ優先トグル -->
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; margin-bottom: 12px;">
-                  <div>
-                    <div style="font-size: 0.88rem; font-weight: 600; color: var(--text-color);">📢 Google 純正 Cast グループを優先</div>
-                    <div style="font-size: 0.76rem; color: var(--text-muted);">「ALL」「一階全部」等の純正グループを活用し、Google 同士のズレを 0ms（完全同期）にします</div>
-                  </div>
-                  <label class="switch" style="margin-left: 12px;">
-                    <input type="checkbox" id="settingSyncPreferNative" checked>
-                    <span class="slider round"></span>
-                  </label>
-                </div>
-
-                <!-- 2. 動的自動キャリブレーション (EMA) トグル -->
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; margin-bottom: 16px;">
-                  <div>
-                    <div style="font-size: 0.88rem; font-weight: 600; color: var(--text-color);">🧠 動的自動キャリブレーション</div>
-                    <div style="font-size: 0.76rem; color: var(--text-muted);">API 応答・ネットワーク実測 RTT を自動学習し、異種間の送信待機オフセットを動的に最適化します</div>
-                  </div>
-                  <label class="switch" style="margin-left: 12px;">
-                    <input type="checkbox" id="settingSyncDynamicAdjust" checked>
-                    <span class="slider round"></span>
-                  </label>
-                </div>
-
-                <!-- 3. オフセット微調整スライダー群 -->
-                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05);">
-                  <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">
-                    異種混在時の送信待機オフセット (手動微調整)
-                  </div>
-                  <!-- Google Delay -->
-                  <div class="form-group" style="margin: 0;">
-                    <div class="flex-between">
-                      <label class="form-label" style="font-size: 0.82rem; margin: 0; display: flex; align-items: center; gap: 6px;">
-                        <span style="color: #3b82f6;">●</span> Google Home 送信待機 (最速のため待機)
-                      </label>
-                      <span id="labelSyncGoogleDelay" style="font-weight: 600; font-size: 0.85rem; color: #3b82f6;">1100 ms</span>
-                    </div>
-                    <input type="range" id="rangeSyncGoogleDelay" min="0" max="2500" step="50" value="1100" class="form-range" style="margin-top: 6px;">
-                  </div>
-
-                  <!-- HomePod Delay -->
-                  <div class="form-group" style="margin: 0;">
-                    <div class="flex-between">
-                      <label class="form-label" style="font-size: 0.82rem; margin: 0; display: flex; align-items: center; gap: 6px;">
-                        <span style="color: #a855f7;">●</span> HomePod (AirPlay) 送信待機
-                      </label>
-                      <span id="labelSyncHomepodDelay" style="font-weight: 600; font-size: 0.85rem; color: #a855f7;">650 ms</span>
-                    </div>
-                    <input type="range" id="rangeSyncHomepodDelay" min="0" max="2500" step="50" value="650" class="form-range" style="margin-top: 6px;">
-                  </div>
-
-                  <!-- Alexa Reference -->
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted); padding-top: 4px; border-top: 1px dashed rgba(255, 255, 255, 0.1);">
-                    <span style="display: flex; align-items: center; gap: 6px;">
-                      <span style="color: #f59e0b;">●</span> Alexa 送信待機 (基準・クラウド最遅)
-                    </span>
-                    <span style="font-weight: 600; color: #f59e0b;">0 ms (即時送信)</span>
-                  </div>
-                </div>
-
-                <!-- 4. 実測 RTT ステータスメーター & テスト再生ボタン -->
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
-                  <div style="display: flex; gap: 12px; font-size: 0.75rem; color: var(--text-muted);">
-                    <div>実測平均:</div>
-                    <div>Google: <span id="statGoogleRtt" style="color: var(--text-color); font-weight: 600;">420ms</span></div>
-                    <div>HomePod: <span id="statHomepodRtt" style="color: var(--text-color); font-weight: 600;">850ms</span></div>
-                    <div>Alexa: <span id="statAlexaRtt" style="color: var(--text-color); font-weight: 600;">1600ms</span></div>
-                  </div>
-                  <button type="button" id="btnSyncTestPlay" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                    <span>🔔</span> <span>同調テスト再生</span>
-                  </button>
                 </div>
               </div>
             </div>
@@ -1167,8 +970,11 @@
 
                 <!-- スピーカー個別チェックボックス -->
                 <div id="dndSpeakersWrapper" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px;">
-                  <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 8px;">ミュート対象にするスピーカーを選択してください:</span>
-                  <div id="dndSpeakersContainer" class="speaker-checkbox-grid">
+                  <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                    <span style="font-size: 0.8rem; color: var(--text-muted);">ミュート対象にするスピーカーを選択してください:</span>
+                    <div id="dndMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                  </div>
+                  <div id="dndSpeakersContainer" class="builder-speakers-grid">
                     <!-- JSで動的生成 -->
                   </div>
                 </div>
@@ -1201,8 +1007,8 @@
         </div>
         </div>
 
-        <!-- 3. AI 連携・API Key サブペイン -->
-        <div id="subtab-settings-ai" class="sub-tab-pane">
+        <!-- 3. 外部連携 (AI / Alexa / HomePod) サブペイン -->
+        <div id="subtab-settings-integrations" class="sub-tab-pane">
           <div class="single-col-layout">
             <div class="card glass-card">
               <div class="card-header flex-between">
@@ -1409,6 +1215,210 @@
                 <div id="aiTestResultBox" style="display: none; margin-top: 16px; padding: 14px 16px; border-radius: 8px; font-size: 0.85rem; line-height: 1.6;"></div>
               </div>
             </div>
+
+            <!-- 2. Amazon Alexa 連携コントロールカード -->
+            <div class="alexa-auth-card card glass-card" id="alexaAuthCard" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div class="alexa-title-group" style="display: flex; align-items: center; gap: 10px;">
+                  <span class="alexa-icon" style="font-size: 1.3rem;">🗣️</span>
+                  <div>
+                    <h2 style="margin: 0; font-size: 1.15rem;">Amazon Alexa / Echo 連携</h2>
+                    <p class="alexa-desc card-sub" style="margin: 0;">Echo シリーズへの音声アナウンス・一括発言を有効化します</p>
+                  </div>
+                </div>
+                <div id="alexaStatusBadge" class="badge-tech">未連携</div>
+              </div>
+
+              <div class="card-body">
+                <!-- 1. 未連携状態 -->
+                <div id="alexaStateUnlinked" class="alexa-state-box">
+                  <p>Amazon アカウントと連携すると、宅内の Amazon Echo デバイスへも同時に喋らせることができるようになります。</p>
+                  <button type="button" id="btnStartAlexaAuth" class="btn btn-primary">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+                    Amazon ログインを開始して Alexa と連携
+                  </button>
+                </div>
+
+                <!-- 2. 認証待機中状態 (プロキシ稼働中) -->
+                <div id="alexaStateWaiting" class="alexa-state-box alert-waiting" style="display: none;">
+                  <div class="waiting-header">
+                    <span class="spinner-pulse"></span>
+                    <strong>認証待機中: 手元のブラウザでログインを完了してください</strong>
+                  </div>
+                  <p>以下のリンクをクリックして、手元のブラウザ（PC・スマートフォン）で Amazon にログインしてください。ログインが完了すると、自動的にこの画面が切り替わります。</p>
+                  <div class="auth-link-box">
+                    <a id="alexaLoginLink" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-success btn-lg">
+                      👉 Amazon ログイン画面を開く (<span id="alexaLoginUrlText">http://&lt;SERVER_IP&gt;:8081</span>)
+                    </a>
+                    <button type="button" id="btnCancelAlexaAuth" class="btn btn-secondary btn-sm" style="margin-left: 12px;">キャンセル</button>
+                  </div>
+                  <small style="color: var(--text-dim); display: block; margin-top: 8px;">※2段階認証（OTP）や画像認証が表示された場合も、そのままブラウザ上で完了させてください。</small>
+                </div>
+
+                <!-- 3. 連携済み状態 -->
+                <div id="alexaStateLinked" class="alexa-state-box alert-linked" style="display: none;">
+                  <div class="flex-between">
+                    <div>
+                      <span class="badge-success">連携完了</span>
+                      <strong style="margin-left: 8px;">Amazon アカウント認証済み</strong>
+                      <p style="margin-top: 4px; color: var(--text-muted);">Echo デバイスへの発言および一括アナウンスが利用可能です。</p>
+                    </div>
+                    <div class="action-btn-group">
+                      <button type="button" id="btnRefreshAlexaDevices" class="btn btn-secondary btn-sm">デバイス再取得</button>
+                      <button type="button" id="btnLogoutAlexa" class="btn btn-danger btn-sm">連携解除</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 手動トークン入力オプション (救済用) -->
+                <div class="alexa-manual-toggle" style="margin-top: 16px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px;">
+                  <details style="cursor: pointer;">
+                    <summary style="font-size: 0.85rem; color: var(--text-muted); outline: none;">
+                      🔧 手動でリフレッシュトークン（Atnr|...）を取得・直接登録する場合の手順
+                    </summary>
+                    <div style="margin-top: 12px; background: rgba(0,0,0,0.25); border-radius: 8px; padding: 12px; font-size: 0.82rem; line-height: 1.6; color: var(--text-muted);">
+                      <strong style="color: var(--accent); display: block; margin-bottom: 4px;">📖 手動リフレッシュトークンの取得方法:</strong>
+                      ブラウザプロキシログインでうまく行かない場合、以下の手順でトークンを手動取得できます：
+                      <ol style="margin: 6px 0 10px 18px; padding: 0;">
+                        <li>ターミナルでコンテナに入り、以下を実行します:<br>
+                          <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: #fff;">docker exec -it google-home-speaker npx alexa-cookie2</code>
+                        </li>
+                        <li>ドメイン選択で <strong>amazon.co.jp</strong> を選び、Amazon アカウントのメール/パスワードでログインします（2段階認証も可）。</li>
+                        <li>ログイン成功後にコンソールに表示される <code style="color: #60a5fa;">Refresh Token: Atnr|...</code> をコピーします。</li>
+                        <li>下記の入力欄に貼り付けて「保存」を押すか、<code style="color: #60a5fa;">.my.env</code> に <code style="color: #60a5fa;">REFRESH_TOKEN=Atnr|...</code> を追記してください。</li>
+                      </ol>
+                      <div style="display: flex; gap: 8px; margin-top: 8px;">
+                        <input type="password" id="inputAlexaToken" class="form-input" placeholder="Atnr|... から始まるトークンを貼り付け" style="flex: 1;">
+                        <button type="button" id="btnSaveAlexaToken" class="btn btn-secondary btn-sm">トークンを保存</button>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. Apple HomePod 連携コントロールカード -->
+            <div class="homepod-card card glass-card" id="homepodCard" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div class="alexa-title-group" style="display: flex; align-items: center; gap: 10px;">
+                  <span class="alexa-icon" style="font-size: 1.3rem;">🍏</span>
+                  <div>
+                    <h2 style="margin: 0; font-size: 1.15rem;">Apple HomePod 連携</h2>
+                    <p class="alexa-desc card-sub" style="margin: 0;">AirPlay 2 / RAOP プロトコル（pyatv）による HomePod / mini への高音質ストリーミング</p>
+                  </div>
+                </div>
+                <div id="homepodStatusBadge" class="badge-tech">認識中</div>
+              </div>
+              <div class="card-body">
+                <div class="alexa-state-box alert-linked" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1);">
+                  <div class="flex-between" style="flex-wrap: wrap; gap: 10px;">
+                    <div>
+                      <span class="badge-success" style="background: rgba(255,255,255,0.15); color: #fff;">AirPlay 有効</span>
+                      <strong style="margin-left: 8px;">パスワード不要・即時再生可能</strong>
+                      <p style="margin-top: 4px; color: var(--text-muted);">
+                        宅内の HomePod（部屋、リビング、寝室等）が検出されています。「即時発言」や「スケジュール」「Webhook」から Google Home や Alexa と同時にアナウンスできます。
+                      </p>
+                      <div style="margin-top: 8px; padding: 8px 12px; background: rgba(245, 158, 11, 0.08); border-left: 3px solid #f59e0b; border-radius: 4px; font-size: 0.8rem; color: #fbbf24;">
+                        ⚠️ <strong>ネットワーク接続に関する重要注意:</strong><br>
+                        本サーバー（Docker）と Apple HomePod は、必ず<strong>同一ローカルネットワーク（同じLAN / Wi-Fi・同一サブネット内）</strong>に接続されている必要があります。
+                      </div>
+                    </div>
+                    <div class="action-btn-group" style="align-self: flex-start;">
+                      <button type="button" id="btnRescanHomePod" class="btn btn-secondary btn-sm">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                        HomePod 再スキャン
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3-B. ONVIF カメラスピーカー連携 サブペイン -->
+        <div id="subtab-settings-onvif" class="sub-tab-pane">
+          <div class="card glass-card">
+            <div class="card-header flex-between" style="flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h2>📷 ONVIF カメラスピーカー連携</h2>
+                <span class="card-sub">宅内の ONVIF / RTSP 対応防犯カメラを音声出力先（スマートスピーカー）として追加・発声させます</span>
+              </div>
+              <button type="button" id="btnScanOnvif" class="btn btn-primary btn-sm">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                ONVIF カメラ自動スキャン
+              </button>
+            </div>
+
+            <div class="card-body">
+              <!-- 基本認証設定 (デフォルトID/PW) -->
+              <div class="settings-grid" style="margin-bottom: 20px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 8px;">
+                <div class="form-group" style="margin: 0;">
+                  <label for="onvifDefaultUser" class="form-label">デフォルト ONVIF ユーザー名</label>
+                  <input type="text" id="onvifDefaultUser" class="form-input" value="admin" placeholder="例: admin">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label for="onvifDefaultPass" class="form-label">デフォルト ONVIF パスワード</label>
+                  <input type="password" id="onvifDefaultPass" class="form-input" placeholder="カメラ共通のパスワード">
+                </div>
+                <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 4px;">
+                  <span id="onvifAuthSavedMsg" style="font-size: 0.8rem; color: #34d399; display: none;">✓ 保存しました</span>
+                  <button type="button" id="btnSaveOnvifDefaultAuth" class="btn btn-secondary btn-sm">デフォルト認証を保存</button>
+                </div>
+              </div>
+
+              <!-- 検出された ONVIF カメラ一覧 -->
+              <div style="margin-bottom: 24px;">
+                <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
+                  <h3 style="margin: 0; font-size: 1rem; color: var(--text-color);">📡 検出されたカメラ一覧</h3>
+                  <span id="onvifScanCount" style="font-size: 0.8rem; color: var(--text-muted);">スキャン待機中</span>
+                </div>
+                <div class="table-responsive">
+                  <table class="schedule-table">
+                    <thead>
+                      <tr>
+                        <th>カメラ名</th>
+                        <th>IPアドレス / ポート</th>
+                        <th>Profile / スピーカー対応</th>
+                        <th>認証・状態</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="onvifDiscoveredTableBody">
+                      <tr>
+                        <td colspan="5" class="text-center loading-cell">「ONVIF カメラ自動スキャン」を押すと、宅内のカメラを自動検出します</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- 登録済みカメラスピーカー一覧 -->
+              <div>
+                <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
+                  <h3 style="margin: 0; font-size: 1rem; color: var(--text-color);">🔊 登録済みカメラスピーカー (Voice Hub に連携中)</h3>
+                </div>
+                <div class="table-responsive">
+                  <table class="schedule-table">
+                    <thead>
+                      <tr>
+                        <th>登録スピーカー名</th>
+                        <th>IPアドレス</th>
+                        <th>RTSP URL</th>
+                        <th>認証ユーザー</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="onvifRegisteredTableBody">
+                      <tr>
+                        <td colspan="5" class="text-center loading-cell">登録済みのカメラスピーカーはありません</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
           </div>
         </div>
 
@@ -1488,6 +1498,7 @@
                     <button type="button" class="btn-chip btn-macro" id="btnMacroGoogle" data-macro="GH:ALL" title="Google Home全台へ一括送信 (devices: [&quot;GH:ALL&quot;])">⚡ GH:ALL (Google全台)</button>
                     <button type="button" class="btn-chip btn-macro" id="btnMacroAlexa" data-macro="AL:ALL" title="Alexa全台へ一括送信 (devices: [&quot;AL:ALL&quot;])">⚡ AL:ALL (Alexa全台)</button>
                     <button type="button" class="btn-chip btn-macro" id="btnMacroHomePod" data-macro="HP:ALL" title="HomePod全台へ一括送信 (devices: [&quot;HP:ALL&quot;])">⚡ HP:ALL (HomePod全台)</button>
+                    <button type="button" class="btn-chip btn-macro" id="btnMacroCam" data-macro="CAM:ALL" title="ONVIFカメラ全台へ一括送信 (devices: [&quot;CAM:ALL&quot;])">⚡ CAM:ALL (カメラ全台)</button>
                     <span id="builderCustomGroupChips" style="display: inline-flex; gap: 6px; flex-wrap: wrap;"></span>
                     <button type="button" class="btn-chip text-danger" id="btnBuilderClear">クリア</button>
                   </div>
@@ -1711,8 +1722,11 @@ Body:
 
                   <!-- スピーカー個別チェックボックス -->
                   <div id="disasterSpeakersWrapper" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px;">
-                    <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 8px;">通知対象にするスピーカーを選択してください:</span>
-                    <div id="disasterSpeakersContainer" class="speaker-checkbox-grid" style="grid-template-columns: 1fr; max-height: 180px; overflow-y: auto;">
+                    <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                      <span style="font-size: 0.8rem; color: var(--text-muted);">通知対象にするスピーカーを選択してください:</span>
+                      <div id="disasterMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+                    </div>
+                    <div id="disasterSpeakersContainer" class="builder-speakers-grid">
                       <!-- JSで動的生成 -->
                     </div>
                   </div>
@@ -1920,14 +1934,65 @@ Body:
             <input type="text" id="inputGroupName" class="form-input" placeholder="例: 1F, 2F, LDK, 寝室まわり">
           </div>
           <div class="form-group">
-            <label class="form-label">所属させるスピーカー (複数選択) *</label>
-            <div id="groupSpeakerCheckboxes" class="speaker-checkbox-grid" style="max-height: 200px; overflow-y: auto;">
+            <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+              <label class="form-label" style="margin: 0;">所属させるスピーカー (複数選択) *</label>
+              <div id="groupMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+            </div>
+            <div id="groupSpeakerCheckboxes" class="builder-speakers-grid">
               <!-- JS動的生成 -->
             </div>
           </div>
           <div class="modal-footer" style="padding: 12px 0 0; border-top: 1px solid rgba(255,255,255,0.08);">
             <button type="button" id="btnCancelGroupModal" class="btn btn-secondary">キャンセル</button>
             <button type="button" id="btnSaveGroupModal" class="btn btn-primary">グループを保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ONVIFカメラスピーカー連携登録モーダル -->
+    <div id="modalOnvifRegister" class="modal-backdrop" style="display: none;">
+      <div class="modal-content glass-card" style="max-width: 520px;">
+        <div class="modal-header">
+          <h3 id="modalOnvifTitle">📷 カメラスピーカー連携登録</h3>
+          <button type="button" id="btnCloseOnvifModal" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-info" style="margin-bottom: 16px; font-size: 0.85rem; padding: 10px 14px; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px;">
+            このカメラを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。
+          </div>
+          
+          <div class="form-group">
+            <label for="onvifRegName" class="form-label">スピーカー表示名 *</label>
+            <input type="text" id="onvifRegName" class="form-input" placeholder="例: 書斎カメラ, リビング, 玄関">
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">アナウンス選択やWebhookコマンドで呼び出す名前です</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">IP アドレス</label>
+              <input type="text" id="onvifRegIp" class="form-input" readonly style="opacity: 0.85; background: rgba(0,0,0,0.25);">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">機種 / プロファイル</label>
+              <input type="text" id="onvifRegModel" class="form-input" readonly style="opacity: 0.85; background: rgba(0,0,0,0.25);">
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 10px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+            <div class="flex-between" style="margin-bottom: 6px;">
+              <label class="form-label" style="margin: 0; font-size: 0.85rem;">カメラ個別認証 (必要な場合のみ)</label>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">空欄時はデフォルト設定を使用</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <input type="text" id="onvifRegUser" class="form-input" placeholder="ユーザー名 (空欄でデフォルト)">
+              <input type="password" id="onvifRegPass" class="form-input" placeholder="パスワード (空欄でデフォルト)">
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding: 16px 0 0; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" id="btnCancelOnvifModal" class="btn btn-secondary">キャンセル</button>
+            <button type="button" id="btnSubmitOnvifModal" class="btn btn-primary">＋ スピーカーとして連携登録</button>
           </div>
         </div>
       </div>
@@ -2024,8 +2089,11 @@ Body:
 
           <!-- スケジュール送信先スピーカー複数選択 -->
           <div class="form-group">
-            <label class="form-label">送信先スピーカー (複数選択可)</label>
-            <div id="schedSpeakersContainer" class="speaker-checkbox-grid">
+            <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+              <label class="form-label" style="margin: 0;">送信先スピーカー (複数選択可)</label>
+              <div id="schedMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+            </div>
+            <div id="schedSpeakersContainer" class="builder-speakers-grid">
               <!-- JSで動的生成 -->
             </div>
           </div>
@@ -2105,11 +2173,14 @@ Body:
 
           <!-- 3. 通知先スピーカー個別設定 -->
           <div class="form-group" style="margin-top: 16px;">
-            <label class="form-label">🔊 通知先スピーカー (複数選択可)</label>
+            <div class="flex-between" style="margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
+              <label class="form-label" style="margin: 0;">🔊 通知先スピーカー (複数選択可)</label>
+              <div id="modalCalMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+            </div>
             <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">
               ※未選択の場合はカレンダー全体の共通設定スピーカーで鳴らします
             </div>
-            <div id="modalCalSpeakersContainer" class="speaker-checkbox-grid" style="max-height: 140px; overflow-y: auto;">
+            <div id="modalCalSpeakersContainer" class="builder-speakers-grid">
               <!-- JS動的生成 -->
             </div>
           </div>
@@ -2178,6 +2249,6 @@ Body:
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="app.js?v=2.3"></script>
+  <script src="app.js?v=2.6"></script>
 </body>
 </html>

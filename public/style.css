@@ -425,6 +425,11 @@ body {
   border-color: rgba(255, 255, 255, 0.35);
 }
 
+.speaker-chip.onvif-chip.checked {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
 .speaker-chip-name {
   font-size: 0.85rem;
   font-weight: 500;
@@ -471,6 +476,12 @@ body {
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.speaker-chip-badge.onvif-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
 .speaker-chip-badge.default-badge {

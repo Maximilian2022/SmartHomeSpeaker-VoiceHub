@@ -26,6 +26,12 @@ services:
       - path: ./.my.env
         required: false
 
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: voicehub-go2rtc
+    restart: unless-stopped
+    network_mode: "host"
+
 volumes:
   voice_data:
     name: smart_speaker_data

@@ -17,6 +17,7 @@ const historyManager = require('./history');
 const aiManager = require('./ai');
 const webhookQueue = require('./queue');
 const disasterManager = require('./disaster');
+const onvifManager = require('./onvif');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
@@ -216,15 +217,6 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   const allAvailableDevices = await deviceManager.getDevices();
   const currentSettings = settingsManager.get();
   const deviceGroups = currentSettings.deviceGroups || {};
-  const syncConfig = currentSettings.syncEngine || {
-    enabled: true,
-    dynamicAutoAdjust: true,
-    preferNativeGroups: true,
-    alexaDelayMs: 0,
-    homepodDelayMs: 650,
-    googleDelayMs: 1100
-  };
-  const preferNativeGroups = syncConfig.preferNativeGroups !== false;
 
   // Google Cast グループの一覧を取得
   const googleGroups = deviceManager.getGoogleGroups();
@@ -246,8 +238,8 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     const upper = raw.toUpperCase();
 
     if (upper === 'ALL' || upper === '*') {
-      if (preferNativeGroups && bestAllGoogleGroup) {
-        // Google Cast グループに集約して Google Home 同士の再生ズレを 0ms に抑える
+      if (bestAllGoogleGroup) {
+        // Google Cast グループに集約して Google Home 同士の再生ズレを抑える
         expandedTargets.push(bestAllGoogleGroup);
         // Alexa: 全体グループ
         const alexaAll = allAvailableDevices.find(d => d.ip === 'alexa:ALL' || d.name === '全室 Echo') || { id: 'alexa:ALL', name: '全室 Echo', ip: 'alexa:ALL', type: 'alexa' };
@@ -259,11 +251,13 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
         } else {
           expandedTargets.push(...allAvailableDevices.filter(d => d.type === 'homepod'));
         }
+        // ONVIF カメラスピーカー
+        expandedTargets.push(...allAvailableDevices.filter(d => d.type === 'onvif'));
       } else {
         expandedTargets.push(...allAvailableDevices);
       }
     } else if (upper === 'GH:ALL' || upper === 'GOOGLE:ALL' || upper === 'GH_ALL') {
-      if (preferNativeGroups && bestAllGoogleGroup) {
+      if (bestAllGoogleGroup) {
         expandedTargets.push(bestAllGoogleGroup);
       } else {
         const ghDevs = allAvailableDevices.filter(d => d.type === 'google' && !d.isGroup);
@@ -323,17 +317,28 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     }
   }
 
-  // 重複排除 (ip をキーとする)
+  // 重複排除ロジック (グループと個別スピーカーの重複、同一デバイスの二重登録を排除)
   const hasGoogleAllGroup = expandedTargets.some(d => d.isGroup && (/^(all|全部|全室|家中|家全部)$/i.test(d.name.trim()) || (/all|全部/i.test(d.name) && !/一階|二階|1階|2階|1f|2f|階|部屋/i.test(d.name))));
+  const hasAlexaAllGroup = expandedTargets.some(d => d.type === 'alexa' && (d.ip === 'alexa:ALL' || d.name === '全室 Echo'));
+  const hasHomePodAllGroup = expandedTargets.some(d => d.type === 'homepod' && (d.ip === 'homepod:ALL' || d.name === '全室 HomePod'));
+
   const resolvedTargets = [];
-  const seenIps = new Set();
+  const seenKeys = new Set();
   for (const dev of expandedTargets) {
     if (!dev || !dev.ip) continue;
     if (hasGoogleAllGroup && dev.type === 'google' && !dev.isGroup) {
-      continue; // 全体グループに集約
+      continue; // Google全体グループに集約
     }
-    if (!seenIps.has(dev.ip)) {
-      seenIps.add(dev.ip);
+    if (hasAlexaAllGroup && dev.type === 'alexa' && dev.ip !== 'alexa:ALL') {
+      continue; // Alexa全体グループに集約
+    }
+    if (hasHomePodAllGroup && dev.type === 'homepod' && dev.ip !== 'homepod:ALL') {
+      continue; // HomePod全体グループに集約
+    }
+    // IP または ID または 名前 で重複を完全に1回に集約
+    const dedupeKey = `${dev.type || ''}_${dev.ip || dev.id || dev.name}`;
+    if (!seenKeys.has(dedupeKey)) {
+      seenKeys.add(dedupeKey);
       resolvedTargets.push(dev);
     }
   }
@@ -456,33 +461,18 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     effectiveVolumeLevel = whisperVolGlobal / 100;
   }
 
-  // Google Home 向け、Alexa 向け、HomePod 向けを分類
-  const googleDevices = activeTargets.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod'));
+  // 各プラットフォーム向けデバイスを分類
+  const googleDevices = activeTargets.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod' && d.type !== 'onvif'));
   const alexaDevices = activeTargets.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
   const homepodDevices = activeTargets.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
+  const onvifDevices = activeTargets.filter(d => d.type === 'onvif');
 
-  // 異種プラットフォーム混在判定 & オフセット遅延の算出 (Sync Engine)
-  const activePlatforms = (googleDevices.length > 0 ? 1 : 0) + (alexaDevices.length > 0 ? 1 : 0) + (homepodDevices.length > 0 ? 1 : 0);
-  const isMultiPlatform = activePlatforms > 1;
-
-  let alexaDelay = 0;
-  let homepodDelay = 0;
-  let googleDelay = 0;
-
-  if (isMultiPlatform && syncConfig.enabled) {
-    alexaDelay = Math.max(0, parseInt(syncConfig.alexaDelayMs, 10) || 0);
-    homepodDelay = Math.max(0, parseInt(syncConfig.homepodDelayMs, 10) || 650);
-    googleDelay = Math.max(0, parseInt(syncConfig.googleDelayMs, 10) || 1100);
-    console.log(`[SyncEngine] 異種スピーカー混在同調オフセット適用: Alexa=${alexaDelay}ms, HomePod=${homepodDelay}ms, Google=${googleDelay}ms`);
-  }
-
-  const sleep = ms => ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
   const dispatchPromises = [];
   let audioUrl = null;
   let sharedSpeech = null;
 
-  // Google Home または HomePod がある場合、Edge TTS 音声を 1 度だけ生成 (チャイム音結合オプション対応)
-  if (googleDevices.length > 0 || homepodDevices.length > 0) {
+  // Google Home, HomePod, または ONVIF がある場合、Edge TTS 音声を 1 度だけ生成 (チャイム音結合オプション対応)
+  if (googleDevices.length > 0 || homepodDevices.length > 0 || onvifDevices.length > 0) {
     sharedSpeech = await ttsManager.generateSpeech(text, {
       voice: options.voice,
       rate: options.rate,
@@ -493,20 +483,14 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     audioUrl = `http://${SERVER_IP}:${PORT}${sharedSpeech.urlPath}`;
   }
 
-  // Google Home デバイスへ並行キャスト (オフセットディレイ適用 & RTT学習)
+  // Google Home デバイスへ並行キャスト
   if (googleDevices.length > 0 && sharedSpeech) {
     for (const dev of googleDevices) {
       dispatchPromises.push((async () => {
-        const startTs = Date.now();
-        if (googleDelay > 0) {
-          await sleep(googleDelay);
-        }
-        console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}${isWhisperGlobal ? ` [DND極小音量: ${whisperVolGlobal}%]` : ''}${googleDelay > 0 ? ` [オフセット待機: ${googleDelay}ms]` : ''}`);
+        console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}${isWhisperGlobal ? ` [DND極小音量: ${whisperVolGlobal}%]` : ''}`);
         try {
           const res = await castManager.playMedia(dev.ip, audioUrl, { volumeLevel: effectiveVolumeLevel });
-          const rtt = Date.now() - startTs - googleDelay;
-          settingsManager.recordPlatformLatency('google', rtt);
-          return { device: dev.name, ip: dev.ip, type: 'google', status: 'success', result: res, rtt };
+          return { device: dev.name, ip: dev.ip, type: 'google', status: 'success', result: res };
         } catch (err) {
           return { device: dev.name, ip: dev.ip, type: 'google', status: 'error', error: err.message };
         }
@@ -514,20 +498,14 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     }
   }
 
-  // HomePod デバイスへ並行 AirPlay ストリーミング (オフセットディレイ適用 & RTT学習)
+  // HomePod デバイスへ並行 AirPlay ストリーミング
   if (homepodDevices.length > 0 && sharedSpeech) {
     for (const dev of homepodDevices) {
       dispatchPromises.push((async () => {
-        const startTs = Date.now();
-        if (homepodDelay > 0) {
-          await sleep(homepodDelay);
-        }
-        console.log(`[Speak] HomePod 送信先: ${dev.name} (${dev.ip})${homepodDelay > 0 ? ` [オフセット待機: ${homepodDelay}ms]` : ''}`);
+        console.log(`[Speak] HomePod 送信先: ${dev.name} (${dev.ip})`);
         try {
           const res = await homepodManager.playAudio(sharedSpeech.filepath, dev.ip);
-          const rtt = Date.now() - startTs - homepodDelay;
-          settingsManager.recordPlatformLatency('homepod', rtt);
-          return { device: dev.name, ip: dev.ip, type: 'homepod', status: 'success', result: res, rtt };
+          return { device: dev.name, ip: dev.ip, type: 'homepod', status: 'success', result: res };
         } catch (err) {
           return { device: dev.name, ip: dev.ip, type: 'homepod', status: 'error', error: err.message };
         }
@@ -535,21 +513,30 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     }
   }
 
-  // Alexa デバイスがある場合、Alexa スクリプトを並行実行 (オフセットディレイ適用 & RTT学習)
+  // ONVIF カメラスピーカーへ並行プッシュ
+  if (onvifDevices.length > 0 && sharedSpeech) {
+    for (const dev of onvifDevices) {
+      dispatchPromises.push((async () => {
+        console.log(`[Speak] ONVIF 送信先: ${dev.name} (${dev.ip})`);
+        try {
+          const res = await onvifManager.playAudio(dev, sharedSpeech.filepath, sharedSpeech.duration);
+          return { device: dev.name, ip: dev.ip, type: 'onvif', status: 'success', result: res };
+        } catch (err) {
+          return { device: dev.name, ip: dev.ip, type: 'onvif', status: 'error', error: err.message };
+        }
+      })());
+    }
+  }
+
+  // Alexa デバイスがある場合、Alexa スクリプトを並行実行
   if (alexaDevices.length > 0) {
     for (const dev of alexaDevices) {
       const alexaTarget = dev.ip.startsWith('alexa:') ? dev.ip.slice(6) : (dev.name || 'ALL');
       dispatchPromises.push((async () => {
-        const startTs = Date.now();
-        if (alexaDelay > 0) {
-          await sleep(alexaDelay);
-        }
-        console.log(`[Speak] Alexa 送信先: ${alexaTarget}${alexaDelay > 0 ? ` [オフセット待機: ${alexaDelay}ms]` : ''}`);
+        console.log(`[Speak] Alexa 送信先: ${alexaTarget}`);
         try {
           const res = await alexaManager.speak(text, alexaTarget);
-          const rtt = Date.now() - startTs - alexaDelay;
-          settingsManager.recordPlatformLatency('alexa', rtt);
-          return { device: dev.name, ip: dev.ip, type: 'alexa', status: 'success', result: res, rtt };
+          return { device: dev.name, ip: dev.ip, type: 'alexa', status: 'success', result: res };
         } catch (err) {
           return { device: dev.name, ip: dev.ip, type: 'alexa', status: 'error', error: err.message };
         }
@@ -989,7 +976,7 @@ app.get('/api/settings', (req, res) => {
   res.json(settingsManager.get());
 });
 
-app.put('/api/settings', (req, res) => {
+const handleUpdateSettings = (req, res) => {
   try {
     const updated = settingsManager.update(req.body);
     // カレンダー設定更新時に再同期
@@ -1000,30 +987,84 @@ app.put('/api/settings', (req, res) => {
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
+};
+
+app.put('/api/settings', handleUpdateSettings);
+app.post('/api/settings', handleUpdateSettings);
+
+// 全デバイス一括再スキャン API (Google Home, Alexa, HomePod, ONVIF)
+app.post('/api/devices/rescan-all', async (req, res) => {
+  try {
+    console.log('[Devices] 全デバイス一括再スキャンを開始します...');
+    // 1. Google Cast 再スキャン
+    castManager.startDiscovery();
+    // 2. Alexa 再スキャン
+    await alexaManager.scanDevices().catch(e => console.warn('[Rescan] Alexaスキャン警告:', e.message));
+    // 3. HomePod 再スキャン
+    await homepodManager.scanDevices().catch(e => console.warn('[Rescan] HomePodスキャン警告:', e.message));
+    // 4. ONVIF 再読み込み
+    await deviceManager.reloadOnvifDevices().catch(e => console.warn('[Rescan] ONVIFリロード警告:', e.message));
+    // 5. 最新デバイス一覧
+    const devices = await deviceManager.getDevices();
+    res.json({ success: true, count: devices.length, devices });
+  } catch (err) {
+    console.error('[Rescan All Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// マルチスピーカー同調テスト再生 API
-app.post('/api/settings/sync-test', async (req, res) => {
+// ONVIF カメラ検出スキャン API
+app.post('/api/onvif/scan', async (req, res) => {
   try {
-    const text = req.body?.text || 'ポーン♪ マルチスピーカー同調テストです。';
-    const targets = req.body?.targets || ['ALL'];
-    console.log(`[SyncEngine] 同調テスト発話を開始: "${text}", 送信先: ${targets.join(',')}`);
-
-    const result = await speakToMultipleDevices(text, targets, {
-      source: 'web_ui',
-      sourceLabel: '同調テスト再生',
-      urgent: true,
-      chime: 'chime1'
-    });
-
-    const currentSync = settingsManager.get().syncEngine;
-    res.json({
-      success: result.success,
-      syncEngine: currentSync,
-      results: result.results
-    });
+    const { username, password } = req.body || {};
+    const devices = await onvifManager.scanDevices({ username, password });
+    res.json({ success: true, count: devices.length, devices });
   } catch (err) {
-    console.error('[SyncTest Error]:', err.message);
+    console.error('[ONVIF Scan Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ONVIF カメラ登録 / 変更 / 削除 API
+app.post('/api/onvif/register', async (req, res) => {
+  try {
+    const { device, action } = req.body || {};
+    const onvifSettings = settingsManager.get().onvif || { enabled: true, registeredDevices: [] };
+    let list = Array.isArray(onvifSettings.registeredDevices) ? [...onvifSettings.registeredDevices] : [];
+
+    if (action === 'delete') {
+      list = list.filter(d => d.ip !== device.ip);
+    } else {
+      const idx = list.findIndex(d => d.ip === device.ip);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...device };
+      } else {
+        list.push(device);
+      }
+    }
+
+    settingsManager.update({ onvif: { ...onvifSettings, registeredDevices: list } });
+    await deviceManager.reloadOnvifDevices();
+    res.json({ success: true, registeredDevices: list });
+  } catch (err) {
+    console.error('[ONVIF Register Error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ONVIF カメラスピーカーテスト発話 API
+app.post('/api/onvif/test', async (req, res) => {
+  try {
+    const { ip, name, username, password, rtspUrl } = req.body || {};
+    const dev = { ip, name: name || 'ONVIF Camera', username, password, rtspUrl };
+    const speech = await ttsManager.generateSpeech('ポーン♪ ONVIFカメラスピーカーのテスト放送です。', {
+      voice: 'ja-JP-NanamiNeural',
+      chime: 'dingdong'
+    });
+    const result = await onvifManager.playAudio(dev, speech.filepath, speech.duration);
+    res.json({ success: true, result });
+  } catch (err) {
+    console.error('[ONVIF Test Error]:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

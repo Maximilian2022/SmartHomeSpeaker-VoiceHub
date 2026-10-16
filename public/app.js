@@ -148,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSettingsHandlers();
     setupAiHandlers();
     setupDisasterHandlers();
+    setupOnvifSettings();
 
     // 認証ステータスの確認 (ADMIN_PASSWORD 設定時)
     const auth = await checkAuthStatus();
@@ -281,6 +282,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // デバイス一覧
+  // 全スピーカーセレクター（Say, Sched, Cal, DND, Disaster, Webhookビルダー）の一括再描画
+  function renderAllSpeakerSelectors() {
+    const curSay = getSelectedSpeakers(el.saySpeakersContainer);
+    renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', curSay.length ? curSay : (state.serverInfo?.defaultDeviceIp ? [state.serverInfo.defaultDeviceIp] : []));
+
+    const curSched = getSelectedSpeakers(el.schedSpeakersContainer);
+    renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', curSched.length ? curSched : ['default']);
+
+    renderCalendarSpeakers();
+    renderDndSpeakers();
+    renderDisasterSpeakers();
+    renderBuilderSpeakers();
+    renderBuilderCustomGroupChips();
+    updateBuilderCode();
+  }
+
+  // デバイス一覧取得 & 画面反映
   async function loadDevices() {
     try {
       const res = await fetch('/api/devices');
@@ -288,18 +306,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       state.devices = sortDevicesList(data.devices || []);
 
-      const initialSelected = state.serverInfo?.defaultDeviceIp
-        ? [state.serverInfo.defaultDeviceIp]
-        : (state.devices[0] ? [state.devices[0].ip] : []);
-
-      renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', initialSelected);
-      renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', ['default']);
-      renderCalendarSpeakers();
-      renderDndSpeakers();
-      renderDisasterSpeakers();
       renderDevicesGrid();
-      renderBuilderSpeakers();
-      updateBuilderCode();
+      renderAllSpeakerSelectors();
     } catch (err) {
       showToast('デバイス情報の取得に失敗しました', 'error');
     }
@@ -365,17 +373,119 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/^HomePod\s*\((全室\s*HomePod)\)/i, '$1');
   }
 
-  // 複数スピーカー選択チェックボックスの描画
-  function renderSpeakersCheckboxes(container, nameAttr, selectedValues = []) {
+  // 汎用マクロボタン群の描画とクリックイベント紐付け
+  function renderMacroButtonsFor(macroContainer, targetGrid, nameAttr, onChangeCallback) {
+    if (!macroContainer || !targetGrid) return;
+    const hasGoogle = state.devices.some(d => d.type === 'google');
+    const hasAlexa = state.devices.some(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
+    const hasHomePod = state.devices.some(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
+    const hasOnvif = state.devices.some(d => d.type === 'onvif');
+    const groups = state.settings?.deviceGroups || {};
+    const groupNames = Object.keys(groups);
+
+    let html = `
+      <button type="button" class="btn-chip btn-macro" data-macro="ALL" title="全スピーカーを選択">⚡ ALL (全台)</button>
+    `;
+    if (hasGoogle) {
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="GH:ALL" title="Google Home全台を選択">⚡ GH:ALL (Google全台)</button>`;
+    }
+    if (hasAlexa) {
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="AL:ALL" title="Alexa全台を選択">⚡ AL:ALL (Alexa全台)</button>`;
+    }
+    if (hasHomePod) {
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="HP:ALL" title="HomePod全台を選択">⚡ HP:ALL (HomePod全台)</button>`;
+    }
+    if (hasOnvif) {
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="CAM:ALL" title="ONVIFカメラ全台を選択">⚡ CAM:ALL (カメラ全台)</button>`;
+    }
+    // カスタム部屋グループボタン (グループ編集モーダル内では非表示)
+    if (nameAttr !== 'groupSpeaker') {
+      groupNames.forEach(grp => {
+        html += `
+          <button type="button" class="btn-chip btn-macro btn-custom-group" data-macro="${escapeHtml(grp)}" title="登録グループ [${escapeHtml(grp)}] を選択">
+            ⚡ ${escapeHtml(grp)}
+          </button>
+        `;
+      });
+    }
+    // クリアボタン
+    html += `<button type="button" class="btn-chip text-danger btn-clear-macro">クリア</button>`;
+
+    macroContainer.innerHTML = html;
+
+    // イベントリスナー紐付け
+    macroContainer.querySelectorAll('.btn-macro').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const macro = btn.getAttribute('data-macro');
+        const isAlreadyActive = btn.classList.contains('active');
+
+        macroContainer.querySelectorAll('.btn-macro').forEach(b => b.classList.remove('active'));
+
+        if (!isAlreadyActive) {
+          btn.classList.add('active');
+
+          targetGrid.querySelectorAll('input[type="checkbox"]').forEach(c => {
+            const type = c.getAttribute('data-type');
+            const devName = (c.closest('.speaker-chip')?.textContent || '').toLowerCase();
+            const devIp = (c.value || '').toLowerCase();
+            let match = false;
+
+            if (macro === 'ALL') {
+              match = (c.value !== 'default'); // ALL選択時は個別スピーカー全ON
+            } else if (macro === 'GH:ALL') {
+              match = (type === 'google');
+            } else if (macro === 'AL:ALL') {
+              match = (type === 'alexa');
+            } else if (macro === 'HP:ALL') {
+              match = (type === 'homepod');
+            } else if (macro === 'CAM:ALL') {
+              match = (type === 'onvif');
+            } else if (groups[macro]) {
+              const members = (groups[macro] || []).map(m => String(m).toLowerCase());
+              match = members.some(m => m === devIp || m === c.value || devName.includes(m) || devIp.includes(m));
+            }
+
+            c.checked = match;
+            c.closest('.speaker-chip')?.classList.toggle('checked', match);
+          });
+        } else {
+          // すでに active だった場合はクリア
+          targetGrid.querySelectorAll('input[type="checkbox"]').forEach(c => {
+            c.checked = false;
+            c.closest('.speaker-chip')?.classList.remove('checked');
+          });
+        }
+
+        if (typeof onChangeCallback === 'function') {
+          onChangeCallback();
+        }
+      });
+    });
+
+    macroContainer.querySelector('.btn-clear-macro')?.addEventListener('click', () => {
+      macroContainer.querySelectorAll('.btn-macro').forEach(b => b.classList.remove('active'));
+      targetGrid.querySelectorAll('input[type="checkbox"]').forEach(c => {
+        c.checked = false;
+        c.closest('.speaker-chip')?.classList.remove('checked');
+      });
+      if (typeof onChangeCallback === 'function') {
+        onChangeCallback();
+      }
+    });
+  }
+
+  // 複数スピーカー選択チェックボックス＆マクロボタン群の描画
+  function renderSpeakersCheckboxes(container, nameAttr, selectedValues = [], options = {}) {
+    if (!container) return;
     const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || (state.devices[0]?.ip || '');
     let html = '';
 
-    // スケジュール用: デフォルト選択肢
-    if (nameAttr === 'schedSpeaker') {
+    // スケジュール/カレンダー用: デフォルト選択肢
+    if (nameAttr === 'schedSpeaker' || options.includeDefault) {
       const isDefChecked = selectedValues.includes('default') ? 'checked' : '';
       html += `
         <label class="speaker-chip ${isDefChecked ? 'checked' : ''}">
-          <input type="checkbox" name="${nameAttr}" value="default" ${isDefChecked}>
+          <input type="checkbox" name="${nameAttr}" value="default" data-type="default" ${isDefChecked}>
           <span class="speaker-chip-name">デフォルト (標準)</span>
           <span class="speaker-chip-badges">
             <span class="speaker-chip-badge default-badge">標準</span>
@@ -391,7 +501,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDefault = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
-      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : 'google-chip');
+      const isOnvif = dev.type === 'onvif';
+      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isOnvif ? 'onvif' : 'google'));
+      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'));
       const displayName = formatSpeakerDisplayName(dev.name);
 
       let badgeHtml = '';
@@ -411,6 +523,8 @@ document.addEventListener('DOMContentLoaded', () => {
           badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
         } else if (isHomePod) {
           badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+        } else if (isOnvif) {
+          badgeHtml += '<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>';
         } else {
           badgeHtml += '<span class="speaker-chip-badge google-badge">Google Home</span>';
         }
@@ -418,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `
         <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
-          <input type="checkbox" name="${nameAttr}" value="${dev.ip}" ${isChecked}>
+          <input type="checkbox" name="${nameAttr}" value="${dev.ip}" data-type="${devType}" ${isChecked}>
           <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
           <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
@@ -427,7 +541,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     container.innerHTML = html;
 
-    // チェック状態変化でスタイル反映
+    // マクロボタン群コンテナの特定 & 描画
+    const macroMap = {
+      saySpeaker: 'sayMacroButtons',
+      schedSpeaker: 'schedMacroButtons',
+      calSpeaker: 'calMacroButtons',
+      modalCalSpeaker: 'modalCalMacroButtons',
+      dndSpeaker: 'dndMacroButtons',
+      disasterSpeaker: 'disasterMacroButtons',
+      groupSpeaker: 'groupMacroButtons'
+    };
+    const macroContainerId = options.macroContainerId || macroMap[nameAttr];
+    const macroContainer = macroContainerId ? document.getElementById(macroContainerId) : null;
+
+    if (macroContainer) {
+      renderMacroButtonsFor(macroContainer, container, nameAttr, options.onChange);
+    }
+
+    // チェック状態変化でスタイル反映 & マクロボタン連動
     container.querySelectorAll('input[type="checkbox"]').forEach(chk => {
       chk.addEventListener('change', (e) => {
         const parent = e.target.closest('.speaker-chip');
@@ -435,6 +566,13 @@ document.addEventListener('DOMContentLoaded', () => {
           parent.classList.add('checked');
         } else {
           parent.classList.remove('checked');
+        }
+        // 手動チェック変更でマクロボタンのアクティブ解除
+        if (macroContainer) {
+          macroContainer.querySelectorAll('.btn-macro').forEach(b => b.classList.remove('active'));
+        }
+        if (typeof options.onChange === 'function') {
+          options.onChange(e);
         }
       });
     });
@@ -1019,18 +1157,18 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
-    // 全室選択 / クリア
-    el.btnSelectAllSpeakers.addEventListener('click', () => {
-      el.saySpeakersContainer.querySelectorAll('input[type="checkbox"]').forEach(c => {
+    // 全室選択 / クリア（レガシー参照の安全対策）
+    el.btnSelectAllSpeakers?.addEventListener('click', () => {
+      el.saySpeakersContainer?.querySelectorAll('input[type="checkbox"]').forEach(c => {
         c.checked = true;
-        c.closest('.speaker-chip').classList.add('checked');
+        c.closest('.speaker-chip')?.classList.add('checked');
       });
     });
 
-    el.btnClearSpeakers.addEventListener('click', () => {
-      el.saySpeakersContainer.querySelectorAll('input[type="checkbox"]').forEach(c => {
+    el.btnClearSpeakers?.addEventListener('click', () => {
+      el.saySpeakersContainer?.querySelectorAll('input[type="checkbox"]').forEach(c => {
         c.checked = false;
-        c.closest('.speaker-chip').classList.remove('checked');
+        c.closest('.speaker-chip')?.classList.remove('checked');
       });
     });
 
@@ -1255,13 +1393,46 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // デバイス再スキャン
-    el.btnRefreshDevices.addEventListener('click', async () => {
+    // 全デバイス一括再スキャン (Google Home / Alexa / HomePod / ONVIF)
+    el.btnRefreshDevices?.addEventListener('click', async () => {
+      const origHtml = el.btnRefreshDevices.innerHTML;
       el.btnRefreshDevices.disabled = true;
-      showToast('デバイスを再スキャンしています...');
-      await loadDevices();
-      el.btnRefreshDevices.disabled = false;
-      showToast('デバイスリストを更新しました', 'success');
+      el.btnRefreshDevices.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        スキャン中...
+      `;
+      showToast('全スマートスピーカー＆カメラを一括再スキャンしています...');
+      try {
+        const res = await fetch('/api/devices/rescan-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          state.devices = sortDevicesList(data.devices || []);
+          renderDevicesGrid();
+          renderAllSpeakerSelectors();
+          showToast(`全デバイス一括再スキャン完了: 計 ${state.devices.length} 台を検出・同期しました`, 'success');
+        } else {
+          throw new Error(data.error || '再スキャン失敗');
+        }
+      } catch (err) {
+        console.error('一括再スキャンエラー:', err);
+        showToast('再スキャンエラー: ' + err.message, 'error');
+        await loadDevices();
+      } finally {
+        el.btnRefreshDevices.disabled = false;
+        el.btnRefreshDevices.innerHTML = origHtml;
+      }
+    });
+
+    // 接続デバイスタブ内の外部連携・ONVIF設定へのクイック移動リンク
+    document.getElementById('linkGoToIntegrations')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('btnTabSettings')?.click();
+      document.getElementById('btnSubtabSettingsIntegrations')?.click();
+    });
+    document.getElementById('linkGoToOnvif')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('btnTabSettings')?.click();
+      document.getElementById('btnSubtabSettingsOnvif')?.click();
     });
 
     // スケジュール頻度ラジオ変更 (曜日指定表示切り替え)
@@ -1794,8 +1965,9 @@ document.addEventListener('DOMContentLoaded', () => {
     state.devices.forEach(dev => {
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
-      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : 'google');
-      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : 'google-chip');
+      const isOnvif = dev.type === 'onvif';
+      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isOnvif ? 'onvif' : 'google'));
+      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'));
       const displayName = formatSpeakerDisplayName(dev.name);
 
       // 初期値: デフォルトまたは最初のスピーカーを選択
@@ -1809,6 +1981,8 @@ document.addEventListener('DOMContentLoaded', () => {
         badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
       } else if (isHomePod) {
         badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+      } else if (isOnvif) {
+        badgeHtml += '<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>';
       } else {
         badgeHtml += '<span class="speaker-chip-badge google-badge">Google Home</span>';
       }
@@ -1996,6 +2170,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (macro === 'GH:ALL') match = (type === 'google');
             else if (macro === 'AL:ALL') match = (type === 'alexa');
             else if (macro === 'HP:ALL') match = (type === 'homepod');
+            else if (macro === 'CAM:ALL') match = (type === 'onvif');
             c.checked = match;
             c.closest('.speaker-chip')?.classList.toggle('checked', match);
           });
@@ -3642,49 +3817,28 @@ document.addEventListener('DOMContentLoaded', () => {
       if (rangeEve) rangeEve.value = eveningRule.volume;
       if (labelEve) labelEve.textContent = `${eveningRule.volume}%`;
       if (rangeNight) rangeNight.value = nightRule.volume;
-      if (labelNight) labelNight.textContent = `${nightRule.volume}%`;
-
-      // 4. 同調エンジン (Sync Engine)
-      const syncEngine = data.syncEngine || {};
-      const syncCheck = document.getElementById('settingSyncEnabled');
-      const syncPreferNative = document.getElementById('settingSyncPreferNative');
-      const syncDynamicAdjust = document.getElementById('settingSyncDynamicAdjust');
-      const rangeGoogleDelay = document.getElementById('rangeSyncGoogleDelay');
-      const labelGoogleDelay = document.getElementById('labelSyncGoogleDelay');
-      const rangeHomepodDelay = document.getElementById('rangeSyncHomepodDelay');
-      const labelHomepodDelay = document.getElementById('labelSyncHomepodDelay');
-
-      if (syncCheck) syncCheck.checked = syncEngine.enabled !== false;
-      if (syncPreferNative) syncPreferNative.checked = syncEngine.preferNativeGroups !== false;
-      if (syncDynamicAdjust) syncDynamicAdjust.checked = syncEngine.dynamicAutoAdjust !== false;
-
-      const gDelay = syncEngine.googleDelayMs !== undefined ? syncEngine.googleDelayMs : 1100;
-      const hpDelay = syncEngine.homepodDelayMs !== undefined ? syncEngine.homepodDelayMs : 650;
-
-      if (rangeGoogleDelay) rangeGoogleDelay.value = gDelay;
-      if (labelGoogleDelay) labelGoogleDelay.textContent = `${gDelay} ms`;
-      if (rangeHomepodDelay) rangeHomepodDelay.value = hpDelay;
-      if (labelHomepodDelay) labelHomepodDelay.textContent = `${hpDelay} ms`;
-
-      // RTT 統計表示
-      const stats = syncEngine.stats || {};
-      const statGoogle = document.getElementById('statGoogleRtt');
-      const statHp = document.getElementById('statHomepodRtt');
-      const statAlexa = document.getElementById('statAlexaRtt');
-      if (statGoogle) statGoogle.textContent = `${stats.googleAvgRttMs || 420}ms`;
-      if (statHp) statHp.textContent = `${stats.homepodAvgRttMs || 850}ms`;
-      if (statAlexa) statAlexa.textContent = `${stats.alexaAvgRttMs || 1600}ms`;
-
       // 5. カスタム部屋グループの描画
       renderDeviceGroups();
 
       // 6. IPエイリアスの描画
       renderIpAliases();
 
-      // 6. Webhookビルダーのマクロチップも再描画
-      renderBuilderCustomGroupChips();
+      // 7. Webhookビルダーのマクロチップ & 各種スピーカーセレクターも再描画
+      renderAllSpeakerSelectors();
 
-      // 7. 履歴一覧がすでに描画されている場合、エイリアス設定でIPタグを更新 (エイリアス登録済みIPは非リンク化)
+      // 8. ONVIF デフォルト認証情報の入力欄反映 & 登録済みテーブル描画
+      const onvifConfig = data.onvif || {};
+      const onvifUserEl = document.getElementById('onvifDefaultUser');
+      const onvifPassEl = document.getElementById('onvifDefaultPass');
+      if (onvifUserEl && onvifConfig.defaultUsername) {
+        onvifUserEl.value = onvifConfig.defaultUsername;
+      }
+      if (onvifPassEl && onvifConfig.defaultPassword) {
+        onvifPassEl.value = onvifConfig.defaultPassword;
+      }
+      renderRegisteredOnvifTable();
+
+      // 9. 履歴一覧がすでに描画されている場合、エイリアス設定でIPタグを更新 (エイリアス登録済みIPは非リンク化)
       if (state.historyItems && state.historyItems.length > 0) {
         renderFullHistory();
       }
@@ -3734,7 +3888,7 @@ document.addEventListener('DOMContentLoaded', () => {
         delete state.deviceGroups[name];
         await saveAllSettings({ silent: true });
         renderDeviceGroups();
-        renderBuilderCustomGroupChips();
+        renderAllSpeakerSelectors();
         showToast(`グループ「${name}」を削除しました`, 'success');
       });
     });
@@ -3796,13 +3950,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const volEvening = parseInt(document.getElementById('rangeAutoVolEvening')?.value || '25', 10);
       const volNight = parseInt(document.getElementById('rangeAutoVolNight')?.value || '10', 10);
 
-      // 同調エンジン (Sync Engine) の設定
-      const syncEnabled = document.getElementById('settingSyncEnabled')?.checked !== false;
-      const syncPreferNative = document.getElementById('settingSyncPreferNative')?.checked !== false;
-      const syncDynamicAdjust = document.getElementById('settingSyncDynamicAdjust')?.checked !== false;
-      const googleDelayMs = parseInt(document.getElementById('rangeSyncGoogleDelay')?.value || '1100', 10);
-      const homepodDelayMs = parseInt(document.getElementById('rangeSyncHomepodDelay')?.value || '650', 10);
-
       const payload = {
         chime,
         deduplication: {
@@ -3816,14 +3963,6 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 'evening', name: '夜間 (21:00〜23:00)', startTime: '21:00', endTime: '23:00', volume: volEvening },
             { id: 'night', name: '深夜 (23:00〜07:00)', startTime: '23:00', endTime: '07:00', volume: volNight }
           ]
-        },
-        syncEngine: {
-          enabled: syncEnabled,
-          preferNativeGroups: syncPreferNative,
-          dynamicAutoAdjust: syncDynamicAdjust,
-          alexaDelayMs: 0,
-          homepodDelayMs,
-          googleDelayMs
         },
         deviceGroups: state.deviceGroups || {},
         ipAliases: state.ipAliases || {}
@@ -3882,72 +4021,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // 3. 同調遅延スライダー値のリアルタイム表示
-    const rangeGoogleDelay = document.getElementById('rangeSyncGoogleDelay');
-    const labelGoogleDelay = document.getElementById('labelSyncGoogleDelay');
-    const rangeHomepodDelay = document.getElementById('rangeSyncHomepodDelay');
-    const labelHomepodDelay = document.getElementById('labelSyncHomepodDelay');
-
-    rangeGoogleDelay?.addEventListener('input', (e) => {
-      if (labelGoogleDelay) labelGoogleDelay.textContent = `${e.target.value} ms`;
-    });
-    rangeHomepodDelay?.addEventListener('input', (e) => {
-      if (labelHomepodDelay) labelHomepodDelay.textContent = `${e.target.value} ms`;
-    });
-
-    // 4. 同調テスト再生ボタン
-    document.getElementById('btnSyncTestPlay')?.addEventListener('click', async () => {
-      const btn = document.getElementById('btnSyncTestPlay');
-      const originalHtml = btn.innerHTML;
-      btn.disabled = true;
-      btn.innerHTML = '<span>⏳</span> <span>同調テスト中...</span>';
-      showToast('同調テスト再生を実行中...（各スピーカーの実測RTTを学習中）', 'info');
-
-      try {
-        const res = await fetch('/api/settings/sync-test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: 'ポーン♪ マルチスピーカー同調テストです。',
-            targets: ['ALL']
-          })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || '同調テストに失敗しました');
-
-        showToast('同調テスト再生が完了しました！', 'success');
-
-        // 最新の syncEngine 設定と RTT 統計を画面に即時反映
-        if (data.syncEngine) {
-          if (state.settings) state.settings.syncEngine = data.syncEngine;
-          const se = data.syncEngine;
-          const rangeG = document.getElementById('rangeSyncGoogleDelay');
-          const labelG = document.getElementById('labelSyncGoogleDelay');
-          const rangeHp = document.getElementById('rangeSyncHomepodDelay');
-          const labelHp = document.getElementById('labelSyncHomepodDelay');
-          if (rangeG && se.googleDelayMs !== undefined) {
-            rangeG.value = se.googleDelayMs;
-            if (labelG) labelG.textContent = `${se.googleDelayMs} ms`;
-          }
-          if (rangeHp && se.homepodDelayMs !== undefined) {
-            rangeHp.value = se.homepodDelayMs;
-            if (labelHp) labelHp.textContent = `${se.homepodDelayMs} ms`;
-          }
-          const st = se.stats || {};
-          const statG = document.getElementById('statGoogleRtt');
-          const statH = document.getElementById('statHomepodRtt');
-          const statA = document.getElementById('statAlexaRtt');
-          if (statG && st.googleAvgRttMs) statG.textContent = `${st.googleAvgRttMs}ms`;
-          if (statH && st.homepodAvgRttMs) statH.textContent = `${st.homepodAvgRttMs}ms`;
-          if (statA && st.alexaAvgRttMs) statA.textContent = `${st.alexaAvgRttMs}ms`;
-        }
-      } catch (err) {
-        showToast('同調テストエラー: ' + err.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalHtml;
-      }
-    });
-
     // 5. 全設定保存ボタン
     document.getElementById('btnSaveAllSettings')?.addEventListener('click', async () => {
       await saveAllSettings();
@@ -3990,23 +4063,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnOpenNewGroupModal')?.addEventListener('click', () => {
       if (inputGroupName) inputGroupName.value = '';
       if (groupCheckboxesContainer) {
-        const devs = state.devices || [];
-        if (!devs.length) {
-          groupCheckboxesContainer.innerHTML = '<span class="text-sub">利用可能なスピーカーがありません</span>';
-        } else {
-          groupCheckboxesContainer.innerHTML = devs.map(d => `
-            <label class="speaker-chip" style="cursor: pointer;">
-              <input type="checkbox" value="${escapeHtml(d.name || d.ip)}" style="margin-right: 6px;">
-              <span>${escapeHtml(d.name || d.ip)}</span>
-            </label>
-          `).join('');
-
-          groupCheckboxesContainer.querySelectorAll('input[type="checkbox"]').forEach(c => {
-            c.addEventListener('change', (e) => {
-              e.target.closest('.speaker-chip')?.classList.toggle('checked', e.target.checked);
-            });
-          });
-        }
+        renderSpeakersCheckboxes(groupCheckboxesContainer, 'groupSpeaker', []);
       }
       if (groupModal) groupModal.style.display = 'flex';
     });
@@ -4040,11 +4097,373 @@ document.addEventListener('DOMContentLoaded', () => {
 
       await saveAllSettings({ silent: true });
       renderDeviceGroups();
-      renderBuilderCustomGroupChips();
+      renderAllSpeakerSelectors();
 
       if (groupModal) groupModal.style.display = 'none';
       showToast(`カスタムグループ「${name}」を保存しました`, 'success');
     });
+  }
+
+  // ================= ONVIF カメラスピーカー設定 =================
+  let discoveredOnvifDevices = [];
+
+  function renderDiscoveredOnvifTable() {
+    const tbody = document.getElementById('onvifDiscoveredTableBody');
+    if (!tbody) return;
+
+    if (!discoveredOnvifDevices.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center loading-cell">「ONVIF カメラ自動スキャン」を押すと、宅内のカメラを自動検出します</td></tr>`;
+      return;
+    }
+
+    const registered = state.settings?.onvif?.registeredDevices || [];
+
+    tbody.innerHTML = discoveredOnvifDevices.map(dev => {
+      const isReg = registered.some(r => r.ip === dev.ip);
+      const isSupported = !!(dev.isProfileT || dev.hasProfileT || dev.supportsAudio);
+      const rowStyle = !isSupported ? 'opacity: 0.55;' : '';
+
+      let profileBadge = '';
+      if (isSupported) {
+        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-weight:600;">Profile T (双方向音声対応)</span>`;
+      } else {
+        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(255,255,255,0.06);color:var(--text-muted);border:1px solid rgba(255,255,255,0.12);">Profile S (スピーカー非対応)</span>`;
+      }
+
+      let authStatus = '';
+      if (dev.status === 'ok') {
+        authStatus = `<span style="color:#34d399;font-size:0.8rem;">✓ 認証・通信確認済</span>`;
+      } else if (dev.status === 'unauthorized') {
+        authStatus = `<span style="color:#fbbf24;font-size:0.8rem;">要認証 (Profile T対応)</span>`;
+      } else {
+        authStatus = `<span style="color:var(--text-muted);font-size:0.8rem;">通信確認済</span>`;
+      }
+
+      let actionHtml = '';
+      if (isReg) {
+        actionHtml = `<button type="button" class="btn-chip" disabled style="opacity:0.6;">✓ 登録済み</button>`;
+      } else if (!isSupported) {
+        actionHtml = `<span style="font-size:0.8rem;color:var(--text-muted);background:rgba(255,255,255,0.04);padding:3px 8px;border-radius:4px;">非対応</span>`;
+      } else {
+        actionHtml = `<button type="button" class="btn btn-primary btn-sm btn-open-onvif-modal" data-ip="${escapeHtml(dev.ip)}">＋ 連携登録</button>`;
+      }
+
+      // カメラ名優先表示: ユーザー設定名(Roof, Den等) > 機種名 > ONVIF Camera
+      const primaryName = dev.friendlyName || dev.name || 'ONVIF Camera';
+      const subInfo = (dev.model && dev.model !== primaryName)
+        ? `${escapeHtml(dev.model)}`
+        : `Camera`;
+
+      return `
+        <tr style="${rowStyle}">
+          <td>
+            <strong>📷 ${escapeHtml(primaryName)}</strong>
+            <div style="font-size:0.75rem;color:var(--text-muted);">${subInfo} ${dev.serialNumber ? '(' + escapeHtml(dev.serialNumber) + ')' : ''}</div>
+          </td>
+          <td><code>${escapeHtml(dev.ip)}:${dev.port || 80}</code></td>
+          <td>${profileBadge}</td>
+          <td>${authStatus}</td>
+          <td>${actionHtml}</td>
+        </tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('.btn-open-onvif-modal').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const ip = btn.getAttribute('data-ip');
+        const dev = discoveredOnvifDevices.find(d => d.ip === ip);
+        if (dev) openOnvifRegisterModal(dev);
+      });
+    });
+  }
+
+  let activeOnvifDeviceToRegister = null;
+
+  function openOnvifRegisterModal(dev) {
+    activeOnvifDeviceToRegister = dev;
+    const modal = document.getElementById('modalOnvifRegister');
+    if (!modal) return;
+
+    const nameInput = document.getElementById('onvifRegName');
+    const ipInput = document.getElementById('onvifRegIp');
+    const modelInput = document.getElementById('onvifRegModel');
+    const userInput = document.getElementById('onvifRegUser');
+    const passInput = document.getElementById('onvifRegPass');
+
+    const defaultName = dev.friendlyName || dev.name || (dev.model ? `${dev.model}_${dev.ip.split('.').pop()}` : '防犯カメラ');
+    if (nameInput) nameInput.value = defaultName;
+    if (ipInput) ipInput.value = `${dev.ip}:${dev.port || 80}`;
+    if (modelInput) modelInput.value = `${dev.model || 'ONVIF'} (Profile T 双方向音声)`;
+    if (userInput) userInput.value = '';
+    if (passInput) passInput.value = '';
+
+    modal.style.display = 'flex';
+    setTimeout(() => nameInput?.focus(), 50);
+  }
+
+  function closeOnvifRegisterModal() {
+    const modal = document.getElementById('modalOnvifRegister');
+    if (modal) modal.style.display = 'none';
+    activeOnvifDeviceToRegister = null;
+  }
+
+  function setupOnvifRegisterModal() {
+    const modal = document.getElementById('modalOnvifRegister');
+    const btnClose = document.getElementById('btnCloseOnvifModal');
+    const btnCancel = document.getElementById('btnCancelOnvifModal');
+    const btnSubmit = document.getElementById('btnSubmitOnvifModal');
+
+    if (!modal) return;
+
+    [btnClose, btnCancel].forEach(b => {
+      b?.addEventListener('click', closeOnvifRegisterModal);
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeOnvifRegisterModal();
+    });
+
+    btnSubmit?.addEventListener('click', async () => {
+      if (!activeOnvifDeviceToRegister) return;
+      const dev = activeOnvifDeviceToRegister;
+      const nameInput = document.getElementById('onvifRegName');
+      const userInput = document.getElementById('onvifRegUser');
+      const passInput = document.getElementById('onvifRegPass');
+
+      const name = nameInput?.value.trim();
+      if (!name) {
+        showToast('スピーカー表示名を入力してください', 'warning');
+        nameInput?.focus();
+        return;
+      }
+
+      const defaultUser = document.getElementById('onvifDefaultUser')?.value.trim() || 'admin';
+      const defaultPass = document.getElementById('onvifDefaultPass')?.value || '';
+
+      const username = userInput?.value.trim() || defaultUser;
+      const password = passInput?.value || defaultPass;
+
+      try {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = '登録中...';
+
+        const res = await fetch('/api/onvif/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device: {
+              ip: dev.ip,
+              name,
+              username,
+              password,
+              rtspUrl: dev.defaultRtspUrl || '',
+              type: 'onvif'
+            }
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '登録失敗');
+
+        if (!state.settings) state.settings = {};
+        if (!state.settings.onvif) state.settings.onvif = {};
+        state.settings.onvif.registeredDevices = data.registeredDevices;
+
+        showToast(`「${name}」をカメラスピーカーとして登録しました`, 'success');
+        closeOnvifRegisterModal();
+        await loadDevices();
+        renderRegisteredOnvifTable();
+        renderDiscoveredOnvifTable();
+      } catch (err) {
+        showToast('登録エラー: ' + err.message, 'error');
+      } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = '＋ スピーカーとして連携登録';
+      }
+    });
+  }
+
+  function renderRegisteredOnvifTable() {
+    const tbody = document.getElementById('onvifRegisteredTableBody');
+    if (!tbody) return;
+
+    const list = state.settings?.onvif?.registeredDevices || [];
+    if (!list.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center loading-cell">登録済みのカメラスピーカーはありません</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = list.map(dev => `
+      <tr>
+        <td><strong>📷 ${escapeHtml(dev.name)}</strong></td>
+        <td><code>${escapeHtml(dev.ip)}</code></td>
+        <td><code style="font-size:0.75rem;word-break:break-all;">${escapeHtml(dev.rtspUrl || 'rtsp://...')}</code></td>
+        <td><span>${escapeHtml(dev.username || 'admin')}</span></td>
+        <td style="white-space:nowrap;">
+          <button type="button" class="btn btn-secondary btn-sm btn-test-onvif" data-ip="${escapeHtml(dev.ip)}" style="margin-right:6px;">
+            🔊 テスト発話
+          </button>
+          <button type="button" class="btn-chip text-danger btn-delete-onvif" data-ip="${escapeHtml(dev.ip)}" title="連携解除">
+            解除
+          </button>
+        </td>
+      </tr>
+    `).join('');
+
+    // テスト発話
+    tbody.querySelectorAll('.btn-test-onvif').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ip = btn.getAttribute('data-ip');
+        const dev = list.find(d => d.ip === ip);
+        if (!dev) return;
+
+        const origText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '再生中...';
+        showToast(`「${dev.name}」へテスト音声を送信しています...`);
+
+        try {
+          const res = await fetch('/api/onvif/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dev)
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) throw new Error(data.error || '再生失敗');
+          showToast(`「${dev.name}」のスピーカーからテスト音声を再生しました`, 'success');
+        } catch (err) {
+          showToast('テスト発話エラー: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = origText;
+        }
+      });
+    });
+
+    // 登録解除
+    tbody.querySelectorAll('.btn-delete-onvif').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ip = btn.getAttribute('data-ip');
+        const dev = list.find(d => d.ip === ip);
+        const name = dev?.name || ip;
+        if (!confirm(`「${name}」のカメラスピーカー連携を解除しますか？`)) return;
+
+        try {
+          const res = await fetch('/api/onvif/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device: { ip }, action: 'delete' })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || '解除失敗');
+
+          if (state.settings?.onvif) {
+            state.settings.onvif.registeredDevices = data.registeredDevices;
+          }
+          showToast(`「${name}」の連携を解除しました`, 'success');
+          await loadDevices();
+          renderRegisteredOnvifTable();
+          renderDiscoveredOnvifTable();
+        } catch (err) {
+          showToast('解除エラー: ' + err.message, 'error');
+        }
+      });
+    });
+  }
+
+  function setupOnvifSettings() {
+    const btnScan = document.getElementById('btnScanOnvif');
+    const btnSaveAuth = document.getElementById('btnSaveOnvifDefaultAuth');
+    const inputUser = document.getElementById('onvifDefaultUser');
+    const inputPass = document.getElementById('onvifDefaultPass');
+    const authSavedMsg = document.getElementById('onvifAuthSavedMsg');
+
+    const onvifConfig = state.settings?.onvif || {};
+    setupOnvifRegisterModal();
+    if (inputUser && onvifConfig.defaultUsername) {
+      inputUser.value = onvifConfig.defaultUsername;
+    }
+    if (inputPass && onvifConfig.defaultPassword) {
+      inputPass.value = onvifConfig.defaultPassword;
+    }
+
+    btnSaveAuth?.addEventListener('click', async () => {
+      const user = inputUser?.value.trim() || 'admin';
+      const pass = inputPass?.value || '';
+
+      const updated = {
+        ...state.settings,
+        onvif: {
+          ...(state.settings?.onvif || {}),
+          enabled: true,
+          defaultUsername: user,
+          defaultPassword: pass
+        }
+      };
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated)
+        });
+        if (!res.ok) throw new Error('保存に失敗しました');
+        state.settings = updated;
+        if (authSavedMsg) {
+          authSavedMsg.style.display = 'inline';
+          setTimeout(() => { authSavedMsg.style.display = 'none'; }, 3000);
+        }
+        showToast('ONVIF デフォルト認証情報を保存しました', 'success');
+      } catch (e) {
+        showToast('保存エラー: ' + e.message, 'error');
+      }
+    });
+
+    btnScan?.addEventListener('click', async () => {
+      const origHtml = btnScan.innerHTML;
+      btnScan.disabled = true;
+      btnScan.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        スキャン中...
+      `;
+      showToast('宅内の ONVIF カメラをスキャンしています...');
+
+      const tbody = document.getElementById('onvifDiscoveredTableBody');
+      const scanCount = document.getElementById('onvifScanCount');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center loading-cell">ネットワーク内のカメラを検出中 (数秒かかります)...</td></tr>';
+      }
+
+      try {
+        const user = inputUser?.value.trim() || 'admin';
+        const pass = inputPass?.value || '';
+        const res = await fetch('/api/onvif/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: user, password: pass })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'スキャンに失敗しました');
+
+        discoveredOnvifDevices = data.devices || [];
+        if (scanCount) {
+          scanCount.textContent = `${discoveredOnvifDevices.length} 台検出`;
+        }
+        renderDiscoveredOnvifTable();
+        showToast(`ONVIF カメラを ${discoveredOnvifDevices.length} 台検出しました`, 'success');
+      } catch (err) {
+        console.error('ONVIF スキャンエラー:', err);
+        showToast('ONVIF スキャンエラー: ' + err.message, 'error');
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">スキャンに失敗しました: ${escapeHtml(err.message)}</td></tr>`;
+        }
+      } finally {
+        btnScan.disabled = false;
+        btnScan.innerHTML = origHtml;
+      }
+    });
+
+    renderRegisteredOnvifTable();
   }
 
   // ================= 9. AI 連携設定 (Google Gemini / OpenAI) =================
