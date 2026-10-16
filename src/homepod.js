@@ -73,7 +73,8 @@ class HomePodManager {
                 name: '全室 HomePod',
                 ip: 'homepod:ALL',
                 model: 'Apple HomePod Group',
-                type: 'homepod'
+                type: 'homepod',
+                isGroup: true
               },
               ...list
             ];

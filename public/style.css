@@ -1918,6 +1918,25 @@ input:checked + .slider:before {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.history-ip-tag.btn-ip-alias-jump {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  transition: all 0.15s ease;
+  vertical-align: middle;
+}
+
+.history-ip-tag.btn-ip-alias-jump:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
 .history-card-body {
   font-size: 0.98rem;
   line-height: 1.6;

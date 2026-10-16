@@ -55,7 +55,24 @@ const DEFAULT_SETTINGS = {
     targetScope: 'all', // 'all' | 'specific'
     targetDevices: [],
     action: 'skip', // 'skip' | 'whisper' | 'queue'
-    whisperVolume: 10
+    whisperVolume: 10,
+    topMuteDuration: '60', // '30' | '60' | '120' | '1440' | 'indefinite'
+    aiSummaryEnabled: true,
+    aiSummaryThreshold: 2,
+    aiSummaryCustomPrompt: ''
+  },
+  ai: {
+    enabled: true,
+    provider: 'gemini', // 'gemini' | 'openai'
+    geminiApiKey: process.env.GEMINI_API_KEY || process.env.AI_API_KEY || '',
+    openaiApiKey: process.env.OPENAI_API_KEY || '',
+    geminiModel: 'gemini-3.8-flash',
+    openaiModel: 'gpt-4o-mini',
+    summarizeDndQueue: true,
+    summaryThreshold: 2,
+    summarizeDailyCalendar: true,
+    dailyCalendarPrompt: '',
+    customPrompt: ''
   },
   chime: 'dingdong', // 'none' | 'dingdong' | 'bell' | 'announce' | 'alert'
   deduplication: {
@@ -75,7 +92,21 @@ const DEFAULT_SETTINGS = {
       { id: 'night', name: '深夜 (23:00〜07:00)', startTime: '23:00', endTime: '07:00', volume: 10 }
     ]
   },
-  ipAliases: {} // { "192.168.1.50": "ラズパイ", ... }
+  ipAliases: {}, // { "192.168.1.50": "ラズパイ", ... }
+  syncEngine: {
+    enabled: true,
+    dynamicAutoAdjust: true,
+    preferNativeGroups: true,
+    alexaDelayMs: 0,
+    homepodDelayMs: 650,
+    googleDelayMs: 1100,
+    stats: {
+      alexaAvgRttMs: 1600,
+      googleAvgRttMs: 420,
+      homepodAvgRttMs: 850,
+      sampleCount: 5
+    }
+  }
 };
 
 class SettingsManager {
@@ -102,6 +133,14 @@ class SettingsManager {
             ...DEFAULT_SETTINGS.autoVolume,
             ...(parsed.autoVolume || {})
           },
+          syncEngine: {
+            ...DEFAULT_SETTINGS.syncEngine,
+            ...(parsed.syncEngine || {}),
+            stats: {
+              ...DEFAULT_SETTINGS.syncEngine.stats,
+              ...((parsed.syncEngine && parsed.syncEngine.stats) || {})
+            }
+          },
           ipAliases: parsed.ipAliases || {},
           calendar: {
             ...DEFAULT_SETTINGS.calendar,
@@ -110,8 +149,28 @@ class SettingsManager {
           dnd: {
             ...DEFAULT_SETTINGS.dnd,
             ...(parsed.dnd || {})
+          },
+          ai: {
+            ...DEFAULT_SETTINGS.ai,
+            ...(parsed.ai || {})
           }
         };
+
+        // API Key が保存されていない場合は環境変数をフォールバック
+        if (!this.settings.ai.geminiApiKey && (process.env.GEMINI_API_KEY || process.env.AI_API_KEY)) {
+          this.settings.ai.geminiApiKey = process.env.GEMINI_API_KEY || process.env.AI_API_KEY;
+        }
+        if (!this.settings.ai.openaiApiKey && process.env.OPENAI_API_KEY) {
+          this.settings.ai.openaiApiKey = process.env.OPENAI_API_KEY;
+        }
+
+        // 廃止・提供終了済みモデルの自動マイグレーション
+        const retiredGemini = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash-8b', 'gemini-1.0-pro', 'gemini-pro', 'gemini-3.7-flash'];
+        if (retiredGemini.includes(this.settings.ai.geminiModel)) {
+          console.warn(`[Settings] 以前設定されていたモデル "${this.settings.ai.geminiModel}" は提供終了したため、最新の "gemini-3.8-flash" に自動更新しました`);
+          this.settings.ai.geminiModel = 'gemini-3.8-flash';
+          this.save();
+        }
 
         // 複数カレンダー構造への自動マイグレーション
         if (!Array.isArray(this.settings.calendar.calendars)) {
@@ -132,6 +191,9 @@ class SettingsManager {
         // DND スケジュール配列の確認
         if (!Array.isArray(this.settings.dnd.schedules)) {
           this.settings.dnd.schedules = [...DEFAULT_SETTINGS.dnd.schedules];
+        }
+        if (!this.settings.dnd.topMuteDuration) {
+          this.settings.dnd.topMuteDuration = DEFAULT_SETTINGS.dnd.topMuteDuration;
         }
       } else {
         this.settings = { ...DEFAULT_SETTINGS };
@@ -183,6 +245,16 @@ class SettingsManager {
         ...updates.autoVolume
       };
     }
+    if (updates.syncEngine) {
+      this.settings.syncEngine = {
+        ...this.settings.syncEngine,
+        ...updates.syncEngine,
+        stats: {
+          ...this.settings.syncEngine.stats,
+          ...((updates.syncEngine && updates.syncEngine.stats) || {})
+        }
+      };
+    }
     if (updates.calendar) {
       this.settings.calendar = {
         ...this.settings.calendar,
@@ -195,8 +267,45 @@ class SettingsManager {
         ...updates.dnd
       };
     }
+    if (updates.ai) {
+      this.settings.ai = {
+        ...this.settings.ai,
+        ...updates.ai
+      };
+    }
     this.save();
     return this.settings;
+  }
+
+  recordPlatformLatency(platform, rttMs) {
+    if (!this.settings.syncEngine || typeof rttMs !== 'number' || isNaN(rttMs)) return;
+    const stats = this.settings.syncEngine.stats = this.settings.syncEngine.stats || {
+      alexaAvgRttMs: 1600,
+      googleAvgRttMs: 420,
+      homepodAvgRttMs: 850,
+      sampleCount: 0
+    };
+
+    const key = `${platform}AvgRttMs`;
+    if (stats[key] !== undefined && rttMs >= 50 && rttMs <= 8000) {
+      const prev = stats[key] || rttMs;
+      // 指数移動平均 (EMA) で直近の遅延変動を学習 (alpha = 0.25)
+      stats[key] = Math.round(prev * 0.75 + rttMs * 0.25);
+      stats.sampleCount = (stats.sampleCount || 0) + 1;
+
+      // dynamicAutoAdjust が有効ならオフセット遅延を自動計算
+      if (this.settings.syncEngine.dynamicAutoAdjust) {
+        const alexaRtt = stats.alexaAvgRttMs || 1600;
+        const googleRtt = stats.googleAvgRttMs || 420;
+        const homepodRtt = stats.homepodAvgRttMs || 850;
+
+        const maxRtt = Math.max(alexaRtt, googleRtt, homepodRtt);
+        this.settings.syncEngine.alexaDelayMs = Math.max(0, maxRtt - alexaRtt);
+        this.settings.syncEngine.homepodDelayMs = Math.max(0, maxRtt - homepodRtt);
+        this.settings.syncEngine.googleDelayMs = Math.max(0, maxRtt - googleRtt);
+      }
+      this.save();
+    }
   }
 
   getDefaultDeviceId() {

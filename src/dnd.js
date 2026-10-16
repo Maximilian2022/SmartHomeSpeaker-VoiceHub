@@ -1,5 +1,15 @@
+const fs = require('fs');
+const path = require('path');
 const settingsManager = require('./settings');
 const calendarManager = require('./calendar');
+const aiManager = require('./ai');
+
+const DATA_DIR = path.resolve(__dirname, '../data');
+const DND_QUEUE_FILE = path.join(DATA_DIR, 'dnd_queue.json');
+
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 
 class DndManager {
   constructor() {
@@ -8,12 +18,64 @@ class DndManager {
     this.wasDndActive = false;
     this.speakerExecutor = null; // server.js からインジェクト
 
+    // 保存されていた保留キューを復元
+    this.loadQueue();
+
     // 1分ごとにDND終了検知 & キュー処理
     setInterval(() => this.tick(), 60 * 1000).unref();
   }
 
+  loadQueue() {
+    try {
+      if (fs.existsSync(DND_QUEUE_FILE)) {
+        const raw = fs.readFileSync(DND_QUEUE_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const now = Date.now();
+          // 24時間以内の有効な保留項目のみを復元
+          this.queue = parsed.filter(item => {
+            if (!item || !item.text) return false;
+            const ts = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+            return (now - ts) < 24 * 60 * 60 * 1000;
+          });
+          if (this.queue.length > 0) {
+            console.log(`[DND] 保存されていた保留キュー ${this.queue.length} 件をファイルから復元しました`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[DND] 保留キュー読み込みエラー:', err.message);
+      this.queue = [];
+    }
+  }
+
+  saveQueue() {
+    try {
+      fs.writeFileSync(DND_QUEUE_FILE, JSON.stringify(this.queue, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[DND] 保留キュー保存エラー:', err.message);
+    }
+  }
+
   setSpeakerExecutor(fn) {
     this.speakerExecutor = fn;
+    this.checkStartupQueue();
+  }
+
+  /**
+   * サーバー起動時・再起動時の保留キュー確認と自動消化
+   */
+  checkStartupQueue() {
+    if (this.queue.length === 0 || !this.speakerExecutor) return;
+    const status = this.getGlobalStatus();
+    if (!status.isActive) {
+      console.log(`[DND] 起動時復元: サイレントが終了しているため、保留されていた ${this.queue.length} 件の通知を5秒後に再生します`);
+      setTimeout(() => {
+        this.checkAndFlushQueue();
+      }, 5000);
+    } else {
+      console.log(`[DND] 起動時復元: 現在もサイレント中のため保留キュー (${this.queue.length}件) を保持します`);
+    }
   }
 
   /**
@@ -48,6 +110,15 @@ class DndManager {
 
     // 3. ワンタップ即時 DND (手動設定)
     if (dndConfig.manualUntil) {
+      if (dndConfig.manualUntil === 'indefinite') {
+        return {
+          isDnd: true,
+          reason: dndConfig.manualReason || '手動サイレント (手動解除まで)',
+          until: 'indefinite',
+          action,
+          whisperVolume
+        };
+      }
       const untilDate = new Date(dndConfig.manualUntil);
       if (untilDate.getTime() > now.getTime()) {
         return {
@@ -220,7 +291,7 @@ class DndManager {
    * @param {string} reason 理由
    */
   setQuickDnd(minutes, reason = '手動サイレント') {
-    if (!minutes || minutes <= 0) {
+    if (minutes === 0 || (typeof minutes === 'number' && minutes === 0)) {
       // 60分間のアンミュートオーバーライドを設定（カレンダーや定時サイレントも確実に解除）
       const unmutedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
       settingsManager.update({
@@ -235,7 +306,20 @@ class DndManager {
       return { success: true, active: false };
     }
 
-    const until = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    if (minutes === 'indefinite' || minutes === -1 || minutes === '-1') {
+      settingsManager.update({
+        dnd: {
+          manualUntil: 'indefinite',
+          manualReason: reason || '手動サイレント (手動解除まで)',
+          manualUnmutedUntil: null
+        }
+      });
+      console.log('[DND] 手動サイレントを「手動解除までずっと」有効化しました');
+      return { success: true, active: true, until: 'indefinite' };
+    }
+
+    const minsNum = parseInt(minutes, 10) || 30;
+    const until = new Date(Date.now() + minsNum * 60 * 1000).toISOString();
     settingsManager.update({
       dnd: {
         manualUntil: until,
@@ -243,7 +327,7 @@ class DndManager {
         manualUnmutedUntil: null
       }
     });
-    console.log(`[DND] 手動サイレントを ${minutes} 分間有効化しました (解除予定: ${until})`);
+    console.log(`[DND] 手動サイレントを ${minsNum} 分間有効化しました (解除予定: ${until})`);
     return { success: true, active: true, until };
   }
 
@@ -281,11 +365,12 @@ class DndManager {
    */
   enqueue(item) {
     this.queue.push({
-      id: 'queue_' + Date.now(),
+      id: 'queue_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
       timestamp: new Date().toISOString(),
       ...item
     });
-    console.log(`[DND] 発話を保留キューに追加しました (現在 ${this.queue.length} 件): "${item.text.slice(0, 30)}..."`);
+    this.saveQueue();
+    console.log(`[DND] 発話を保留キューに追加・永続化しました (現在 ${this.queue.length} 件): "${item.text.slice(0, 30)}..."`);
   }
 
   getQueue() {
@@ -294,6 +379,7 @@ class DndManager {
 
   clearQueue() {
     this.queue = [];
+    this.saveQueue();
   }
 
   /**
@@ -316,8 +402,50 @@ class DndManager {
 
     const items = [...this.queue];
     this.queue = [];
+    this.saveQueue();
 
-    console.log(`[DND] 保留されていた ${items.length} 件の通知を順番に再生開始します`);
+    console.log(`[DND] 保留されていた ${items.length} 件の通知の再生処理を開始します`);
+
+    const dndConfig = settingsManager.get().dnd || {};
+    const aiConfig = settingsManager.get().ai || {};
+    const aiSummaryEnabled = dndConfig.aiSummaryEnabled !== false && aiConfig.summarizeDndQueue !== false && aiManager.isAvailable();
+    const threshold = parseInt(dndConfig.aiSummaryThreshold || aiConfig.summaryThreshold || '2', 10);
+
+    // AI要約条件を満たした場合 (指定件数以上たまった時)
+    if (aiSummaryEnabled && items.length >= threshold) {
+      try {
+        console.log(`[DND] 保留通知 ${items.length} 件を AI (${aiConfig.provider || 'Gemini'}) で要約します...`);
+        const summary = await aiManager.summarizeNotifications(items, {
+          promptHint: dndConfig.aiSummaryCustomPrompt || aiConfig.customPrompt
+        });
+
+        if (summary && summary.trim().length > 0) {
+          const firstTargets = items[0].targetDevices || (items[0].targetDevice ? [items[0].targetDevice] : []);
+          const announceText = `会議・おやすみモードが終了しました。保留されていた ${items.length} 件の通知をAIが要約してお知らせします。${summary.trim()}`;
+          console.log(`[DND] AI要約アナウンスを再生: "${announceText}"`);
+
+          const announceRes = await this.speakerExecutor({
+            text: announceText,
+            targetDevices: firstTargets,
+            options: {
+              source: 'dnd_ai_summary',
+              sourceLabel: 'DND保留通知 (AI要約)',
+              clientName: 'AIアシスタント'
+            }
+          });
+
+          const announceDuration = (announceRes?.duration && announceRes.duration > 0)
+            ? announceRes.duration
+            : Math.max(5.0, (announceText.length / 4.8) + 2.0);
+          const waitMs = Math.ceil((announceDuration + 1.5) * 1000);
+          await new Promise(r => setTimeout(r, waitMs));
+          console.log('[DND] AI要約アナウンスの再生が完了しました');
+          return;
+        }
+      } catch (aiErr) {
+        console.warn('[DND] AI要約に失敗したため、通常の個別読み上げにフォールバックします:', aiErr.message);
+      }
+    }
 
     // 冒頭アナウンス
     try {

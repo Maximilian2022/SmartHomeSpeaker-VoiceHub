@@ -2,6 +2,7 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const settingsManager = require('./settings');
+const aiManager = require('./ai');
 
 /**
  * iCal 日付文字列を Date オブジェクトに変換
@@ -322,21 +323,39 @@ class CalendarManager {
     let message = '';
     const calLabel = cal.name ? `${cal.name}の` : '';
 
-    if (todayEvents.length === 0) {
-      message = `おはようございます。${calLabel}本日の予定は登録されていません。良い一日を！`;
-    } else {
-      message = `おはようございます。${calLabel}本日の予定は ${todayEvents.length} 件あります。`;
-      for (const ev of todayEvents) {
-        if (ev.isAllDay) {
-          message += ` 終日、${ev.summary}。`;
-        } else {
-          const h = ev.start.getHours();
-          const m = ev.start.getMinutes();
-          const timeStr = `${h}時${m === 0 ? '' : m + '分'}`;
-          message += ` ${timeStr}から、${ev.summary}。`;
-        }
+    const aiConfig = settingsManager.get().ai || {};
+    const useAi = aiConfig.enabled !== false && aiConfig.summarizeDailyCalendar !== false && aiManager.isAvailable();
+
+    if (useAi && todayEvents.length > 0) {
+      try {
+        console.log(`[Calendar Daily Summary] (${cal.name || 'カレンダー'}) AIによる朝の予定まとめ要約を生成中...`);
+        message = await aiManager.summarizeCalendarEvents(todayEvents, {
+          calName: cal?.name,
+          promptHint: aiConfig.dailyCalendarPrompt
+        });
+      } catch (err) {
+        console.warn(`[Calendar Daily Summary] (${cal.name || 'カレンダー'}) AI要約生成失敗、通常のアナウンスにフォールバック:`, err.message);
+        message = '';
       }
-      message += ' 今日も一日がんばりましょう！';
+    }
+
+    if (!message) {
+      if (todayEvents.length === 0) {
+        message = `おはようございます。${calLabel}本日の予定は登録されていません。良い一日を！`;
+      } else {
+        message = `おはようございます。${calLabel}本日の予定は ${todayEvents.length} 件あります。`;
+        for (const ev of todayEvents) {
+          if (ev.isAllDay) {
+            message += ` 終日、${ev.summary}。`;
+          } else {
+            const h = ev.start.getHours();
+            const m = ev.start.getMinutes();
+            const timeStr = `${h}時${m === 0 ? '' : m + '分'}`;
+            message += ` ${timeStr}から、${ev.summary}。`;
+          }
+        }
+        message += ' 今日も一日がんばりましょう！';
+      }
     }
 
     return await this.speakMessage(message, cal, globalConfig, {
@@ -354,21 +373,38 @@ class CalendarManager {
     const todayEvents = this.getTodayEvents();
 
     let message = '';
-    if (todayEvents.length === 0) {
-      message = 'おはようございます。本日の予定は登録されていません。良い一日を！';
-    } else {
-      message = `おはようございます。本日の予定は ${todayEvents.length} 件あります。`;
-      for (const ev of todayEvents) {
-        if (ev.isAllDay) {
-          message += ` 終日、${ev.summary}。`;
-        } else {
-          const h = ev.start.getHours();
-          const m = ev.start.getMinutes();
-          const timeStr = `${h}時${m === 0 ? '' : m + '分'}`;
-          message += ` ${timeStr}から、${ev.summary}。`;
-        }
+    const aiConfig = settingsManager.get().ai || {};
+    const useAi = aiConfig.enabled !== false && aiConfig.summarizeDailyCalendar !== false && aiManager.isAvailable();
+
+    if (useAi && todayEvents.length > 0) {
+      try {
+        console.log('[Calendar Daily Summary] AIによる本日の予定まとめ要約を生成中...');
+        message = await aiManager.summarizeCalendarEvents(todayEvents, {
+          promptHint: aiConfig.dailyCalendarPrompt
+        });
+      } catch (err) {
+        console.warn('[Calendar Daily Summary] AI要約生成失敗、通常のアナウンスにフォールバック:', err.message);
+        message = '';
       }
-      message += ' 今日も一日がんばりましょう！';
+    }
+
+    if (!message) {
+      if (todayEvents.length === 0) {
+        message = 'おはようございます。本日の予定は登録されていません。良い一日を！';
+      } else {
+        message = `おはようございます。本日の予定は ${todayEvents.length} 件あります。`;
+        for (const ev of todayEvents) {
+          if (ev.isAllDay) {
+            message += ` 終日、${ev.summary}。`;
+          } else {
+            const h = ev.start.getHours();
+            const m = ev.start.getMinutes();
+            const timeStr = `${h}時${m === 0 ? '' : m + '分'}`;
+            message += ` ${timeStr}から、${ev.summary}。`;
+          }
+        }
+        message += ' 今日も一日がんばりましょう！';
+      }
     }
 
     return await this.speakMessage(message, {}, config, {

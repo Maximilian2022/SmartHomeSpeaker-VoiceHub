@@ -300,7 +300,7 @@ class AlexaManager {
           console.warn('[Alexa] デバイス一覧の取得をスキップ:', err?.message || '空の応答');
           if (this.configured) {
             this.devicesCache = [
-              { id: 'alexa_ALL', name: 'Alexa (全室 Echo)', ip: 'alexa:ALL', model: 'Amazon Echo Group', type: 'alexa' }
+              { id: 'alexa_ALL', name: 'Alexa (全室 Echo)', ip: 'alexa:ALL', model: 'Amazon Echo Group', type: 'alexa', isGroup: true }
             ];
           } else {
             this.devicesCache = [];
@@ -311,7 +311,7 @@ class AlexaManager {
         const devlistTxtPath = path.join(DATA_DIR, '.alexa.devicelist.txt');
         const seen = new Set();
         const devices = [
-          { id: 'alexa_ALL', name: '全室 Echo', ip: 'alexa:ALL', model: 'Amazon Echo Group', type: 'alexa' }
+          { id: 'alexa_ALL', name: '全室 Echo', ip: 'alexa:ALL', model: 'Amazon Echo Group', type: 'alexa', isGroup: true }
         ];
 
         // 1. .alexa.devicelist.txt が存在する場合は family や deviceType も含めて高精度にパース
@@ -333,6 +333,7 @@ class AlexaManager {
               // Echo Auto, Echo Buds, Echo Connect などを除外
               if (this.isExcludedDevice(name, family, type)) continue;
 
+              const isGroup = family === 'WHA';
               let model = 'Amazon Echo';
               if (family === 'KNIGHT') model = 'Amazon Echo Show';
               else if (family === 'WHA') model = 'Alexa グループ';
@@ -344,7 +345,8 @@ class AlexaManager {
                 name: name,
                 ip: `alexa:${name}`,
                 model: model,
-                type: 'alexa'
+                type: 'alexa',
+                isGroup: isGroup
               });
             }
 

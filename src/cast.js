@@ -8,17 +8,28 @@ class CastManager {
    * @param {Object} options volume, contentType
    * @returns {Promise<string>}
    */
-  playMedia(host, mediaUrl, options = {}) {
+  playMedia(targetHost, mediaUrl, options = {}) {
     return new Promise((resolve, reject) => {
       let isSettled = false;
       const client = new Client();
+
+      let host = targetHost;
+      let port = 8009;
+      if (typeof targetHost === 'string' && targetHost.includes(':')) {
+        const parts = targetHost.split(':');
+        host = parts[0];
+        port = parseInt(parts[1], 10) || 8009;
+      }
+      if (options.port) {
+        port = options.port;
+      }
 
       // 5秒タイムアウト設定 (応答のないデバイスによる全体の遅延を防止)
       const timer = setTimeout(() => {
         if (!isSettled) {
           isSettled = true;
           try { client.close(); } catch (e) {}
-          reject(new Error(`Google Cast 接続タイムアウト (${host})`));
+          reject(new Error(`Google Cast 接続タイムアウト (${host}:${port})`));
         }
       }, 5000);
 
@@ -41,11 +52,11 @@ class CastManager {
       };
 
       client.on('error', (err) => {
-        console.error(`[Cast Error] ${host}:`, err.message);
+        console.error(`[Cast Error] ${host}:${port}:`, err.message);
         cleanupAndReject(new Error(`Cast クライアントエラー: ${err.message}`));
       });
 
-      client.connect(host, () => {
+      client.connect({ host, port }, () => {
         // 音量指定がある場合は音量をセット
         if (typeof options.volumeLevel === 'number') {
           const level = Math.max(0.0, Math.min(1.0, options.volumeLevel));

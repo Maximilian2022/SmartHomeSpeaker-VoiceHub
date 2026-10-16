@@ -12,6 +12,8 @@ const settingsManager = require('./settings');
 const calendarManager = require('./calendar');
 const dndManager = require('./dnd');
 const historyManager = require('./history');
+const aiManager = require('./ai');
+const webhookQueue = require('./queue');
 
 const app = express();
 const PORT = process.env.PORT || process.env.SERVER_PORT || 8080;
@@ -203,6 +205,29 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   const allAvailableDevices = await deviceManager.getDevices();
   const currentSettings = settingsManager.get();
   const deviceGroups = currentSettings.deviceGroups || {};
+  const syncConfig = currentSettings.syncEngine || {
+    enabled: true,
+    dynamicAutoAdjust: true,
+    preferNativeGroups: true,
+    alexaDelayMs: 0,
+    homepodDelayMs: 650,
+    googleDelayMs: 1100
+  };
+  const preferNativeGroups = syncConfig.preferNativeGroups !== false;
+
+  // Google Cast グループの一覧を取得
+  const googleGroups = deviceManager.getGoogleGroups();
+  // 1. 完全一致 'ALL' または '全部' または '全室'
+  let bestAllGoogleGroup = googleGroups.find(g => /^(all|全部|全室|家中|家全部)$/i.test(g.name.trim()));
+  // 2. 見つからなければ 'ALL' または '全部' を含むが '一階' '二階' 等の部分修飾がない全体グループ
+  if (!bestAllGoogleGroup) {
+    bestAllGoogleGroup = googleGroups.find(g => /all|全部/i.test(g.name) && !/一階|二階|1階|2階|1f|2f|階|部屋/i.test(g.name));
+  }
+  // 3. それでもなければ任意のグループ
+  if (!bestAllGoogleGroup) {
+    bestAllGoogleGroup = googleGroups[0];
+  }
+
   const expandedTargets = [];
 
   for (const t of targets) {
@@ -210,16 +235,45 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     const upper = raw.toUpperCase();
 
     if (upper === 'ALL' || upper === '*') {
-      expandedTargets.push(...allAvailableDevices);
+      if (preferNativeGroups && bestAllGoogleGroup) {
+        // Google Cast グループに集約して Google Home 同士の再生ズレを 0ms に抑える
+        expandedTargets.push(bestAllGoogleGroup);
+        // Alexa: 全体グループ
+        const alexaAll = allAvailableDevices.find(d => d.ip === 'alexa:ALL' || d.name === '全室 Echo') || { id: 'alexa:ALL', name: '全室 Echo', ip: 'alexa:ALL', type: 'alexa' };
+        expandedTargets.push(alexaAll);
+        // HomePod: 全体または個別
+        const hpAll = allAvailableDevices.find(d => d.ip === 'homepod:ALL' || d.name === '全室 HomePod');
+        if (hpAll) {
+          expandedTargets.push(hpAll);
+        } else {
+          expandedTargets.push(...allAvailableDevices.filter(d => d.type === 'homepod'));
+        }
+      } else {
+        expandedTargets.push(...allAvailableDevices);
+      }
     } else if (upper === 'GH:ALL' || upper === 'GOOGLE:ALL' || upper === 'GH_ALL') {
-      const ghDevs = allAvailableDevices.filter(d => d.type === 'google' || (!d.ip.startsWith('alexa:') && !d.ip.startsWith('homepod:') && d.type !== 'alexa' && d.type !== 'homepod'));
-      expandedTargets.push(...ghDevs);
+      if (preferNativeGroups && bestAllGoogleGroup) {
+        expandedTargets.push(bestAllGoogleGroup);
+      } else {
+        const ghDevs = allAvailableDevices.filter(d => d.type === 'google' && !d.isGroup);
+        expandedTargets.push(...ghDevs);
+      }
     } else if (upper === 'AL:ALL' || upper === 'ALEXA:ALL' || upper === 'AL_ALL') {
-      const alDevs = allAvailableDevices.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
-      expandedTargets.push(...alDevs);
+      const alexaAll = allAvailableDevices.find(d => d.ip === 'alexa:ALL' || d.name === '全室 Echo');
+      if (alexaAll) {
+        expandedTargets.push(alexaAll);
+      } else {
+        const alDevs = allAvailableDevices.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
+        expandedTargets.push(...alDevs);
+      }
     } else if (upper === 'HP:ALL' || upper === 'HOMEPOD:ALL' || upper === 'HP_ALL') {
-      const hpDevs = allAvailableDevices.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
-      expandedTargets.push(...hpDevs);
+      const hpAll = allAvailableDevices.find(d => d.ip === 'homepod:ALL' || d.name === '全室 HomePod');
+      if (hpAll) {
+        expandedTargets.push(hpAll);
+      } else {
+        const hpDevs = allAvailableDevices.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
+        expandedTargets.push(...hpDevs);
+      }
     } else {
       // カスタム部屋グループ（大文字小文字問わずマッチ）
       let matchedGroup = null;
@@ -251,10 +305,14 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   }
 
   // 重複排除 (ip をキーとする)
+  const hasGoogleAllGroup = expandedTargets.some(d => d.isGroup && (/^(all|全部|全室|家中|家全部)$/i.test(d.name.trim()) || (/all|全部/i.test(d.name) && !/一階|二階|1階|2階|1f|2f|階|部屋/i.test(d.name))));
   const resolvedTargets = [];
   const seenIps = new Set();
   for (const dev of expandedTargets) {
     if (!dev || !dev.ip) continue;
+    if (hasGoogleAllGroup && dev.type === 'google' && !dev.isGroup) {
+      continue; // 全体グループに集約
+    }
     if (!seenIps.has(dev.ip)) {
       seenIps.add(dev.ip);
       resolvedTargets.push(dev);
@@ -384,6 +442,22 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   const alexaDevices = activeTargets.filter(d => d.type === 'alexa' || d.ip.startsWith('alexa:'));
   const homepodDevices = activeTargets.filter(d => d.type === 'homepod' || d.ip.startsWith('homepod:'));
 
+  // 異種プラットフォーム混在判定 & オフセット遅延の算出 (Sync Engine)
+  const activePlatforms = (googleDevices.length > 0 ? 1 : 0) + (alexaDevices.length > 0 ? 1 : 0) + (homepodDevices.length > 0 ? 1 : 0);
+  const isMultiPlatform = activePlatforms > 1;
+
+  let alexaDelay = 0;
+  let homepodDelay = 0;
+  let googleDelay = 0;
+
+  if (isMultiPlatform && syncConfig.enabled) {
+    alexaDelay = Math.max(0, parseInt(syncConfig.alexaDelayMs, 10) || 0);
+    homepodDelay = Math.max(0, parseInt(syncConfig.homepodDelayMs, 10) || 650);
+    googleDelay = Math.max(0, parseInt(syncConfig.googleDelayMs, 10) || 1100);
+    console.log(`[SyncEngine] 異種スピーカー混在同調オフセット適用: Alexa=${alexaDelay}ms, HomePod=${homepodDelay}ms, Google=${googleDelay}ms`);
+  }
+
+  const sleep = ms => ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
   const dispatchPromises = [];
   let audioUrl = null;
   let sharedSpeech = null;
@@ -400,40 +474,67 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
     audioUrl = `http://${SERVER_IP}:${PORT}${sharedSpeech.urlPath}`;
   }
 
-  // Google Home デバイスへ並行キャスト
+  // Google Home デバイスへ並行キャスト (オフセットディレイ適用 & RTT学習)
   if (googleDevices.length > 0 && sharedSpeech) {
     for (const dev of googleDevices) {
-      console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}${isWhisperGlobal ? ` [DND極小音量: ${whisperVolGlobal}%]` : ''}`);
-      dispatchPromises.push(
-        castManager.playMedia(dev.ip, audioUrl, { volumeLevel: effectiveVolumeLevel })
-          .then(res => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'success', result: res }))
-          .catch(err => ({ device: dev.name, ip: dev.ip, type: 'google', status: 'error', error: err.message }))
-      );
+      dispatchPromises.push((async () => {
+        const startTs = Date.now();
+        if (googleDelay > 0) {
+          await sleep(googleDelay);
+        }
+        console.log(`[Speak] Google Home 送信先: ${dev.name} (${dev.ip}), 音声URL: ${audioUrl}${isWhisperGlobal ? ` [DND極小音量: ${whisperVolGlobal}%]` : ''}${googleDelay > 0 ? ` [オフセット待機: ${googleDelay}ms]` : ''}`);
+        try {
+          const res = await castManager.playMedia(dev.ip, audioUrl, { volumeLevel: effectiveVolumeLevel });
+          const rtt = Date.now() - startTs - googleDelay;
+          settingsManager.recordPlatformLatency('google', rtt);
+          return { device: dev.name, ip: dev.ip, type: 'google', status: 'success', result: res, rtt };
+        } catch (err) {
+          return { device: dev.name, ip: dev.ip, type: 'google', status: 'error', error: err.message };
+        }
+      })());
     }
   }
 
-  // HomePod デバイスへ並行 AirPlay ストリーミング
+  // HomePod デバイスへ並行 AirPlay ストリーミング (オフセットディレイ適用 & RTT学習)
   if (homepodDevices.length > 0 && sharedSpeech) {
     for (const dev of homepodDevices) {
-      console.log(`[Speak] HomePod 送信先: ${dev.name} (${dev.ip})`);
-      dispatchPromises.push(
-        homepodManager.playAudio(sharedSpeech.filepath, dev.ip)
-          .then(res => ({ device: dev.name, ip: dev.ip, type: 'homepod', status: 'success', result: res }))
-          .catch(err => ({ device: dev.name, ip: dev.ip, type: 'homepod', status: 'error', error: err.message }))
-      );
+      dispatchPromises.push((async () => {
+        const startTs = Date.now();
+        if (homepodDelay > 0) {
+          await sleep(homepodDelay);
+        }
+        console.log(`[Speak] HomePod 送信先: ${dev.name} (${dev.ip})${homepodDelay > 0 ? ` [オフセット待機: ${homepodDelay}ms]` : ''}`);
+        try {
+          const res = await homepodManager.playAudio(sharedSpeech.filepath, dev.ip);
+          const rtt = Date.now() - startTs - homepodDelay;
+          settingsManager.recordPlatformLatency('homepod', rtt);
+          return { device: dev.name, ip: dev.ip, type: 'homepod', status: 'success', result: res, rtt };
+        } catch (err) {
+          return { device: dev.name, ip: dev.ip, type: 'homepod', status: 'error', error: err.message };
+        }
+      })());
     }
   }
 
-  // Alexa デバイスがある場合、Alexa スクリプトを並行実行
+  // Alexa デバイスがある場合、Alexa スクリプトを並行実行 (オフセットディレイ適用 & RTT学習)
   if (alexaDevices.length > 0) {
     for (const dev of alexaDevices) {
       const alexaTarget = dev.ip.startsWith('alexa:') ? dev.ip.slice(6) : (dev.name || 'ALL');
-      console.log(`[Speak] Alexa 送信先: ${alexaTarget}`);
-      dispatchPromises.push(
-        alexaManager.speak(text, alexaTarget)
-          .then(res => ({ device: dev.name, ip: dev.ip, type: 'alexa', status: 'success', result: res }))
-          .catch(err => ({ device: dev.name, ip: dev.ip, type: 'alexa', status: 'error', error: err.message }))
-      );
+      dispatchPromises.push((async () => {
+        const startTs = Date.now();
+        if (alexaDelay > 0) {
+          await sleep(alexaDelay);
+        }
+        console.log(`[Speak] Alexa 送信先: ${alexaTarget}${alexaDelay > 0 ? ` [オフセット待機: ${alexaDelay}ms]` : ''}`);
+        try {
+          const res = await alexaManager.speak(text, alexaTarget);
+          const rtt = Date.now() - startTs - alexaDelay;
+          settingsManager.recordPlatformLatency('alexa', rtt);
+          return { device: dev.name, ip: dev.ip, type: 'alexa', status: 'success', result: res, rtt };
+        } catch (err) {
+          return { device: dev.name, ip: dev.ip, type: 'alexa', status: 'error', error: err.message };
+        }
+      })());
     }
   }
 
@@ -507,6 +608,11 @@ dndManager.setSpeakerExecutor(async (item) => {
     clientName: item.options?.clientName,
     clientIp: item.options?.clientIp
   });
+});
+
+// 永続化 Webhook 再生キューエンジンを紐付け
+webhookQueue.setExecutor(async (text, targets, options) => {
+  return await speakToMultipleDevices(text, targets, options);
 });
 
 // 初期カレンダーイベントの同期開始
@@ -685,19 +791,22 @@ const handleSay = async (req, res) => {
     };
 
     if (shouldRunAsync) {
-      // 送信元のタイムアウトを防ぐため、即座に 200 OK を返却（バックグラウンドで発声処理）
+      // 永続化キュー (WAL) に登録して即座に 200 OK を返却
+      // （サーバー再起動や不慮のクラッシュ時にも未再生のまま消失しないようディスク保存）
+      const jobId = webhookQueue.enqueue({
+        text,
+        targets,
+        options: speakOptions
+      });
+
       res.status(200).json({
         success: true,
         status: 'accepted',
         async: true,
-        message: '発声リクエストを受付けました（バックグラウンドで処理中）',
+        jobId,
+        message: '発声リクエストを受付け、永続化キューに安全に保存しました（順次処理中）',
         text,
         targets: targets.length > 0 ? targets : [deviceManager.getDefaultDeviceIp()]
-      });
-
-      // バックグラウンドで非同期実行（発声履歴ログには完了時に自動追記される）
-      speakToMultipleDevices(text, targets, speakOptions).catch(err => {
-        console.error('[Async API Say Error]:', err.message);
       });
       return;
     }
@@ -713,6 +822,16 @@ const handleSay = async (req, res) => {
 
 app.post('/api/say', requireWebhookAuth, handleSay);
 app.get('/api/say', requireWebhookAuth, handleSay);
+app.post('/api/webhook', requireWebhookAuth, handleSay);
+app.get('/api/webhook', requireWebhookAuth, handleSay);
+
+// 永続化キュー状態確認 API
+app.get('/api/queue', (req, res) => {
+  res.json({
+    dndQueue: dndManager.getQueue(),
+    webhookQueue: webhookQueue.getQueue()
+  });
+});
 
 // 発声履歴 API (直近100件)
 app.get('/api/history', (req, res) => {
@@ -743,6 +862,32 @@ app.put('/api/settings', (req, res) => {
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// マルチスピーカー同調テスト再生 API
+app.post('/api/settings/sync-test', async (req, res) => {
+  try {
+    const text = req.body?.text || 'ポーン♪ マルチスピーカー同調テストです。';
+    const targets = req.body?.targets || ['ALL'];
+    console.log(`[SyncEngine] 同調テスト発話を開始: "${text}", 送信先: ${targets.join(',')}`);
+
+    const result = await speakToMultipleDevices(text, targets, {
+      source: 'web_ui',
+      sourceLabel: '同調テスト再生',
+      urgent: true,
+      chime: 'chime1'
+    });
+
+    const currentSync = settingsManager.get().syncEngine;
+    res.json({
+      success: result.success,
+      syncEngine: currentSync,
+      results: result.results
+    });
+  } catch (err) {
+    console.error('[SyncTest Error]:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -799,7 +944,12 @@ app.get('/api/dnd/status', (req, res) => {
 });
 
 app.post('/api/dnd/quick', (req, res) => {
-  const minutes = parseInt(req.body.minutes ?? 30, 10);
+  let minutes = req.body.minutes;
+  if (minutes === 'indefinite' || minutes === -1 || minutes === '-1') {
+    minutes = -1;
+  } else {
+    minutes = parseInt(minutes ?? 30, 10);
+  }
   const reason = req.body.reason || '手動サイレント (即時)';
   const result = dndManager.setQuickDnd(minutes, reason);
   res.json(result);
@@ -812,6 +962,82 @@ app.get('/api/dnd/history', (req, res) => {
 app.delete('/api/dnd/history', (req, res) => {
   dndManager.clearHistory();
   res.json({ success: true });
+});
+
+// 4.5. AI 連携 API
+app.get('/api/ai/status', (req, res) => {
+  res.json(aiManager.getStatus());
+});
+
+app.post('/api/ai/test', async (req, res) => {
+  try {
+    const { provider, apiKey, model } = req.body;
+    const result = await aiManager.testConnection({ provider, apiKey, model });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/ai/models', async (req, res) => {
+  try {
+    const provider = req.query.provider || 'gemini';
+    const apiKey = req.query.apiKey;
+    const forceRefresh = req.query.forceRefresh === 'true';
+    const result = await aiManager.getAvailableModels(provider, { apiKey, forceRefresh });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/ai/summarize-test', async (req, res) => {
+  try {
+    const sampleItems = [
+      { text: 'クロネコヤマトの配達員が間もなく到着します。', timestamp: new Date(Date.now() - 40 * 60000).toISOString() },
+      { text: 'お風呂のお湯張りが完了しました。', timestamp: new Date(Date.now() - 25 * 60000).toISOString() },
+      { text: 'リビングの室温が28度を超えたため、エアコンの稼働を推奨します。', timestamp: new Date(Date.now() - 10 * 60000).toISOString() }
+    ];
+    const summary = await aiManager.summarizeNotifications(sampleItems, {
+      promptHint: req.body?.promptHint
+    });
+    res.json({ success: true, summary, sampleCount: sampleItems.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/ai/calendar-test', async (req, res) => {
+  try {
+    const now = new Date();
+    const sampleEvents = [
+      {
+        summary: '朝のチームミーティング (Google Meet)',
+        start: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 30),
+        end: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0),
+        isAllDay: false
+      },
+      {
+        summary: '企画書提出・デザインレビュー',
+        start: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 14, 0),
+        end: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 15, 0),
+        isAllDay: false
+      },
+      {
+        summary: 'クリーニング受け取り',
+        start: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 30),
+        end: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 19, 0),
+        isAllDay: false
+      }
+    ];
+    const summary = await aiManager.summarizeCalendarEvents(sampleEvents, {
+      calName: 'メインカレンダー',
+      promptHint: req.body?.promptHint
+    });
+    res.json({ success: true, summary, sampleCount: sampleEvents.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 4. ブラウザでの事前試聴プレビュー用

@@ -74,17 +74,9 @@
         発言履歴
         <span class="tab-badge" id="tabHistoryCount">0</span>
       </button>
-      <button class="tab-btn" data-tab="tab-dnd" id="btnTabDnd">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
-        おやすみ・会議 (DND)
-      </button>
       <button class="tab-btn" data-tab="tab-devices" id="btnTabDevices">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
         接続デバイス
-      </button>
-      <button class="tab-btn" data-tab="tab-webhook" id="btnTabWebhook">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        Webhook / Tunnel
       </button>
       <button class="tab-btn" data-tab="tab-settings" id="btnTabSettings">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -600,9 +592,821 @@
         </div>
       </section>
 
-      <!-- 4. Webhook / Cloudflare Tunnel ガイド & ビルダー パネル -->
-      <section id="tab-webhook" class="tab-pane">
-        <div class="card glass-card">
+      <!-- 5. 拡張・システム設定パネル (音声・機能拡張、おやすみ・会議 DND、Webhook & Tunnel を集約) -->
+      <section id="tab-settings" class="tab-pane">
+        <!-- 設定 サブナビゲーション -->
+        <div class="sub-tab-nav" id="settingsSubTabNav">
+          <button type="button" class="sub-tab-btn active" data-subtab="subtab-settings-features" id="btnSubtabSettingsFeatures">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            ⚙️ 音声・機能拡張
+          </button>
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-dnd" id="btnSubtabSettingsDnd">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+            🔕 おやすみ・会議 (DND)
+          </button>
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-ai" id="btnSubtabSettingsAi">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M9 13v2"/><path d="M15 13v2"/><path d="M2 14h2"/><path d="M20 14h2"/></svg>
+            🤖 AI 連携・API Key
+          </button>
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-webhook" id="btnSubtabSettingsWebhook">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            🌐 Webhook & Tunnel
+          </button>
+        </div>
+
+        <!-- 1. 音声・機能拡張 サブペイン -->
+        <div id="subtab-settings-features" class="sub-tab-pane active">
+          <div class="two-col-layout">
+          <!-- 左カラム: チャイム & 重複防止 & 自動音量 -->
+          <div class="col">
+            <!-- 1. 前置きチャイム音設定 -->
+            <div class="card glass-card">
+              <div class="card-header">
+                <h2>🔔 前置きチャイム音 (聞き逃し防止)</h2>
+                <span class="card-sub">発声の冒頭に心地よいチャイム音を自動挿入して再生します</span>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label for="settingDefaultChime" class="form-label">標準チャイム音</label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="settingDefaultChime" class="form-select" style="flex: 1;">
+                      <option value="dingdong">🔔 ピンポン (dingdong) - 標準・案内</option>
+                      <option value="bell">🎶 ベル (bell) - やさしいお知らせ</option>
+                      <option value="announce">📢 アナウンス (announce) - 明るい注意喚起</option>
+                      <option value="alert">⚠️ アラート (alert) - 重要通知・警告</option>
+                      <option value="none">チャイムなし (直接アナウンス)</option>
+                    </select>
+                    <button type="button" id="btnPreviewChime" class="btn btn-secondary" style="white-space: nowrap;">
+                      ▶ 試聴
+                    </button>
+                  </div>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">
+                  ※ APIやWebhookから個別に <code>chime=alert</code> などを指定した場合は、そちらが優先されます。
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. 重複通知の自動防止 -->
+            <div class="card glass-card" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🛡️ 重複通知の自動防止 (Deduplication)</h2>
+                  <span class="card-sub">IFTTTや外部トリガーの誤連打・ネットワーク再送による連呼を防ぎます</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="settingDedupeEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+              <div class="card-body">
+                <div class="form-group" style="margin-bottom: 8px;">
+                  <label for="settingDedupeCooldown" class="form-label">
+                    クールダウン時間 (秒)
+                  </label>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="number" id="settingDedupeCooldown" class="form-input" min="5" max="300" step="5" value="30" style="max-width: 120px;">
+                    <span style="font-size: 0.88rem; color: var(--text-color);">秒以内の同一送信元・同一文言を自動ブロック</span>
+                  </div>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 8px;">
+                  💡 Web画面からの直接テスト発言は除外されるため、安心してテストできます。
+                </div>
+              </div>
+            </div>
+
+            <!-- 3. 時間帯別自動音量カーブ -->
+            <div class="card glass-card" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🌙 時間帯別自動音量カーブ (Auto Volume)</h2>
+                  <span class="card-sub">時刻に応じた最適な発言音量を自動で適用します (夜間・深夜の爆音防止)</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="settingAutoVolEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <div class="flex-between">
+                    <label class="form-label">☀️ 日中帯 (07:00 〜 21:00)</label>
+                    <span id="labelAutoVolDay" style="font-weight: 600; font-size: 0.88rem; color: var(--primary-color);">50%</span>
+                  </div>
+                  <input type="range" id="rangeAutoVolDay" min="10" max="100" step="5" value="50" class="form-range">
+                </div>
+                <div class="form-group" style="margin-top: 14px;">
+                  <div class="flex-between">
+                    <label class="form-label">🌆 夜間帯 (21:00 〜 23:00)</label>
+                    <span id="labelAutoVolEvening" style="font-weight: 600; font-size: 0.88rem; color: #f59e0b;">25%</span>
+                  </div>
+                  <input type="range" id="rangeAutoVolEvening" min="5" max="80" step="5" value="25" class="form-range">
+                </div>
+                <div class="form-group" style="margin-top: 14px;">
+                  <div class="flex-between">
+                    <label class="form-label">🌃 深夜帯 (23:00 〜 07:00)</label>
+                    <span id="labelAutoVolNight" style="font-weight: 600; font-size: 0.88rem; color: #8b5cf6;">10%</span>
+                  </div>
+                  <input type="range" id="rangeAutoVolNight" min="5" max="50" step="5" value="10" class="form-range">
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 10px;">
+                  ※ APIや即時発言で個別に音量パーセントが指定されている場合は、個別指定が優先されます。
+                </div>
+              </div>
+            </div>
+
+            <!-- ⏱️ マルチスピーカー同調再生 & 自動オフセット調整 (Sync Engine) -->
+            <div class="card glass-card" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.25rem;">⏱️</span>
+                    <h2 style="margin: 0;">マルチスピーカー同調再生 (Sync Engine)</h2>
+                    <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.72rem; padding: 2px 8px; border-radius: 9999px;">ハイブリッド同期</span>
+                  </div>
+                  <span class="card-sub">Google / Alexa / HomePod 複数再生時の「やまびこ・輪唱（ズレ）」を自動解消します</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="settingSyncEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+              <div class="card-body">
+                <!-- 1. 純正グループ優先トグル -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; margin-bottom: 12px;">
+                  <div>
+                    <div style="font-size: 0.88rem; font-weight: 600; color: var(--text-color);">📢 Google 純正 Cast グループを優先</div>
+                    <div style="font-size: 0.76rem; color: var(--text-muted);">「ALL」「一階全部」等の純正グループを活用し、Google 同士のズレを 0ms（完全同期）にします</div>
+                  </div>
+                  <label class="switch" style="margin-left: 12px;">
+                    <input type="checkbox" id="settingSyncPreferNative" checked>
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+
+                <!-- 2. 動的自動キャリブレーション (EMA) トグル -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; margin-bottom: 16px;">
+                  <div>
+                    <div style="font-size: 0.88rem; font-weight: 600; color: var(--text-color);">🧠 動的自動キャリブレーション</div>
+                    <div style="font-size: 0.76rem; color: var(--text-muted);">API 応答・ネットワーク実測 RTT を自動学習し、異種間の送信待機オフセットを動的に最適化します</div>
+                  </div>
+                  <label class="switch" style="margin-left: 12px;">
+                    <input type="checkbox" id="settingSyncDynamicAdjust" checked>
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+
+                <!-- 3. オフセット微調整スライダー群 -->
+                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px; background: rgba(0, 0, 0, 0.15); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05);">
+                  <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px;">
+                    異種混在時の送信待機オフセット (手動微調整)
+                  </div>
+                  <!-- Google Delay -->
+                  <div class="form-group" style="margin: 0;">
+                    <div class="flex-between">
+                      <label class="form-label" style="font-size: 0.82rem; margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <span style="color: #3b82f6;">●</span> Google Home 送信待機 (最速のため待機)
+                      </label>
+                      <span id="labelSyncGoogleDelay" style="font-weight: 600; font-size: 0.85rem; color: #3b82f6;">1100 ms</span>
+                    </div>
+                    <input type="range" id="rangeSyncGoogleDelay" min="0" max="2500" step="50" value="1100" class="form-range" style="margin-top: 6px;">
+                  </div>
+
+                  <!-- HomePod Delay -->
+                  <div class="form-group" style="margin: 0;">
+                    <div class="flex-between">
+                      <label class="form-label" style="font-size: 0.82rem; margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <span style="color: #a855f7;">●</span> HomePod (AirPlay) 送信待機
+                      </label>
+                      <span id="labelSyncHomepodDelay" style="font-weight: 600; font-size: 0.85rem; color: #a855f7;">650 ms</span>
+                    </div>
+                    <input type="range" id="rangeSyncHomepodDelay" min="0" max="2500" step="50" value="650" class="form-range" style="margin-top: 6px;">
+                  </div>
+
+                  <!-- Alexa Reference -->
+                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted); padding-top: 4px; border-top: 1px dashed rgba(255, 255, 255, 0.1);">
+                    <span style="display: flex; align-items: center; gap: 6px;">
+                      <span style="color: #f59e0b;">●</span> Alexa 送信待機 (基準・クラウド最遅)
+                    </span>
+                    <span style="font-weight: 600; color: #f59e0b;">0 ms (即時送信)</span>
+                  </div>
+                </div>
+
+                <!-- 4. 実測 RTT ステータスメーター & テスト再生ボタン -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; flex-wrap: wrap; gap: 10px;">
+                  <div style="display: flex; gap: 12px; font-size: 0.75rem; color: var(--text-muted);">
+                    <div>実測平均:</div>
+                    <div>Google: <span id="statGoogleRtt" style="color: var(--text-color); font-weight: 600;">420ms</span></div>
+                    <div>HomePod: <span id="statHomepodRtt" style="color: var(--text-color); font-weight: 600;">850ms</span></div>
+                    <div>Alexa: <span id="statAlexaRtt" style="color: var(--text-color); font-weight: 600;">1600ms</span></div>
+                  </div>
+                  <button type="button" id="btnSyncTestPlay" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                    <span>🔔</span> <span>同調テスト再生</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右カラム: カスタム部屋グループ & IPエイリアス -->
+          <div class="col">
+            <!-- 4. カスタム部屋グループ (ゾーン一括指定) -->
+            <div class="card glass-card">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🏠 カスタム部屋グループ (ゾーン指定)</h2>
+                  <span class="card-sub">「1F」「2F」「LDK」などを登録し、一言でまとめて鳴らせます</span>
+                </div>
+                <button type="button" id="btnOpenNewGroupModal" class="btn btn-primary btn-sm">＋ 新規グループ</button>
+              </div>
+              <div class="card-body">
+                <div id="deviceGroupsContainer" class="device-groups-list" style="display: flex; flex-direction: column; gap: 10px;">
+                  <!-- JS動的生成 -->
+                  <span class="text-sub">グループ設定を読み込み中...</span>
+                </div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 12px;">
+                  💡 WebhookやAPIで <code>devices: ["1F"]</code> や <code>device=LDK</code> と指定するだけで所属スピーカーが一括同時再生されます。
+                </div>
+              </div>
+            </div>
+
+            <!-- 5. クライアントIPエイリアス登録 -->
+            <div class="card glass-card" style="margin-top: 20px;">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🏷️ 送信元 IP エイリアス登録</h2>
+                  <span class="card-sub">送信元IPを「給湯器」「ラズパイ」などの分かりやすい名前に紐付けます</span>
+                </div>
+              </div>
+              <div class="card-body">
+                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                  <input type="text" id="inputNewAliasIp" class="form-input" placeholder="IPアドレス (例: 192.168.1.50)" style="flex: 1;">
+                  <input type="text" id="inputNewAliasName" class="form-input" placeholder="表示名 (例: ラズパイ監視)" style="flex: 1;">
+                  <button type="button" id="btnAddIpAlias" class="btn btn-secondary" style="white-space: nowrap;">登録</button>
+                </div>
+                <div id="ipAliasesContainer" style="display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto;">
+                  <!-- JS動的生成 -->
+                  <span class="text-sub">エイリアスなし</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 全設定保存ボタン -->
+            <div style="margin-top: 20px; text-align: right;">
+              <button type="button" id="btnSaveAllSettings" class="btn btn-primary" style="padding: 10px 24px; font-size: 0.95rem;">
+                💾 システム設定を保存
+              </button>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <!-- 2. おやすみ・会議 (DND) サブペイン -->
+        <div id="subtab-settings-dnd" class="sub-tab-pane">
+          <div class="single-col-layout">
+          <!-- 1. 現在のステータス & ワンタップ即時ミュート -->
+          <div class="card glass-card">
+            <div class="card-header flex-between">
+              <div>
+                <h2>おやすみ・会議モード (DND)</h2>
+                <span class="card-sub">リモートワーク中のオンライン会議や就寝時など、スピーカーを鳴らしたくないタイミングを自動・手動で制御します</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="dndMasterEnabled" checked>
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="card-body">
+              <!-- ステータスバナー -->
+              <div id="dndStatusBanner" class="dnd-status-banner" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <span id="dndStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #10b981; display: inline-block; box-shadow: 0 0 10px #10b981;"></span>
+                  <div>
+                    <strong id="dndStatusTitle" style="font-size: 1rem; color: var(--text-color);">現在は通常モードです</strong>
+                    <div id="dndStatusSubtitle" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">通知やアナウンスは通常音量でスピーカーから再生されます</div>
+                  </div>
+                </div>
+                <div id="dndQueueBadge" style="display: none; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 500;">
+                  保留通知: <span id="dndQueueCount">0</span> 件
+                </div>
+              </div>
+
+              <!-- ワンタップ即時ミュートボタン群 -->
+              <div class="form-group">
+                <label class="form-label" style="display: flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  ワンタップ今すぐサイレント（急な会議や電話に）
+                </label>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="30">🔇 30分ミュート</button>
+                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="60">🔇 1時間ミュート</button>
+                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="120">🔇 2時間ミュート</button>
+                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="today">🔇 本日中ミュート</button>
+                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="indefinite">🔇 手動解除まで</button>
+                  <button type="button" id="btnCancelQuickDnd" class="btn btn-secondary" style="color: var(--text-muted); display: none;">▶️ サイレント解除</button>
+                </div>
+              </div>
+
+              <!-- Topメニューのミュートボタン挙動設定 -->
+              <div class="form-group" style="margin-top: 18px; padding-top: 16px; border-top: 1px dashed rgba(255, 255, 255, 0.1);">
+                <label class="form-label" style="display: flex; align-items: center; gap: 6px;">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                  Topメニュー「🔇ミュート」ボタン押下時の動作設定
+                </label>
+                <div class="card-sub" style="margin-bottom: 10px;">
+                  画面最上部のヘッダーにある「🔇 ミュート」ボタンを押したときに発動するミュート時間を設定します
+                </div>
+                <div class="pill-radio-group" id="dndTopMuteBehaviorGroup">
+                  <label class="pill-radio">
+                    <input type="radio" name="dndTopMuteDuration" value="30">
+                    <span>30分 (30m)</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndTopMuteDuration" value="60" checked>
+                    <span>1時間 (1h)</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndTopMuteDuration" value="120">
+                    <span>2時間 (2h)</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndTopMuteDuration" value="1440">
+                    <span>1日 (1d)</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndTopMuteDuration" value="indefinite">
+                    <span>手動で解除するまでずっと</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. カレンダー予定連動サイレント -->
+          <div class="card glass-card">
+            <div class="card-header flex-between">
+              <div>
+                <h3>📅 カレンダー予定連動の自動サイレント</h3>
+                <span class="card-sub">Google カレンダーの予定が進行中（開始〜終了時刻）の間、自動でサイレントを発動します</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="dndCalendarEnabled">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="card-body">
+              <!-- 対象予定の絞り込みモード選択 -->
+              <div class="form-group">
+                <label class="form-label">対象にする予定の範囲</label>
+                <div style="display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap;">
+                  <label class="pill-radio dnd-radio-pill">
+                    <input type="radio" name="dndCalendarMode" value="keywords" checked>
+                    <span>キーワード一致のみ (会議・MTG等)</span>
+                  </label>
+                  <label class="pill-radio dnd-radio-pill">
+                    <input type="radio" name="dndCalendarMode" value="all">
+                    <span>すべての予定 (時間帯指定のある予定すべて)</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- キーワード入力 (キーワードモード時) -->
+              <div id="dndCalendarKeywordsWrapper" class="form-group">
+                <label for="dndCalendarKeywords" class="form-label">対象キーワード (カンマ区切り)</label>
+                <input type="text" id="dndCalendarKeywords" class="form-input" placeholder="例: MTG, 会議, Zoom, Teams, Meet, 打ち合わせ, 商談, 集中">
+                <small class="help-text">
+                  💡 指定した単語が予定のタイトルや詳細に含まれている場合のみサイレントにします（大文字小文字不問）。
+                </small>
+              </div>
+
+              <!-- 終日予定を含むオプション -->
+              <div class="form-group" style="margin-top: 10px; margin-bottom: 16px;">
+                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text-color); background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); padding: 8px 12px; border-radius: 8px;">
+                  <input type="checkbox" id="dndCalendarIncludeAllDay" style="accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer;">
+                  <span>終日予定（誕生日・有給休暇・祝日・イベントなど）も含めて1日サイレントにする</span>
+                </label>
+                <small class="help-text" style="display: block; margin-top: 4px;">
+                  ※チェックを外している場合、時刻指定（例: 14:00〜15:00）のある会議・予定中のみサイレントになります（推奨）。
+                </small>
+              </div>
+
+              <!-- 現在進行中予定のリアルタイム検知表示 -->
+              <div id="dndActiveCalendarBox" style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.12); border-radius: 8px; padding: 12px; font-size: 0.85rem; color: var(--text-muted);">
+                現在進行中の会議・カレンダー予定はありません
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 定時スケジュールサイレント (曜日 & 時間帯) -->
+          <div class="card glass-card">
+            <div class="card-header flex-between">
+              <div>
+                <h3>⏰ 定時サイレント（曜日・時間帯指定）</h3>
+                <span class="card-sub">平日日中（在宅勤務時間）や深夜の就寝時間など、定期的に音を鳴らさない時間帯を設定できます</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="dndScheduleEnabled">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="card-body">
+              <div id="dndScheduleList" style="margin-bottom: 16px;">
+                <!-- JSで動的生成 -->
+              </div>
+
+              <!-- スケジュール追加ボタン & インラインフォーム -->
+              <button type="button" id="btnShowAddDndSched" class="btn btn-secondary" style="font-size: 0.85rem;">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                ＋ 定時サイレントルールを追加
+              </button>
+
+              <div id="addDndSchedInlineForm" style="display: none; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 16px; margin-top: 12px;">
+                <input type="hidden" id="editDndSchedId" value="">
+                <h4 id="dndSchedFormTitle" style="font-size: 0.95rem; margin-bottom: 12px;">新規定時ルール</h4>
+                <div class="form-group">
+                  <label for="newDndSchedName" class="form-label">ルール名</label>
+                  <input type="text" id="newDndSchedName" class="form-input" placeholder="例: 平日日中 (在宅勤務)">
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">適用する曜日</label>
+                  <div class="weekday-checkbox-group">
+                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="1" checked><span>月</span></label>
+                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="2" checked><span>火</span></label>
+                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="3" checked><span>水</span></label>
+                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="4" checked><span>木</span></label>
+                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="5" checked><span>金</span></label>
+                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="6"><span>土</span></label>
+                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="0"><span>日</span></label>
+                  </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                  <div class="form-group">
+                    <label for="newDndStartTime" class="form-label">開始時刻</label>
+                    <input type="time" id="newDndStartTime" class="form-input" value="09:00">
+                  </div>
+                  <div class="form-group">
+                    <label for="newDndEndTime" class="form-label">終了時刻 (日跨ぎ可)</label>
+                    <input type="time" id="newDndEndTime" class="form-input" value="18:00">
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                  <button type="button" id="btnCancelAddDndSched" class="btn btn-secondary">キャンセル</button>
+                  <button type="button" id="btnAddDndSchedConfirm" class="btn btn-primary">ルールを保存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. 静音時の動作 & 対象スピーカー設定フォーム -->
+          <div class="card glass-card">
+            <div class="card-header">
+              <h3>⚙️ 静音時の動作 ＆ 対象スピーカー設定</h3>
+              <span class="card-sub">サイレント発動時にどのように音声を抑制するか、および対象とする部屋・スピーカーを設定します</span>
+            </div>
+
+            <form id="dndSettingsForm" class="card-body">
+              <!-- アクション選択 -->
+              <div class="form-group">
+                <label class="form-label">サイレント発動時のアクション</label>
+                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+                  <label class="dnd-action-radio-box">
+                    <input type="radio" name="dndAction" value="skip" checked>
+                    <div class="dnd-action-radio-content">
+                      <strong style="display: block; font-size: 0.95rem; margin-bottom: 2px;">🔇 完全スキップ（推奨）</strong>
+                      <span style="font-size: 0.8rem; color: var(--text-muted);">スピーカーを一切鳴らさず、サイレント履歴ログに記録します</span>
+                    </div>
+                  </label>
+
+                  <label class="dnd-action-radio-box">
+                    <input type="radio" name="dndAction" value="whisper">
+                    <div class="dnd-action-radio-content">
+                      <strong style="display: block; font-size: 0.95rem; margin-bottom: 2px;">🤫 極小音量で再生（囁きアナウンス）</strong>
+                      <span style="font-size: 0.8rem; color: var(--text-muted);">ヘッドセット越しでも邪魔にならない極小音量（5〜20%）に絞って再生します</span>
+                    </div>
+                  </label>
+
+                  <label class="dnd-action-radio-box">
+                    <input type="radio" name="dndAction" value="queue">
+                    <div class="dnd-action-radio-content">
+                      <strong style="display: block; font-size: 0.95rem; margin-bottom: 2px;">📥 保留キューイング</strong>
+                      <span style="font-size: 0.8rem; color: var(--text-muted);">会議やおやすみモードが終了したタイミングで「保留されていた通知があります」とまとめて読み上げます</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 極小音量設定スライダー (whisper時のみ連動) ＆ 音量テストボタン -->
+              <div id="dndWhisperWrapper" class="form-group" style="margin-left: 10px; padding: 14px 16px; background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 10px; display: none;">
+                <label for="dndWhisperVolume" class="form-label" style="margin-bottom: 6px;">囁き音量: <span id="dndWhisperDisplay" style="color: var(--primary-light); font-weight: 600;">10%</span></label>
+                <div style="display: flex; align-items: center; gap: 12px; max-width: 500px;">
+                  <input type="range" id="dndWhisperVolume" min="3" max="30" step="1" value="10" class="form-range" style="flex: 1;">
+                  <button type="button" id="btnTestWhisperVolume" class="btn btn-secondary" style="font-size: 0.82rem; white-space: nowrap; padding: 6px 12px;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                    🔊 音量テスト
+                  </button>
+                </div>
+                <small class="help-text" style="margin-top: 6px; display: block;">
+                  💡 「音量テスト」を押すと、設定中の音量でスピーカーからテスト音声を再生して聞こえ具合を確認できます。
+                </small>
+              </div>
+
+              <!-- 保留通知のAI自動要約設定 -->
+              <div id="dndQueueAiWrapper" class="form-group" style="margin-left: 10px; padding: 14px 16px; background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 10px; display: none;">
+                <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
+                  <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--text-color); margin: 0;">
+                    <input type="checkbox" id="dndAiSummaryEnabled" checked style="accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer;">
+                    <span>🤖 保留通知の AI 自動要約 (複数件たまった場合に要約して読み上げ)</span>
+                  </label>
+                  <span id="dndAiBadgeStatus" class="badge-tech" style="font-size: 0.75rem;">AI設定確認中</span>
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 10px;">
+                  長時間の会議や就寝中に何件も通知が溜まった場合、1件ずつ長々と読み上げる代わりに、AIが重要な要点をぎゅっとまとめて1回のアナウンスで分かりやすく報告します。
+                </div>
+                <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <label for="dndAiSummaryThreshold" style="font-size: 0.82rem; color: var(--text-muted);">要約発動の最小件数:</label>
+                    <select id="dndAiSummaryThreshold" class="form-select" style="width: auto; padding: 4px 10px; font-size: 0.82rem;">
+                      <option value="2">2件以上たまった時 (推奨)</option>
+                      <option value="3">3件以上たまった時</option>
+                      <option value="5">5件以上たまった時</option>
+                    </select>
+                  </div>
+                  <button type="button" id="btnGoToAiTabFromDnd" class="btn-text" style="font-size: 0.82rem; color: #8ab4f8; cursor: pointer;">
+                    ⚙️ AI API Key / プロバイダ設定を開く →
+                  </button>
+                </div>
+              </div>
+
+              <!-- 対象スピーカー範囲 -->
+              <div class="form-group" style="margin-top: 20px;">
+                <label class="form-label">サイレント対象スピーカー</label>
+                <div style="display: flex; gap: 16px; margin-bottom: 10px;">
+                  <label class="pill-radio">
+                    <input type="radio" name="dndTargetScope" value="all" checked>
+                    <span>すべてのスピーカーをミュート</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndTargetScope" value="specific">
+                    <span>特定のスピーカーのみミュート (書斎・仕事部屋など)</span>
+                  </label>
+                </div>
+
+                <!-- スピーカー個別チェックボックス -->
+                <div id="dndSpeakersWrapper" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px;">
+                  <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 8px;">ミュート対象にするスピーカーを選択してください:</span>
+                  <div id="dndSpeakersContainer" class="speaker-checkbox-grid">
+                    <!-- JSで動的生成 -->
+                  </div>
+                </div>
+              </div>
+
+              <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                <button type="submit" class="btn btn-primary">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                  DND 設定を保存
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- 5. サイレント履歴ログ (直近50件) -->
+          <div class="card glass-card">
+            <div class="card-header flex-between">
+              <div>
+                <h3>📜 サイレント履歴ログ (直近50件)</h3>
+                <span class="card-sub">会議中やおやすみモード中にスキップ・囁き・保留された通知の履歴です</span>
+              </div>
+              <button type="button" id="btnClearDndHistory" class="btn-text text-sub">履歴をクリア</button>
+            </div>
+            <div class="card-body">
+              <ul id="dndHistoryList" class="history-list">
+                <li class="empty-msg">サイレント履歴はまだありません</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        </div>
+
+        <!-- 3. AI 連携・API Key サブペイン -->
+        <div id="subtab-settings-ai" class="sub-tab-pane">
+          <div class="single-col-layout">
+            <div class="card glass-card">
+              <div class="card-header flex-between">
+                <div>
+                  <h2>🤖 AI 連携 ＆ API Key 設定</h2>
+                  <span class="card-sub">Google Gemini や OpenAI の API Key を設定し、DND保留通知のスマートAI要約や音声アシスタント連携を有効化します</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="aiMasterEnabled" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
+
+              <div class="card-body">
+                <!-- AI ステータスバナー -->
+                <div id="aiStatusBanner" style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+                  <div style="display: flex; align-items: center; gap: 12px;">
+                    <span id="aiStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #6366f1; display: inline-block; box-shadow: 0 0 10px #6366f1;"></span>
+                    <div>
+                      <strong id="aiStatusTitle" style="font-size: 0.95rem; color: var(--text-color);">AI 連携機能: 状態確認中</strong>
+                      <div id="aiStatusSubtitle" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">API Key を設定すると、保留された大量の通知をAIが自動要約して1回で読み上げます</div>
+                    </div>
+                  </div>
+                  <span id="aiActiveProviderBadge" class="badge-tech" style="font-size: 0.8rem; padding: 4px 10px;">Gemini</span>
+                </div>
+
+                <!-- プロバイダ選択 -->
+                <div class="form-group">
+                  <label class="form-label" style="display: flex; align-items: center; gap: 6px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m10 15 5-3-5-3v6Z"/></svg>
+                    使用する AI プロバイダ
+                  </label>
+                  <div class="pill-radio-group" id="aiProviderGroup">
+                    <label class="pill-radio">
+                      <input type="radio" name="aiProvider" value="gemini" checked>
+                      <span>✨ Google Gemini (推奨・無料枠あり)</span>
+                    </label>
+                    <label class="pill-radio">
+                      <input type="radio" name="aiProvider" value="openai">
+                      <span>⚡ OpenAI (GPT-4o mini 等)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Google Gemini 設定カード -->
+                <div id="geminiConfigCard" class="card" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 16px; margin-bottom: 16px;">
+                  <div class="flex-between" style="align-items: center; margin-bottom: 12px;">
+                    <strong style="font-size: 0.92rem; display: flex; align-items: center; gap: 6px; color: #8ab4f8;">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                      Google Gemini API 設定
+                    </strong>
+                    <span id="geminiSourceBadge" class="badge-tech" style="font-size: 0.75rem;">未設定</span>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="inputGeminiApiKey" class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                      <span>Gemini API Key</span>
+                      <small style="color: var(--text-muted); font-weight: normal;">
+                        無料枠: Google AI Studio で即時発行可能
+                      </small>
+                    </label>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="password" id="inputGeminiApiKey" class="form-input" placeholder="AIzaSy... (API Key を入力)" autocomplete="off" style="flex: 1;">
+                      <button type="button" id="btnToggleGeminiKeyVisibility" class="btn btn-secondary" style="padding: 0 12px;" title="表示/非表示の切り替え">👁️</button>
+                    </div>
+                    <small class="help-text" style="margin-top: 6px; display: block;">
+                      💡 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color: #8ab4f8; text-decoration: underline;">Google AI Studio</a> から取得した API Key を入力してください。環境変数 <code>GEMINI_API_KEY</code> に指定することでも利用可能です。
+                    </small>
+                  </div>
+
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <div class="flex-between" style="align-items: center; margin-bottom: 6px;">
+                      <label for="selectGeminiModel" class="form-label" style="margin-bottom: 0;">使用モデル (最新順)</label>
+                      <button type="button" id="btnRefreshGeminiModels" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;" title="Google から利用可能な最新モデル一覧を動的取得">🔄 最新モデル再取得</button>
+                    </div>
+                    <select id="selectGeminiModel" class="form-select">
+                      <option value="gemini-3.8-flash" selected>gemini-3.8-flash (最新主力・高速・推奨)</option>
+                      <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (超高速・低遅延)</option>
+                      <option value="gemini-4-argon">gemini-4-argon (最高峰推論)</option>
+                      <option value="gemini-2.5-flash">gemini-2.5-flash (安定版)</option>
+                    </select>
+                    <div id="geminiModelAlert" style="display: none; margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5;"></div>
+                  </div>
+                </div>
+
+                <!-- OpenAI 設定カード -->
+                <div id="openaiConfigCard" class="card" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 16px; margin-bottom: 16px; display: none;">
+                  <div class="flex-between" style="align-items: center; margin-bottom: 12px;">
+                    <strong style="font-size: 0.92rem; display: flex; align-items: center; gap: 6px; color: #10b981;">
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                      OpenAI API 設定
+                    </strong>
+                    <span id="openaiSourceBadge" class="badge-tech" style="font-size: 0.75rem;">未設定</span>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="inputOpenAiApiKey" class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+                      <span>OpenAI API Key</span>
+                      <small style="color: var(--text-muted); font-weight: normal;">
+                        OpenAI Platform で発行
+                      </small>
+                    </label>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="password" id="inputOpenAiApiKey" class="form-input" placeholder="sk-... (API Key を入力)" autocomplete="off" style="flex: 1;">
+                      <button type="button" id="btnToggleOpenAiKeyVisibility" class="btn btn-secondary" style="padding: 0 12px;" title="表示/非表示の切り替え">👁️</button>
+                    </div>
+                    <small class="help-text" style="margin-top: 6px; display: block;">
+                      💡 <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" style="color: #10b981; text-decoration: underline;">OpenAI Platform</a> で発行した API Key を入力してください。環境変数 <code>OPENAI_API_KEY</code> に指定することでも利用可能です。
+                    </small>
+                  </div>
+
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <div class="flex-between" style="align-items: center; margin-bottom: 6px;">
+                      <label for="selectOpenAiModel" class="form-label" style="margin-bottom: 0;">使用モデル (最新順)</label>
+                      <button type="button" id="btnRefreshOpenAiModels" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;" title="OpenAI から利用可能な最新モデル一覧を動的取得">🔄 最新モデル再取得</button>
+                    </div>
+                    <select id="selectOpenAiModel" class="form-select">
+                      <option value="gpt-4o-mini" selected>gpt-4o-mini (高速・経済的・推奨)</option>
+                      <option value="gpt-4o">gpt-4o (最高性能フラグシップ)</option>
+                      <option value="o3-mini">o3-mini (高速推論)</option>
+                      <option value="o1">o1 (高度な推論)</option>
+                    </select>
+                    <div id="openaiModelAlert" style="display: none; margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5;"></div>
+                  </div>
+                </div>
+
+                <!-- DND要約オプション & プロンプトカスタマイズ -->
+                <div class="card" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 16px; margin-bottom: 16px;">
+                  <strong style="font-size: 0.92rem; display: block; margin-bottom: 12px; color: var(--text-color);">
+                    ⚙️ DND保留通知 AI要約の詳細動作
+                  </strong>
+                  <div class="form-group">
+                    <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text-color);">
+                      <input type="checkbox" id="aiSummarizeDndQueue" checked style="accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer;">
+                      <span>DND解除時に、保留キュー内の通知をAIで要約して読み上げる</span>
+                    </label>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="aiSummaryThresholdSelect" class="form-label">要約を発動する最小件数</label>
+                    <select id="aiSummaryThresholdSelect" class="form-select" style="max-width: 320px;">
+                      <option value="2">2件以上保留されているとき (推奨)</option>
+                      <option value="3">3件以上保留されているとき</option>
+                      <option value="5">5件以上保留されているとき</option>
+                    </select>
+                    <small class="help-text">
+                      💡 保留件数がこれ未満の場合は、要約を行わず通常の音声でそのまま1件ずつ再生します。
+                    </small>
+                  </div>
+
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label for="aiCustomPrompt" class="form-label">追加プロンプト指示（任意）</label>
+                    <input type="text" id="aiCustomPrompt" class="form-input" placeholder="例: 「親しみやすい敬語で要約して」「重要なお知らせを冒頭に伝えて」など">
+                    <small class="help-text">
+                      要約時の口調や重点的に伝えたい内容をAIに指示できます（基本指示であるスマートスピーカー音声読み上げ・文字数制限と矛盾する場合は基本指示が最優先されます）。
+                    </small>
+                  </div>
+                </div>
+
+                <!-- 朝の予定まとめ (デイリーサマリー) AI連携 -->
+                <div class="card" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+                  <strong style="font-size: 0.92rem; display: block; margin-bottom: 12px; color: var(--text-color);">
+                    📅 朝の予定まとめ (デイリーサマリー) AI連携
+                  </strong>
+                  <div class="form-group">
+                    <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text-color);">
+                      <input type="checkbox" id="aiSummarizeDailyCalendar" checked style="accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer;">
+                      <span>朝の定時アナウンス時に、本日の予定リストをAIで自然な文章にまとめて読み上げる</span>
+                    </label>
+                    <small class="help-text" style="margin-top: 4px; display: block;">
+                      💡 カレンダー連携の朝の予定まとめ放送において、機械的な箇条書きの代わりに「おはようございます！本日は○件の予定があります…今日も一日頑張りましょう！」と自然な挨拶付きで爽やかに要約します。
+                    </small>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="aiDailyCalendarPrompt" class="form-label">朝の予定まとめ 追加プロンプト指示（任意）</label>
+                    <input type="text" id="aiDailyCalendarPrompt" class="form-input" placeholder="例: 「明るく元気なトーンで」「今日の天気の話題を一言添えて」など">
+                    <small class="help-text">
+                      朝のアナウンスの雰囲気や追加したい一言メッセージを指示できます（音声読み上げや文字数制限等の基本指示と矛盾する場合は基本指示が最優先されます）。
+                    </small>
+                  </div>
+
+                  <div style="display: flex; gap: 10px;">
+                    <button type="button" id="btnTestAiCalendarSummary" class="btn btn-secondary btn-sm" style="padding: 6px 14px;">
+                      🎙️ 朝の予定まとめテスト試聴
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 操作ボタン群 -->
+                <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+                  <button type="button" id="btnSaveAiSettings" class="btn btn-primary" style="padding: 10px 24px;">
+                    💾 AI設定を保存
+                  </button>
+                  <button type="button" id="btnTestAiConnection" class="btn btn-secondary" style="padding: 10px 18px;">
+                    ⚡ API Key 接続テスト
+                  </button>
+                  <button type="button" id="btnTestAiSummarize" class="btn btn-secondary" style="padding: 10px 18px;">
+                    📢 要約テスト試聴
+                  </button>
+                </div>
+
+                <!-- テスト結果表示エリア -->
+                <div id="aiTestResultBox" style="display: none; margin-top: 16px; padding: 14px 16px; border-radius: 8px; font-size: 0.85rem; line-height: 1.6;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Webhook & Tunnel サブペイン -->
+        <div id="subtab-settings-webhook" class="sub-tab-pane">
+          <div class="card glass-card">
           <div class="card-header">
             <h2>Webhook & 外部連携ビルダー</h2>
             <span class="card-sub">複数スピーカーへの送信コマンド（cURL / JSON）をGUIで直感的に組み立ててコピーできます</span>
@@ -812,453 +1616,6 @@ Body:
               </div>
             </div>
 
-            <!-- 🏷️ 送信元 IP エイリアス登録カード -->
-            <div class="card glass-card" style="margin-top: 24px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.08);">
-              <div class="card-header flex-between" style="padding: 16px 20px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="font-size: 1.3rem;">🏷️</span>
-                  <div>
-                    <h3 style="font-size: 1rem; margin: 0;">送信元 IP エイリアス登録（宅内機器・Bot の名前付け）</h3>
-                    <span style="font-size: 0.78rem; color: var(--text-muted);">宅内のラズパイやマイコン、PCのIPアドレスに名前を付けておくと、発言履歴ログで「誰から届いたか」が自動表示されます</span>
-                  </div>
-                </div>
-              </div>
-              <div class="card-body" style="padding: 16px 20px;">
-                <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
-                  <input type="text" id="txtNewAliasIp" class="form-input" placeholder="IPアドレス (例: 192.168.1.50)" style="flex: 1; min-width: 160px;">
-                  <input type="text" id="txtNewAliasName" class="form-input" placeholder="表示名 (例: 給湯器監視ラズパイ)" style="flex: 1; min-width: 160px;">
-                  <button type="button" id="btnAddIpAlias" class="btn btn-primary btn-sm">追加 / 保存</button>
-                </div>
-                <div id="ipAliasesListContainer">
-                  <span class="loading-text">登録済みエイリアスなし</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 6. おやすみ・会議モード (DND) パネル -->
-      <section id="tab-dnd" class="tab-pane">
-        <div class="single-col-layout">
-          <!-- 1. 現在のステータス & ワンタップ即時ミュート -->
-          <div class="card glass-card">
-            <div class="card-header flex-between">
-              <div>
-                <h2>おやすみ・会議モード (DND)</h2>
-                <span class="card-sub">リモートワーク中のオンライン会議や就寝時など、スピーカーを鳴らしたくないタイミングを自動・手動で制御します</span>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="dndMasterEnabled" checked>
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <div class="card-body">
-              <!-- ステータスバナー -->
-              <div id="dndStatusBanner" class="dnd-status-banner" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                  <span id="dndStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #10b981; display: inline-block; box-shadow: 0 0 10px #10b981;"></span>
-                  <div>
-                    <strong id="dndStatusTitle" style="font-size: 1rem; color: var(--text-color);">現在は通常モードです</strong>
-                    <div id="dndStatusSubtitle" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;">通知やアナウンスは通常音量でスピーカーから再生されます</div>
-                  </div>
-                </div>
-                <div id="dndQueueBadge" style="display: none; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 500;">
-                  保留通知: <span id="dndQueueCount">0</span> 件
-                </div>
-              </div>
-
-              <!-- ワンタップ即時ミュートボタン群 -->
-              <div class="form-group">
-                <label class="form-label" style="display: flex; align-items: center; gap: 6px;">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  ワンタップ今すぐサイレント（急な会議や電話に）
-                </label>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="30">🔇 30分ミュート</button>
-                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="60">🔇 1時間ミュート</button>
-                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="120">🔇 2時間ミュート</button>
-                  <button type="button" class="btn btn-secondary btn-quick-dnd" data-minutes="today">🔇 本日中ミュート</button>
-                  <button type="button" id="btnCancelQuickDnd" class="btn btn-secondary" style="color: var(--text-muted); display: none;">▶️ サイレント解除</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 2. カレンダー予定連動サイレント -->
-          <div class="card glass-card">
-            <div class="card-header flex-between">
-              <div>
-                <h3>📅 カレンダー予定連動の自動サイレント</h3>
-                <span class="card-sub">Google カレンダーの予定が進行中（開始〜終了時刻）の間、自動でサイレントを発動します</span>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="dndCalendarEnabled">
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <div class="card-body">
-              <!-- 対象予定の絞り込みモード選択 -->
-              <div class="form-group">
-                <label class="form-label">対象にする予定の範囲</label>
-                <div style="display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap;">
-                  <label class="pill-radio dnd-radio-pill">
-                    <input type="radio" name="dndCalendarMode" value="keywords" checked>
-                    <span>キーワード一致のみ (会議・MTG等)</span>
-                  </label>
-                  <label class="pill-radio dnd-radio-pill">
-                    <input type="radio" name="dndCalendarMode" value="all">
-                    <span>すべての予定 (時間帯指定のある予定すべて)</span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- キーワード入力 (キーワードモード時) -->
-              <div id="dndCalendarKeywordsWrapper" class="form-group">
-                <label for="dndCalendarKeywords" class="form-label">対象キーワード (カンマ区切り)</label>
-                <input type="text" id="dndCalendarKeywords" class="form-input" placeholder="例: MTG, 会議, Zoom, Teams, Meet, 打ち合わせ, 商談, 集中">
-                <small class="help-text">
-                  💡 指定した単語が予定のタイトルや詳細に含まれている場合のみサイレントにします（大文字小文字不問）。
-                </small>
-              </div>
-
-              <!-- 終日予定を含むオプション -->
-              <div class="form-group" style="margin-top: 10px; margin-bottom: 16px;">
-                <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; color: var(--text-color); background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); padding: 8px 12px; border-radius: 8px;">
-                  <input type="checkbox" id="dndCalendarIncludeAllDay" style="accent-color: var(--primary); width: 16px; height: 16px; cursor: pointer;">
-                  <span>終日予定（誕生日・有給休暇・祝日・イベントなど）も含めて1日サイレントにする</span>
-                </label>
-                <small class="help-text" style="display: block; margin-top: 4px;">
-                  ※チェックを外している場合、時刻指定（例: 14:00〜15:00）のある会議・予定中のみサイレントになります（推奨）。
-                </small>
-              </div>
-
-              <!-- 現在進行中予定のリアルタイム検知表示 -->
-              <div id="dndActiveCalendarBox" style="background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.12); border-radius: 8px; padding: 12px; font-size: 0.85rem; color: var(--text-muted);">
-                現在進行中の会議・カレンダー予定はありません
-              </div>
-            </div>
-          </div>
-
-          <!-- 3. 定時スケジュールサイレント (曜日 & 時間帯) -->
-          <div class="card glass-card">
-            <div class="card-header flex-between">
-              <div>
-                <h3>⏰ 定時サイレント（曜日・時間帯指定）</h3>
-                <span class="card-sub">平日日中（在宅勤務時間）や深夜の就寝時間など、定期的に音を鳴らさない時間帯を設定できます</span>
-              </div>
-              <label class="switch">
-                <input type="checkbox" id="dndScheduleEnabled">
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <div class="card-body">
-              <div id="dndScheduleList" style="margin-bottom: 16px;">
-                <!-- JSで動的生成 -->
-              </div>
-
-              <!-- スケジュール追加ボタン & インラインフォーム -->
-              <button type="button" id="btnShowAddDndSched" class="btn btn-secondary" style="font-size: 0.85rem;">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                ＋ 定時サイレントルールを追加
-              </button>
-
-              <div id="addDndSchedInlineForm" style="display: none; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 16px; margin-top: 12px;">
-                <input type="hidden" id="editDndSchedId" value="">
-                <h4 id="dndSchedFormTitle" style="font-size: 0.95rem; margin-bottom: 12px;">新規定時ルール</h4>
-                <div class="form-group">
-                  <label for="newDndSchedName" class="form-label">ルール名</label>
-                  <input type="text" id="newDndSchedName" class="form-input" placeholder="例: 平日日中 (在宅勤務)">
-                </div>
-
-                <div class="form-group">
-                  <label class="form-label">適用する曜日</label>
-                  <div class="weekday-checkbox-group">
-                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="1" checked><span>月</span></label>
-                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="2" checked><span>火</span></label>
-                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="3" checked><span>水</span></label>
-                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="4" checked><span>木</span></label>
-                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="5" checked><span>金</span></label>
-                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="6"><span>土</span></label>
-                    <label class="weekday-chip"><input type="checkbox" name="newDndDay" value="0"><span>日</span></label>
-                  </div>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
-                  <div class="form-group">
-                    <label for="newDndStartTime" class="form-label">開始時刻</label>
-                    <input type="time" id="newDndStartTime" class="form-input" value="09:00">
-                  </div>
-                  <div class="form-group">
-                    <label for="newDndEndTime" class="form-label">終了時刻 (日跨ぎ可)</label>
-                    <input type="time" id="newDndEndTime" class="form-input" value="18:00">
-                  </div>
-                </div>
-
-                <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                  <button type="button" id="btnCancelAddDndSched" class="btn btn-secondary">キャンセル</button>
-                  <button type="button" id="btnAddDndSchedConfirm" class="btn btn-primary">ルールを保存</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 4. 静音時の動作 & 対象スピーカー設定フォーム -->
-          <div class="card glass-card">
-            <div class="card-header">
-              <h3>⚙️ 静音時の動作 ＆ 対象スピーカー設定</h3>
-              <span class="card-sub">サイレント発動時にどのように音声を抑制するか、および対象とする部屋・スピーカーを設定します</span>
-            </div>
-
-            <form id="dndSettingsForm" class="card-body">
-              <!-- アクション選択 -->
-              <div class="form-group">
-                <label class="form-label">サイレント発動時のアクション</label>
-                <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
-                  <label class="dnd-action-radio-box">
-                    <input type="radio" name="dndAction" value="skip" checked>
-                    <div class="dnd-action-radio-content">
-                      <strong style="display: block; font-size: 0.95rem; margin-bottom: 2px;">🔇 完全スキップ（推奨）</strong>
-                      <span style="font-size: 0.8rem; color: var(--text-muted);">スピーカーを一切鳴らさず、サイレント履歴ログに記録します</span>
-                    </div>
-                  </label>
-
-                  <label class="dnd-action-radio-box">
-                    <input type="radio" name="dndAction" value="whisper">
-                    <div class="dnd-action-radio-content">
-                      <strong style="display: block; font-size: 0.95rem; margin-bottom: 2px;">🤫 極小音量で再生（囁きアナウンス）</strong>
-                      <span style="font-size: 0.8rem; color: var(--text-muted);">ヘッドセット越しでも邪魔にならない極小音量（5〜20%）に絞って再生します</span>
-                    </div>
-                  </label>
-
-                  <label class="dnd-action-radio-box">
-                    <input type="radio" name="dndAction" value="queue">
-                    <div class="dnd-action-radio-content">
-                      <strong style="display: block; font-size: 0.95rem; margin-bottom: 2px;">📥 保留キューイング</strong>
-                      <span style="font-size: 0.8rem; color: var(--text-muted);">会議やおやすみモードが終了したタイミングで「保留されていた通知があります」とまとめて読み上げます</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <!-- 極小音量設定スライダー (whisper時のみ連動) ＆ 音量テストボタン -->
-              <div id="dndWhisperWrapper" class="form-group" style="margin-left: 10px; padding: 14px 16px; background: rgba(99, 102, 241, 0.06); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 10px; display: none;">
-                <label for="dndWhisperVolume" class="form-label" style="margin-bottom: 6px;">囁き音量: <span id="dndWhisperDisplay" style="color: var(--primary-light); font-weight: 600;">10%</span></label>
-                <div style="display: flex; align-items: center; gap: 12px; max-width: 500px;">
-                  <input type="range" id="dndWhisperVolume" min="3" max="30" step="1" value="10" class="form-range" style="flex: 1;">
-                  <button type="button" id="btnTestWhisperVolume" class="btn btn-secondary" style="font-size: 0.82rem; white-space: nowrap; padding: 6px 12px;">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                    🔊 音量テスト
-                  </button>
-                </div>
-                <small class="help-text" style="margin-top: 6px; display: block;">
-                  💡 「音量テスト」を押すと、設定中の音量でスピーカーからテスト音声を再生して聞こえ具合を確認できます。
-                </small>
-              </div>
-
-              <!-- 対象スピーカー範囲 -->
-              <div class="form-group" style="margin-top: 20px;">
-                <label class="form-label">サイレント対象スピーカー</label>
-                <div style="display: flex; gap: 16px; margin-bottom: 10px;">
-                  <label class="pill-radio">
-                    <input type="radio" name="dndTargetScope" value="all" checked>
-                    <span>すべてのスピーカーをミュート</span>
-                  </label>
-                  <label class="pill-radio">
-                    <input type="radio" name="dndTargetScope" value="specific">
-                    <span>特定のスピーカーのみミュート (書斎・仕事部屋など)</span>
-                  </label>
-                </div>
-
-                <!-- スピーカー個別チェックボックス -->
-                <div id="dndSpeakersWrapper" style="display: none; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px;">
-                  <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 8px;">ミュート対象にするスピーカーを選択してください:</span>
-                  <div id="dndSpeakersContainer" class="speaker-checkbox-grid">
-                    <!-- JSで動的生成 -->
-                  </div>
-                </div>
-              </div>
-
-              <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
-                <button type="submit" class="btn btn-primary">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                  DND 設定を保存
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- 5. サイレント履歴ログ (直近50件) -->
-          <div class="card glass-card">
-            <div class="card-header flex-between">
-              <div>
-                <h3>📜 サイレント履歴ログ (直近50件)</h3>
-                <span class="card-sub">会議中やおやすみモード中にスキップ・囁き・保留された通知の履歴です</span>
-              </div>
-              <button type="button" id="btnClearDndHistory" class="btn-text text-sub">履歴をクリア</button>
-            </div>
-            <div class="card-body">
-              <ul id="dndHistoryList" class="history-list">
-                <li class="empty-msg">サイレント履歴はまだありません</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 7. 拡張・システム設定パネル -->
-      <section id="tab-settings" class="tab-pane">
-        <div class="two-col-layout">
-          <!-- 左カラム: チャイム & 重複防止 & 自動音量 -->
-          <div class="col">
-            <!-- 1. 前置きチャイム音設定 -->
-            <div class="card glass-card">
-              <div class="card-header">
-                <h2>🔔 前置きチャイム音 (聞き逃し防止)</h2>
-                <span class="card-sub">発声の冒頭に心地よいチャイム音を自動挿入して再生します</span>
-              </div>
-              <div class="card-body">
-                <div class="form-group">
-                  <label for="settingDefaultChime" class="form-label">標準チャイム音</label>
-                  <div style="display: flex; gap: 8px; align-items: center;">
-                    <select id="settingDefaultChime" class="form-select" style="flex: 1;">
-                      <option value="dingdong">🔔 ピンポン (dingdong) - 標準・案内</option>
-                      <option value="bell">🎶 ベル (bell) - やさしいお知らせ</option>
-                      <option value="announce">📢 アナウンス (announce) - 明るい注意喚起</option>
-                      <option value="alert">⚠️ アラート (alert) - 重要通知・警告</option>
-                      <option value="none">チャイムなし (直接アナウンス)</option>
-                    </select>
-                    <button type="button" id="btnPreviewChime" class="btn btn-secondary" style="white-space: nowrap;">
-                      ▶ 試聴
-                    </button>
-                  </div>
-                </div>
-                <div style="font-size: 0.8rem; color: var(--text-muted);">
-                  ※ APIやWebhookから個別に <code>chime=alert</code> などを指定した場合は、そちらが優先されます。
-                </div>
-              </div>
-            </div>
-
-            <!-- 2. 重複通知の自動防止 -->
-            <div class="card glass-card" style="margin-top: 20px;">
-              <div class="card-header flex-between">
-                <div>
-                  <h2>🛡️ 重複通知の自動防止 (Deduplication)</h2>
-                  <span class="card-sub">IFTTTや外部トリガーの誤連打・ネットワーク再送による連呼を防ぎます</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="settingDedupeEnabled" checked>
-                  <span class="slider round"></span>
-                </label>
-              </div>
-              <div class="card-body">
-                <div class="form-group" style="margin-bottom: 8px;">
-                  <label for="settingDedupeCooldown" class="form-label">
-                    クールダウン時間 (秒)
-                  </label>
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <input type="number" id="settingDedupeCooldown" class="form-input" min="5" max="300" step="5" value="30" style="max-width: 120px;">
-                    <span style="font-size: 0.88rem; color: var(--text-color);">秒以内の同一送信元・同一文言を自動ブロック</span>
-                  </div>
-                </div>
-                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 8px;">
-                  💡 Web画面からの直接テスト発言は除外されるため、安心してテストできます。
-                </div>
-              </div>
-            </div>
-
-            <!-- 3. 時間帯別自動音量カーブ -->
-            <div class="card glass-card" style="margin-top: 20px;">
-              <div class="card-header flex-between">
-                <div>
-                  <h2>🌙 時間帯別自動音量カーブ (Auto Volume)</h2>
-                  <span class="card-sub">時刻に応じた最適な発言音量を自動で適用します (夜間・深夜の爆音防止)</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="settingAutoVolEnabled" checked>
-                  <span class="slider round"></span>
-                </label>
-              </div>
-              <div class="card-body">
-                <div class="form-group">
-                  <div class="flex-between">
-                    <label class="form-label">☀️ 日中帯 (07:00 〜 21:00)</label>
-                    <span id="labelAutoVolDay" style="font-weight: 600; font-size: 0.88rem; color: var(--primary-color);">50%</span>
-                  </div>
-                  <input type="range" id="rangeAutoVolDay" min="10" max="100" step="5" value="50" class="form-range">
-                </div>
-                <div class="form-group" style="margin-top: 14px;">
-                  <div class="flex-between">
-                    <label class="form-label">🌆 夜間帯 (21:00 〜 23:00)</label>
-                    <span id="labelAutoVolEvening" style="font-weight: 600; font-size: 0.88rem; color: #f59e0b;">25%</span>
-                  </div>
-                  <input type="range" id="rangeAutoVolEvening" min="5" max="80" step="5" value="25" class="form-range">
-                </div>
-                <div class="form-group" style="margin-top: 14px;">
-                  <div class="flex-between">
-                    <label class="form-label">🌃 深夜帯 (23:00 〜 07:00)</label>
-                    <span id="labelAutoVolNight" style="font-weight: 600; font-size: 0.88rem; color: #8b5cf6;">10%</span>
-                  </div>
-                  <input type="range" id="rangeAutoVolNight" min="5" max="50" step="5" value="10" class="form-range">
-                </div>
-                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 10px;">
-                  ※ APIや即時発言で個別に音量パーセントが指定されている場合は、個別指定が優先されます。
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 右カラム: カスタム部屋グループ & IPエイリアス -->
-          <div class="col">
-            <!-- 4. カスタム部屋グループ (ゾーン一括指定) -->
-            <div class="card glass-card">
-              <div class="card-header flex-between">
-                <div>
-                  <h2>🏠 カスタム部屋グループ (ゾーン指定)</h2>
-                  <span class="card-sub">「1F」「2F」「LDK」などを登録し、一言でまとめて鳴らせます</span>
-                </div>
-                <button type="button" id="btnOpenNewGroupModal" class="btn btn-primary btn-sm">＋ 新規グループ</button>
-              </div>
-              <div class="card-body">
-                <div id="deviceGroupsContainer" class="device-groups-list" style="display: flex; flex-direction: column; gap: 10px;">
-                  <!-- JS動的生成 -->
-                  <span class="text-sub">グループ設定を読み込み中...</span>
-                </div>
-                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 12px;">
-                  💡 WebhookやAPIで <code>devices: ["1F"]</code> や <code>device=LDK</code> と指定するだけで所属スピーカーが一括同時再生されます。
-                </div>
-              </div>
-            </div>
-
-            <!-- 5. クライアントIPエイリアス登録 -->
-            <div class="card glass-card" style="margin-top: 20px;">
-              <div class="card-header flex-between">
-                <div>
-                  <h2>🏷️ 送信元 IP エイリアス登録</h2>
-                  <span class="card-sub">送信元IPを「給湯器」「ラズパイ」などの分かりやすい名前に紐付けます</span>
-                </div>
-              </div>
-              <div class="card-body">
-                <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                  <input type="text" id="inputNewAliasIp" class="form-input" placeholder="IPアドレス (例: 192.168.1.50)" style="flex: 1;">
-                  <input type="text" id="inputNewAliasName" class="form-input" placeholder="表示名 (例: ラズパイ監視)" style="flex: 1;">
-                  <button type="button" id="btnAddIpAlias" class="btn btn-secondary" style="white-space: nowrap;">登録</button>
-                </div>
-                <div id="ipAliasesContainer" style="display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto;">
-                  <!-- JS動的生成 -->
-                  <span class="text-sub">エイリアスなし</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- 全設定保存ボタン -->
-            <div style="margin-top: 20px; text-align: right;">
-              <button type="button" id="btnSaveAllSettings" class="btn btn-primary" style="padding: 10px 24px; font-size: 0.95rem;">
-                💾 システム設定を保存
-              </button>
             </div>
           </div>
         </div>

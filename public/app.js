@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupCalendarHandlers();
     setupDndHandlers();
     setupSettingsHandlers();
+    setupAiHandlers();
     await loadServerStatus();
     await Promise.all([
       loadDevices(),
@@ -124,7 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
       loadDndStatus(),
       loadDndSettings(),
       loadDndHistory(),
-      loadSettings()
+      loadSettings(),
+      loadAiSettings()
     ]);
 
     // DND ステータスを定期ポーリング (15秒ごと)
@@ -180,13 +182,60 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // デバイスのカテゴリ優先度判定:
+  // 1: Group GH (Google Home グループ)
+  // 2: Group Alexa (Alexa グループ)
+  // 3: Group Homepod (HomePod グループ)
+  // 4: GH (単体 Google Home)
+  // 5: Alexa (単体 Alexa)
+  // 6: Homepod (単体 HomePod)
+  function getDeviceCategoryOrder(dev) {
+    const type = (dev.type || 'google').toLowerCase();
+    const name = (dev.name || '').toLowerCase();
+    const model = (dev.model || '').toLowerCase();
+    const ip = (dev.ip || '').toLowerCase();
+
+    const isGroup = !!dev.isGroup ||
+      ip.endsWith(':all') ||
+      model.includes('group') ||
+      model.includes('グループ') ||
+      name.includes('全室') ||
+      name.includes('グループ');
+
+    if (isGroup) {
+      if (type === 'google') return 1; // Group GH
+      if (type === 'alexa') return 2;  // Group Alexa
+      if (type === 'homepod') return 3;// Group HomePod
+      return 1;
+    } else {
+      if (type === 'google') return 4; // GH
+      if (type === 'alexa') return 5;  // Alexa
+      if (type === 'homepod') return 6;// HomePod
+      return 4;
+    }
+  }
+
+  function sortDevicesList(devices) {
+    const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || '';
+    return [...devices].sort((a, b) => {
+      const orderA = getDeviceCategoryOrder(a);
+      const orderB = getDeviceCategoryOrder(b);
+      if (orderA !== orderB) return orderA - orderB;
+      const isDefA = a.ip === defaultIp || a.isDefault;
+      const isDefB = b.ip === defaultIp || b.isDefault;
+      if (isDefA && !isDefB) return -1;
+      if (!isDefA && isDefB) return 1;
+      return (a.name || '').localeCompare(b.name || '', 'ja');
+    });
+  }
+
   // デバイス一覧
   async function loadDevices() {
     try {
       const res = await fetch('/api/devices');
       if (!res.ok) throw new Error('デバイス取得失敗');
       const data = await res.json();
-      state.devices = data.devices || [];
+      state.devices = sortDevicesList(data.devices || []);
 
       const initialSelected = state.serverInfo?.defaultDeviceIp
         ? [state.serverInfo.defaultDeviceIp]
@@ -285,6 +334,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     state.devices.forEach(dev => {
       const isChecked = selectedValues.includes(dev.ip) ? 'checked' : '';
+      const catOrder = getDeviceCategoryOrder(dev);
+      const isGroup = catOrder <= 3;
       const isDefault = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
@@ -295,12 +346,22 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isDefault) {
         badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">★</span>';
       }
-      if (isAlexa) {
-        badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
-      } else if (isHomePod) {
-        badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+      if (isGroup) {
+        if (isAlexa) {
+          badgeHtml += '<span class="speaker-chip-badge" style="background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-weight:600;">👥 Echo Group</span>';
+        } else if (isHomePod) {
+          badgeHtml += '<span class="speaker-chip-badge" style="background:rgba(236,72,153,0.2);color:#f472b6;border:1px solid rgba(236,72,153,0.4);font-weight:600;">👥 HomePod Group</span>';
+        } else {
+          badgeHtml += '<span class="speaker-chip-badge" style="background:rgba(66,133,244,0.2);color:#93c5fd;border:1px solid rgba(66,133,244,0.4);font-weight:600;">👥 Cast Group</span>';
+        }
       } else {
-        badgeHtml += '<span class="speaker-chip-badge google-badge">Google Home</span>';
+        if (isAlexa) {
+          badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
+        } else if (isHomePod) {
+          badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+        } else {
+          badgeHtml += '<span class="speaker-chip-badge google-badge">Google Home</span>';
+        }
       }
 
       html += `
@@ -490,9 +551,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let cardsHtml = '';
     state.devices.forEach(dev => {
       const isDef = dev.ip === defaultIp;
+      const catOrder = getDeviceCategoryOrder(dev);
+      const isGroup = catOrder <= 3;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
       const displayName = formatSpeakerDisplayName(dev.name);
+
+      let groupBadge = '';
+      if (isGroup) {
+        if (isAlexa) {
+          groupBadge = '<span class="device-tag alexa" style="background:rgba(16,185,129,0.22);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-size:0.7rem;padding:2px 6px;font-weight:600;">👥 Echo グループ</span>';
+        } else if (isHomePod) {
+          groupBadge = '<span class="device-tag homepod" style="background:rgba(236,72,153,0.22);color:#f472b6;border:1px solid rgba(236,72,153,0.4);font-size:0.7rem;padding:2px 6px;font-weight:600;">👥 HomePod グループ</span>';
+        } else {
+          groupBadge = '<span class="device-tag google" style="background:rgba(66,133,244,0.22);color:#93c5fd;border:1px solid rgba(66,133,244,0.4);font-size:0.7rem;padding:2px 6px;font-weight:600;">👥 Cast グループ</span>';
+        }
+      }
 
       cardsHtml += `
         <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : ''}">
@@ -502,9 +576,11 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">
               ${isDef ? '<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.7rem;padding:2px 6px;">★ 標準</span>' : ''}
-              ${!isAlexa && !isHomePod ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
-              ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
-              ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
+              ${isGroup ? groupBadge : `
+                ${!isAlexa && !isHomePod ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
+                ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
+                ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
+              `}
             </div>
           </div>
           <div class="device-card-info" style="margin-top:8px;">
@@ -591,20 +667,31 @@ document.addEventListener('DOMContentLoaded', () => {
       const sourceClass = `source-${item.source || 'api'}`;
       const sourceText = escapeHtml(item.sourceLabel || item.source || '不明');
 
+      // IPエイリアスの登録判定 (登録済みエイリアス名を取得)
+      const ipAliasName = (item.clientIp && state.ipAliases && state.ipAliases[item.clientIp]) ||
+                          (item.clientIp && state.settings?.ipAliases && state.settings.ipAliases[item.clientIp]) ||
+                          item.ipAlias ||
+                          '';
+
       // 送信元クライアント（From）バッジ: Discord, IFTTT, Slack等の独立表示
+      let effectiveClientName = item.clientName || '';
+      if (!effectiveClientName && ipAliasName) {
+        effectiveClientName = ipAliasName;
+      }
+
       let clientBadgeHtml = '';
-      if (item.clientName) {
+      if (effectiveClientName && effectiveClientName !== item.clientIp) {
         let icon = '🤖';
-        const cLower = item.clientName.toLowerCase();
+        const cLower = effectiveClientName.toLowerCase();
         if (cLower.includes('discord')) icon = '🎮';
         else if (cLower.includes('ifttt')) icon = '⚡';
         else if (cLower.includes('slack')) icon = '💬';
         else if (cLower.includes('line')) icon = '🟢';
         else if (cLower.includes('home assistant') || cLower.includes('ha')) icon = '🏠';
-        else if (item.clientName === 'Web UI') icon = '🖥️';
+        else if (effectiveClientName === 'Web UI') icon = '🖥️';
         else icon = '👤';
 
-        clientBadgeHtml = `<span class="history-from-badge" title="送信元クライアント: ${escapeHtml(item.clientName)}">${icon} From: <strong>${escapeHtml(item.clientName)}</strong></span>`;
+        clientBadgeHtml = `<span class="history-from-badge" title="送信元クライアント: ${escapeHtml(effectiveClientName)}">${icon} From: <strong>${escapeHtml(effectiveClientName)}</strong></span>`;
       }
 
       // ステータスバッジ
@@ -632,9 +719,23 @@ document.addEventListener('DOMContentLoaded', () => {
         : '';
 
       // 送信元IPタグ
-      const clientIpTag = item.clientIp
-        ? `<span class="history-ip-tag" title="送信元 IP: ${escapeHtml(item.clientIp)}">IP: ${escapeHtml(item.clientIp)}</span>`
-        : '';
+      // 【ユーザー要望】エイリアス登録済みの場合はLink(ボタン)化せず、通常の非リンクタグとして表示する！
+      // 未登録のIPのみエイリアス登録画面へのジャンプボタンとする。
+      let clientIpTag = '';
+      if (item.clientIp) {
+        const isAliased = !!ipAliasName || (effectiveClientName && effectiveClientName !== item.clientIp && effectiveClientName !== 'Web UI');
+        if (isAliased) {
+          // エイリアス登録済みの場合はリンク化しない (通常のテキストタグ)
+          const aliasTooltip = ipAliasName ? ` (エイリアス: ${escapeHtml(ipAliasName)})` : '';
+          clientIpTag = `<span class="history-ip-tag" title="送信元 IP: ${escapeHtml(item.clientIp)}${aliasTooltip}">IP: ${escapeHtml(item.clientIp)}</span>`;
+        } else {
+          // 未登録IPのみクリック可能な登録ボタン化
+          clientIpTag = `<button type="button" class="history-ip-tag btn-ip-alias-jump" data-ip="${escapeHtml(item.clientIp)}" title="未登録のIPです。クリックして「${escapeHtml(item.clientIp)}」の表示名エイリアスを登録">
+            <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 2px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            IP: ${escapeHtml(item.clientIp)}
+          </button>`;
+        }
+      }
 
       // 送信先スピーカー表示
       const targetsList = Array.isArray(item.targets) ? item.targets : (item.targets ? [item.targets] : ['デフォルト']);
@@ -692,6 +793,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     el.fullHistoryContainer.innerHTML = html;
+
+    // 未登録IPボタンのクリックリスナー (設定画面へ遷移＆IP自動セット)
+    el.fullHistoryContainer.querySelectorAll('.btn-ip-alias-jump').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ip = btn.getAttribute('data-ip');
+        if (!ip) return;
+
+        // 各種設定タブへ切り替え & 機能拡張サブタブを開く
+        document.getElementById('btnTabSettings')?.click();
+        document.getElementById('btnSubtabSettingsFeatures')?.click();
+
+        // エイリアス登録欄へ値をセットしてスクロール＆フォーカス
+        setTimeout(() => {
+          const inputIp = document.getElementById('inputNewAliasIp');
+          const inputName = document.getElementById('inputNewAliasName');
+          if (inputIp) {
+            inputIp.value = ip;
+            inputIp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          if (inputName) {
+            inputName.focus();
+          }
+        }, 150);
+
+        showToast(`IP「${ip}」のエイリアス登録欄を開きました`, 'info');
+      });
+    });
   }
 
   function renderHistoryList() {
@@ -700,7 +829,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ================= 3. イベントリスナー =================
   function setupEventListeners() {
-    // タブ切り替え
+    // メインタブ切り替え
     el.tabBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         el.tabBtns.forEach(b => b.classList.remove('active'));
@@ -715,19 +844,28 @@ document.addEventListener('DOMContentLoaded', () => {
           loadHistory();
         } else if (targetId === 'tab-settings') {
           loadSettings();
+          loadDndStatus();
+          loadTunnelStatus();
         }
       });
     });
 
-    // スケジュール・カレンダー サブタブ切り替え
-    el.subTabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        el.subTabBtns.forEach(b => b.classList.remove('active'));
-        el.subTabPanes.forEach(p => p.classList.remove('active'));
-
-        btn.classList.add('active');
-        const subtabId = btn.getAttribute('data-subtab');
-        document.getElementById(subtabId)?.classList.add('active');
+    // サブタブ切り替え (親タブ単位で独立して動作)
+    document.querySelectorAll('.sub-tab-nav').forEach(nav => {
+      const container = nav.closest('.tab-pane') || nav.parentElement;
+      const btns = nav.querySelectorAll('.sub-tab-btn');
+      btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          btns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const subtabId = btn.getAttribute('data-subtab');
+          if (container) {
+            container.querySelectorAll('.sub-tab-pane').forEach(p => p.classList.remove('active'));
+          }
+          if (subtabId) {
+            document.getElementById(subtabId)?.classList.add('active');
+          }
+        });
       });
     });
 
@@ -736,9 +874,20 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('btnTabHistory')?.click();
     });
 
-    // ヘッダーの DND チップクリックで DND タブへ移動
+    // ヘッダーの DND チップクリックで 設定 > DND サブタブへ移動
     document.getElementById('headerDndChip')?.addEventListener('click', () => {
-      document.getElementById('btnTabDnd')?.click();
+      document.getElementById('btnTabSettings')?.click();
+      document.getElementById('btnSubtabSettingsDnd')?.click();
+    });
+
+    // 互換性ハンドラー: 他の場所から旧ボタンIDが呼ばれた場合に対応
+    document.getElementById('btnTabDnd')?.addEventListener('click', () => {
+      document.getElementById('btnTabSettings')?.click();
+      document.getElementById('btnSubtabSettingsDnd')?.click();
+    });
+    document.getElementById('btnTabWebhook')?.addEventListener('click', () => {
+      document.getElementById('btnTabSettings')?.click();
+      document.getElementById('btnSubtabSettingsWebhook')?.click();
     });
 
     // クイックプリセットクリック
@@ -2577,7 +2726,9 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleBtn.classList.remove('is-muted');
         toggleIcon.textContent = '🔇';
         toggleText.textContent = 'ミュート';
-        toggleBtn.title = 'ワンタップで即時ミュート (60分間サイレント)';
+        const topDur = state.dndConfig?.topMuteDuration || '60';
+        const durLabel = (topDur === 'indefinite') ? '手動解除までずっと' : (topDur === '1440' ? '1日間' : (topDur === '120' ? '2時間' : (topDur === '30' ? '30分間' : '1時間')));
+        toggleBtn.title = `ワンタップで即時ミュート (${durLabel}サイレント)`;
       }
     }
 
@@ -2593,8 +2744,12 @@ document.addEventListener('DOMContentLoaded', () => {
         title.innerHTML = `🔇 サイレント発動中: <span style="color:#f87171;">${escapeHtml(s.reason || 'DNDアクティブ')}</span>`;
         let subText = `現在スピーカーは【${s.action === 'whisper' ? `囁き音量 (${s.whisperVolume || 10}%)` : s.action === 'queue' ? '保留キュー' : '完全スキップ'}】に設定されています。`;
         if (s.until) {
-          const uDate = new Date(s.until);
-          subText += ` 解除予定: ${uDate.toLocaleTimeString()}`;
+          if (s.until === 'indefinite') {
+            subText += ` 解除予定: 手動で解除するまでずっと (無期限)`;
+          } else {
+            const uDate = new Date(s.until);
+            subText += ` 解除予定: ${uDate.toLocaleTimeString()}`;
+          }
         }
         subtitle.textContent = subText;
         if (btnCancel) btnCancel.style.display = 'inline-block';
@@ -2703,6 +2858,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const spkWrapper = document.getElementById('dndSpeakersWrapper');
       if (spkWrapper) spkWrapper.style.display = (dnd.targetScope === 'specific') ? 'block' : 'none';
       renderDndSpeakers(dnd.targetDevices || []);
+
+      // Topメニューのミュートボタン動作
+      const topMuteDur = dnd.topMuteDuration || '60';
+      const topMuteRadio = document.querySelector(`input[name="dndTopMuteDuration"][value="${topMuteDur}"]`);
+      if (topMuteRadio) topMuteRadio.checked = true;
+
+      // 保留通知のAI自動要約
+      const aiSummaryCheck = document.getElementById('dndAiSummaryEnabled');
+      if (aiSummaryCheck) aiSummaryCheck.checked = dnd.aiSummaryEnabled !== false;
+      const aiSummaryThres = document.getElementById('dndAiSummaryThreshold');
+      if (aiSummaryThres) aiSummaryThres.value = String(dnd.aiSummaryThreshold || 2);
+
+      // AI要約ラッパーの表示制御 (action === 'queue' のときに表示)
+      const queueAiWrapper = document.getElementById('dndQueueAiWrapper');
+      if (queueAiWrapper) queueAiWrapper.style.display = (dnd.action === 'queue') ? 'block' : 'none';
+      updateDndAiBadge();
     } catch (e) {
       console.warn('DND設定取得失敗:', e);
     }
@@ -2887,7 +3058,10 @@ document.addEventListener('DOMContentLoaded', () => {
         action: document.querySelector('input[name="dndAction"]:checked')?.value || 'skip',
         whisperVolume: parseInt(document.getElementById('dndWhisperVolume')?.value || '10', 10),
         targetScope: document.querySelector('input[name="dndTargetScope"]:checked')?.value || 'all',
-        targetDevices: spk
+        targetDevices: spk,
+        topMuteDuration: document.querySelector('input[name="dndTopMuteDuration"]:checked')?.value || '60',
+        aiSummaryEnabled: document.getElementById('dndAiSummaryEnabled')?.checked !== false,
+        aiSummaryThreshold: parseInt(document.getElementById('dndAiSummaryThreshold')?.value || '2', 10)
       }
     };
 
@@ -2954,22 +3128,32 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', async () => {
         const val = btn.getAttribute('data-minutes');
         let minutes = 30;
+        let reason = '';
+        let label = '';
         if (val === 'today') {
           const now = new Date();
           const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
           minutes = Math.max(1, Math.round((endOfDay.getTime() - now.getTime()) / 60000));
+          reason = 'ワンタップ即時サイレント (本日中)';
+          label = '本日終了まで';
+        } else if (val === 'indefinite') {
+          minutes = -1;
+          reason = 'ワンタップ即時サイレント (手動解除までずっと)';
+          label = '手動解除までずっと';
         } else {
           minutes = parseInt(val, 10) || 30;
+          reason = `ワンタップ即時サイレント (${minutes}分)`;
+          label = `${minutes}分間`;
         }
 
         try {
           const res = await fetch('/api/dnd/quick', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ minutes, reason: `ワンタップ即時サイレント (${val === 'today' ? '本日中' : `${val}分`})` })
+            body: JSON.stringify({ minutes, reason })
           });
           if (!res.ok) throw new Error('設定失敗');
-          showToast(`【サイレント発動】${val === 'today' ? '本日終了まで' : `${minutes}分間`}ミュートを開始しました`, 'success');
+          showToast(`【サイレント発動】${label}ミュートを開始しました`, 'success');
           await loadDndStatus();
         } catch (e) {
           showToast('即時ミュート設定エラー: ' + e.message, 'error');
@@ -3007,19 +3191,70 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!res.ok) throw new Error('解除失敗');
           showToast('ミュートを解除し、通常モードに復帰しました', 'success');
         } else {
-          // ミュート実行 (60分)
+          // 設定された期間でミュート実行
+          const durationSetting = state.dndConfig?.topMuteDuration || '60';
+          let minutes = 60;
+          let label = '1時間';
+          if (durationSetting === 'indefinite') {
+            minutes = -1;
+            label = '手動解除までずっと';
+          } else {
+            minutes = parseInt(durationSetting, 10) || 60;
+            if (minutes === 30) label = '30分間';
+            else if (minutes === 60) label = '1時間';
+            else if (minutes === 120) label = '2時間';
+            else if (minutes === 1440) label = '1日間 (24時間)';
+            else label = `${minutes}分間`;
+          }
+
           const res = await fetch('/api/dnd/quick', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ minutes: 60, reason: '手動サイレント (ヘッダー即時ミュート)' })
+            body: JSON.stringify({
+              minutes,
+              reason: `手動サイレント (Topメニュー即時ミュート: ${label})`
+            })
           });
           if (!res.ok) throw new Error('設定失敗');
-          showToast('【サイレント発動】60分間のミュートを開始しました (再クリックで即時解除)', 'success');
+          showToast(`【サイレント発動】${label}ミュートを開始しました (再クリックで即時解除)`, 'success');
         }
         await loadDndStatus();
       } catch (e) {
         showToast('ミュート切り替えエラー: ' + e.message, 'error');
       }
+    });
+
+    // Topメニューミュート挙動ラジオ切り替え
+    document.querySelectorAll('input[name="dndTopMuteDuration"]').forEach(r => {
+      r.addEventListener('change', async (e) => {
+        await saveDndSettingsInternal();
+        const labelMap = {
+          '30': '30分 (30m)',
+          '60': '1時間 (1h)',
+          '120': '2時間 (2h)',
+          '1440': '1日 (1d)',
+          'indefinite': '手動で解除するまでずっと'
+        };
+        showToast(`Topメニューのミュート動作を「${labelMap[e.target.value] || e.target.value}」に更新しました`, 'success');
+        renderDndStatus();
+      });
+    });
+
+    // 保留AI要約トグル
+    document.getElementById('dndAiSummaryEnabled')?.addEventListener('change', async () => {
+      await saveDndSettingsInternal();
+      showToast('保留通知のAI要約設定を更新しました', 'success');
+    });
+
+    document.getElementById('dndAiSummaryThreshold')?.addEventListener('change', async () => {
+      await saveDndSettingsInternal();
+      showToast('AI要約の発動件数を更新しました', 'success');
+    });
+
+    // DNDタブからAI設定タブへのクイックリンク
+    document.getElementById('btnGoToAiTabFromDnd')?.addEventListener('click', () => {
+      document.getElementById('btnTabSettings')?.click();
+      document.getElementById('btnSubtabSettingsAi')?.click();
     });
 
     // 定時サイレント追加インラインフォーム開閉
@@ -3100,13 +3335,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
-    // アクションラジオ切り替え (囁き音量スライダー連動 & ハイライト)
+    // アクションラジオ切り替え (囁き音量スライダー連動 & 保留AI設定連動 & ハイライト)
     document.querySelectorAll('input[name="dndAction"]').forEach(radio => {
       radio.addEventListener('change', (e) => {
         updateDndActionRadioHighlight();
         const whisperWrapper = document.getElementById('dndWhisperWrapper');
         if (whisperWrapper) {
           whisperWrapper.style.display = (e.target.value === 'whisper') ? 'block' : 'none';
+        }
+        const queueAiWrapper = document.getElementById('dndQueueAiWrapper');
+        if (queueAiWrapper) {
+          queueAiWrapper.style.display = (e.target.value === 'queue') ? 'block' : 'none';
         }
       });
     });
@@ -3281,14 +3520,50 @@ document.addEventListener('DOMContentLoaded', () => {
       if (rangeNight) rangeNight.value = nightRule.volume;
       if (labelNight) labelNight.textContent = `${nightRule.volume}%`;
 
-      // 4. カスタム部屋グループの描画
+      // 4. 同調エンジン (Sync Engine)
+      const syncEngine = data.syncEngine || {};
+      const syncCheck = document.getElementById('settingSyncEnabled');
+      const syncPreferNative = document.getElementById('settingSyncPreferNative');
+      const syncDynamicAdjust = document.getElementById('settingSyncDynamicAdjust');
+      const rangeGoogleDelay = document.getElementById('rangeSyncGoogleDelay');
+      const labelGoogleDelay = document.getElementById('labelSyncGoogleDelay');
+      const rangeHomepodDelay = document.getElementById('rangeSyncHomepodDelay');
+      const labelHomepodDelay = document.getElementById('labelSyncHomepodDelay');
+
+      if (syncCheck) syncCheck.checked = syncEngine.enabled !== false;
+      if (syncPreferNative) syncPreferNative.checked = syncEngine.preferNativeGroups !== false;
+      if (syncDynamicAdjust) syncDynamicAdjust.checked = syncEngine.dynamicAutoAdjust !== false;
+
+      const gDelay = syncEngine.googleDelayMs !== undefined ? syncEngine.googleDelayMs : 1100;
+      const hpDelay = syncEngine.homepodDelayMs !== undefined ? syncEngine.homepodDelayMs : 650;
+
+      if (rangeGoogleDelay) rangeGoogleDelay.value = gDelay;
+      if (labelGoogleDelay) labelGoogleDelay.textContent = `${gDelay} ms`;
+      if (rangeHomepodDelay) rangeHomepodDelay.value = hpDelay;
+      if (labelHomepodDelay) labelHomepodDelay.textContent = `${hpDelay} ms`;
+
+      // RTT 統計表示
+      const stats = syncEngine.stats || {};
+      const statGoogle = document.getElementById('statGoogleRtt');
+      const statHp = document.getElementById('statHomepodRtt');
+      const statAlexa = document.getElementById('statAlexaRtt');
+      if (statGoogle) statGoogle.textContent = `${stats.googleAvgRttMs || 420}ms`;
+      if (statHp) statHp.textContent = `${stats.homepodAvgRttMs || 850}ms`;
+      if (statAlexa) statAlexa.textContent = `${stats.alexaAvgRttMs || 1600}ms`;
+
+      // 5. カスタム部屋グループの描画
       renderDeviceGroups();
 
-      // 5. IPエイリアスの描画
+      // 6. IPエイリアスの描画
       renderIpAliases();
 
       // 6. Webhookビルダーのマクロチップも再描画
       renderBuilderCustomGroupChips();
+
+      // 7. 履歴一覧がすでに描画されている場合、エイリアス設定でIPタグを更新 (エイリアス登録済みIPは非リンク化)
+      if (state.historyItems && state.historyItems.length > 0) {
+        renderFullHistory();
+      }
     } catch (e) {
       console.warn('システム設定読み込みエラー:', e.message);
     }
@@ -3372,8 +3647,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm(`IP「${ip}」のエイリアスを削除しますか？`)) return;
 
         delete state.ipAliases[ip];
+        if (state.settings && state.settings.ipAliases) {
+          delete state.settings.ipAliases[ip];
+        }
         await saveAllSettings({ silent: true });
         renderIpAliases();
+        if (state.historyItems && state.historyItems.length > 0) {
+          renderFullHistory();
+        }
         showToast('IP エイリアスを削除しました', 'success');
       });
     });
@@ -3391,6 +3672,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const volEvening = parseInt(document.getElementById('rangeAutoVolEvening')?.value || '25', 10);
       const volNight = parseInt(document.getElementById('rangeAutoVolNight')?.value || '10', 10);
 
+      // 同調エンジン (Sync Engine) の設定
+      const syncEnabled = document.getElementById('settingSyncEnabled')?.checked !== false;
+      const syncPreferNative = document.getElementById('settingSyncPreferNative')?.checked !== false;
+      const syncDynamicAdjust = document.getElementById('settingSyncDynamicAdjust')?.checked !== false;
+      const googleDelayMs = parseInt(document.getElementById('rangeSyncGoogleDelay')?.value || '1100', 10);
+      const homepodDelayMs = parseInt(document.getElementById('rangeSyncHomepodDelay')?.value || '650', 10);
+
       const payload = {
         chime,
         deduplication: {
@@ -3404,6 +3692,14 @@ document.addEventListener('DOMContentLoaded', () => {
             { id: 'evening', name: '夜間 (21:00〜23:00)', startTime: '21:00', endTime: '23:00', volume: volEvening },
             { id: 'night', name: '深夜 (23:00〜07:00)', startTime: '23:00', endTime: '07:00', volume: volNight }
           ]
+        },
+        syncEngine: {
+          enabled: syncEnabled,
+          preferNativeGroups: syncPreferNative,
+          dynamicAutoAdjust: syncDynamicAdjust,
+          alexaDelayMs: 0,
+          homepodDelayMs,
+          googleDelayMs
         },
         deviceGroups: state.deviceGroups || {},
         ipAliases: state.ipAliases || {}
@@ -3461,7 +3757,74 @@ document.addEventListener('DOMContentLoaded', () => {
       if (labelNight) labelNight.textContent = `${e.target.value}%`;
     });
 
-    // 3. 全設定保存ボタン
+    // 3. 同調遅延スライダー値のリアルタイム表示
+    const rangeGoogleDelay = document.getElementById('rangeSyncGoogleDelay');
+    const labelGoogleDelay = document.getElementById('labelSyncGoogleDelay');
+    const rangeHomepodDelay = document.getElementById('rangeSyncHomepodDelay');
+    const labelHomepodDelay = document.getElementById('labelSyncHomepodDelay');
+
+    rangeGoogleDelay?.addEventListener('input', (e) => {
+      if (labelGoogleDelay) labelGoogleDelay.textContent = `${e.target.value} ms`;
+    });
+    rangeHomepodDelay?.addEventListener('input', (e) => {
+      if (labelHomepodDelay) labelHomepodDelay.textContent = `${e.target.value} ms`;
+    });
+
+    // 4. 同調テスト再生ボタン
+    document.getElementById('btnSyncTestPlay')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnSyncTestPlay');
+      const originalHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> <span>同調テスト中...</span>';
+      showToast('同調テスト再生を実行中...（各スピーカーの実測RTTを学習中）', 'info');
+
+      try {
+        const res = await fetch('/api/settings/sync-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: 'ポーン♪ マルチスピーカー同調テストです。',
+            targets: ['ALL']
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '同調テストに失敗しました');
+
+        showToast('同調テスト再生が完了しました！', 'success');
+
+        // 最新の syncEngine 設定と RTT 統計を画面に即時反映
+        if (data.syncEngine) {
+          if (state.settings) state.settings.syncEngine = data.syncEngine;
+          const se = data.syncEngine;
+          const rangeG = document.getElementById('rangeSyncGoogleDelay');
+          const labelG = document.getElementById('labelSyncGoogleDelay');
+          const rangeHp = document.getElementById('rangeSyncHomepodDelay');
+          const labelHp = document.getElementById('labelSyncHomepodDelay');
+          if (rangeG && se.googleDelayMs !== undefined) {
+            rangeG.value = se.googleDelayMs;
+            if (labelG) labelG.textContent = `${se.googleDelayMs} ms`;
+          }
+          if (rangeHp && se.homepodDelayMs !== undefined) {
+            rangeHp.value = se.homepodDelayMs;
+            if (labelHp) labelHp.textContent = `${se.homepodDelayMs} ms`;
+          }
+          const st = se.stats || {};
+          const statG = document.getElementById('statGoogleRtt');
+          const statH = document.getElementById('statHomepodRtt');
+          const statA = document.getElementById('statAlexaRtt');
+          if (statG && st.googleAvgRttMs) statG.textContent = `${st.googleAvgRttMs}ms`;
+          if (statH && st.homepodAvgRttMs) statH.textContent = `${st.homepodAvgRttMs}ms`;
+          if (statA && st.alexaAvgRttMs) statA.textContent = `${st.alexaAvgRttMs}ms`;
+        }
+      } catch (err) {
+        showToast('同調テストエラー: ' + err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    });
+
+    // 5. 全設定保存ボタン
     document.getElementById('btnSaveAllSettings')?.addEventListener('click', async () => {
       await saveAllSettings();
     });
@@ -3480,8 +3843,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       state.ipAliases = state.ipAliases || {};
       state.ipAliases[ip] = name;
+      if (state.settings) {
+        state.settings.ipAliases = state.ipAliases;
+      }
       await saveAllSettings({ silent: true });
       renderIpAliases();
+      if (state.historyItems && state.historyItems.length > 0) {
+        renderFullHistory();
+      }
 
       if (inputIp) inputIp.value = '';
       if (inputName) inputName.value = '';
@@ -3551,6 +3920,554 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (groupModal) groupModal.style.display = 'none';
       showToast(`カスタムグループ「${name}」を保存しました`, 'success');
+    });
+  }
+
+  // ================= 9. AI 連携設定 (Google Gemini / OpenAI) =================
+  async function loadAiModels(provider = 'gemini', forceRefresh = false, keyOverride = null) {
+    const selectEl = document.getElementById(provider === 'gemini' ? 'selectGeminiModel' : 'selectOpenAiModel');
+    const alertEl = document.getElementById(provider === 'gemini' ? 'geminiModelAlert' : 'openaiModelAlert');
+    const refreshBtn = document.getElementById(provider === 'gemini' ? 'btnRefreshGeminiModels' : 'btnRefreshOpenAiModels');
+
+    if (!selectEl) return;
+
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = '🔄 取得中...';
+    }
+
+    try {
+      const apiKey = keyOverride || (provider === 'gemini'
+        ? document.getElementById('inputGeminiApiKey')?.value?.trim()
+        : document.getElementById('inputOpenAiApiKey')?.value?.trim());
+
+      const params = new URLSearchParams({ provider });
+      if (forceRefresh) params.set('forceRefresh', 'true');
+      if (apiKey) params.set('apiKey', apiKey);
+
+      const res = await fetch(`/api/ai/models?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const models = data.models || [];
+      const currentSelected = selectEl.value || data.currentModel || (provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-4o-mini');
+
+      selectEl.replaceChildren();
+
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.name || m.id;
+        if (m.id === currentSelected || m.id === data.currentModel) {
+          opt.selected = true;
+        }
+        selectEl.appendChild(opt);
+      });
+
+      // 以前の選択モデルが提供終了している場合のアラート表示
+      if (data.isCurrentModelEnded || data.notice) {
+        if (alertEl) {
+          alertEl.style.display = 'block';
+          alertEl.textContent = `⚠️ ${data.notice || `以前選択されていたモデルは終了したため、最新の「${data.currentModel}」に自動切り替えされました。`}`;
+        }
+        selectEl.value = data.currentModel;
+      } else {
+        if (alertEl) {
+          alertEl.style.display = 'none';
+          alertEl.textContent = '';
+        }
+      }
+    } catch (err) {
+      console.warn(`[AI] ${provider} モデル一覧取得エラー:`, err.message);
+    } finally {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = '🔄 最新モデル再取得';
+      }
+    }
+  }
+
+  async function loadAiSettings() {
+    try {
+      const [statusRes, settingsRes] = await Promise.all([
+        fetch('/api/ai/status'),
+        fetch('/api/settings')
+      ]);
+      if (!statusRes.ok) return;
+      const aiStatus = await statusRes.json();
+      state.aiStatus = aiStatus;
+      const settings = settingsRes.ok ? await settingsRes.json() : {};
+      const ai = settings.ai || {};
+
+      // マスター有効/無効
+      const masterCheck = document.getElementById('aiMasterEnabled');
+      if (masterCheck) masterCheck.checked = ai.enabled !== false;
+
+      // プロバイダ
+      const currentProvider = ai.provider || aiStatus.provider || 'gemini';
+      const providerRadio = document.querySelector(`input[name="aiProvider"][value="${currentProvider}"]`);
+      if (providerRadio) providerRadio.checked = true;
+
+      const geminiCard = document.getElementById('geminiConfigCard');
+      const openaiCard = document.getElementById('openaiConfigCard');
+      if (geminiCard) geminiCard.style.display = (currentProvider === 'gemini') ? 'block' : 'none';
+      if (openaiCard) openaiCard.style.display = (currentProvider === 'openai') ? 'block' : 'none';
+
+      // Gemini 設定
+      const geminiInput = document.getElementById('inputGeminiApiKey');
+      const geminiBadge = document.getElementById('geminiSourceBadge');
+      if (geminiInput) {
+        geminiInput.value = ai.geminiApiKey || '';
+        if (aiStatus.gemini?.source === 'env') {
+          geminiInput.placeholder = `環境変数 (.env) で設定中: ${aiStatus.gemini.keyMasked}`;
+        } else if (aiStatus.gemini?.keyMasked) {
+          geminiInput.placeholder = `保存済み: ${aiStatus.gemini.keyMasked}`;
+        } else {
+          geminiInput.placeholder = 'AIzaSy... (API Key を入力)';
+        }
+      }
+      if (geminiBadge) {
+        if (aiStatus.gemini?.source === 'env') {
+          geminiBadge.textContent = '環境変数 (.env)';
+          geminiBadge.style.color = '#10b981';
+        } else if (aiStatus.gemini?.source === 'settings') {
+          geminiBadge.textContent = '保存済み (Web設定)';
+          geminiBadge.style.color = '#60a5fa';
+        } else {
+          geminiBadge.textContent = '未設定';
+          geminiBadge.style.color = 'var(--text-muted)';
+        }
+      }
+
+      // OpenAI 設定
+      const openaiInput = document.getElementById('inputOpenAiApiKey');
+      const openaiBadge = document.getElementById('openaiSourceBadge');
+      if (openaiInput) {
+        openaiInput.value = ai.openaiApiKey || '';
+        if (aiStatus.openai?.source === 'env') {
+          openaiInput.placeholder = `環境変数 (.env) で設定中: ${aiStatus.openai.keyMasked}`;
+        } else if (aiStatus.openai?.keyMasked) {
+          openaiInput.placeholder = `保存済み: ${aiStatus.openai.keyMasked}`;
+        } else {
+          openaiInput.placeholder = 'sk-... (API Key を入力)';
+        }
+      }
+      if (openaiBadge) {
+        if (aiStatus.openai?.source === 'env') {
+          openaiBadge.textContent = '環境変数 (.env)';
+          openaiBadge.style.color = '#10b981';
+        } else if (aiStatus.openai?.source === 'settings') {
+          openaiBadge.textContent = '保存済み (Web設定)';
+          openaiBadge.style.color = '#60a5fa';
+        } else {
+          openaiBadge.textContent = '未設定';
+          openaiBadge.style.color = 'var(--text-muted)';
+        }
+      }
+
+      // モデル動的一覧の取得
+      await Promise.all([
+        loadAiModels('gemini'),
+        loadAiModels('openai')
+      ]);
+
+      const geminiModelSelect = document.getElementById('selectGeminiModel');
+      if (geminiModelSelect && ai.geminiModel) {
+        // もし退役モデルだった場合は loadAiModels 内で既に自己修復済み
+        if (Array.from(geminiModelSelect.options).some(o => o.value === ai.geminiModel)) {
+          geminiModelSelect.value = ai.geminiModel;
+        }
+      }
+
+      const openaiModelSelect = document.getElementById('selectOpenAiModel');
+      if (openaiModelSelect && ai.openaiModel) {
+        if (Array.from(openaiModelSelect.options).some(o => o.value === ai.openaiModel)) {
+          openaiModelSelect.value = ai.openaiModel;
+        }
+      }
+
+      // DND 保留要約オプション
+      const summarizeQueueCheck = document.getElementById('aiSummarizeDndQueue');
+      if (summarizeQueueCheck) summarizeQueueCheck.checked = ai.summarizeDndQueue !== false;
+
+      const thresholdSelect = document.getElementById('aiSummaryThresholdSelect');
+      if (thresholdSelect) thresholdSelect.value = String(ai.summaryThreshold || 2);
+
+      const customPromptInput = document.getElementById('aiCustomPrompt');
+      if (customPromptInput) customPromptInput.value = ai.customPrompt || '';
+
+      // 朝の予定まとめ (デイリーサマリー) AI連携
+      const summarizeCalendarCheck = document.getElementById('aiSummarizeDailyCalendar');
+      if (summarizeCalendarCheck) summarizeCalendarCheck.checked = ai.summarizeDailyCalendar !== false;
+
+      const dailyPromptInput = document.getElementById('aiDailyCalendarPrompt');
+      if (dailyPromptInput) dailyPromptInput.value = ai.dailyCalendarPrompt || '';
+
+      // バナー更新
+      renderAiBanner();
+      updateDndAiBadge();
+    } catch (e) {
+      console.warn('AI設定取得失敗:', e);
+    }
+  }
+
+  function renderAiBanner() {
+    const s = state.aiStatus || {};
+    const banner = document.getElementById('aiStatusBanner');
+    const dot = document.getElementById('aiStatusDot');
+    const title = document.getElementById('aiStatusTitle');
+    const subtitle = document.getElementById('aiStatusSubtitle');
+    const badge = document.getElementById('aiActiveProviderBadge');
+
+    const provider = s.provider || 'gemini';
+    const hasKey = (provider === 'gemini') ? s.gemini?.hasKey : s.openai?.hasKey;
+    const isMasterOn = s.enabled !== false;
+
+    if (badge) {
+      badge.textContent = provider === 'gemini' ? 'Google Gemini' : 'OpenAI';
+    }
+
+    if (!isMasterOn) {
+      if (dot) {
+        dot.style.background = '#94a3b8';
+        dot.style.boxShadow = 'none';
+      }
+      if (title) title.textContent = 'AI 連携機能: 無効';
+      if (subtitle) subtitle.textContent = 'スイッチをONにするとAIによるDND保留通知の要約が有効になります';
+      if (banner) {
+        banner.style.background = 'rgba(255, 255, 255, 0.03)';
+        banner.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+      }
+    } else if (hasKey) {
+      if (dot) {
+        dot.style.background = '#10b981';
+        dot.style.boxShadow = '0 0 10px #10b981';
+      }
+      if (title) title.textContent = `🟢 AI 連携機能: 稼働中 (${provider === 'gemini' ? 'Gemini' : 'OpenAI'})`;
+      if (subtitle) subtitle.textContent = 'API Key が正常に設定されています。DND解除時に複数通知を自動要約して1回で発話します。';
+      if (banner) {
+        banner.style.background = 'rgba(16, 185, 129, 0.1)';
+        banner.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+      }
+    } else {
+      if (dot) {
+        dot.style.background = '#f59e0b';
+        dot.style.boxShadow = '0 0 8px #f59e0b';
+      }
+      if (title) title.textContent = '🟡 AI 連携機能: API Key 未設定';
+      if (subtitle) subtitle.textContent = 'API Key を入力して保存するか、.my.env に設定すると自動要約が有効になります';
+      if (banner) {
+        banner.style.background = 'rgba(245, 158, 11, 0.1)';
+        banner.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+      }
+    }
+  }
+
+  function updateDndAiBadge() {
+    const s = state.aiStatus || {};
+    const badge = document.getElementById('dndAiBadgeStatus');
+    if (!badge) return;
+    const provider = s.provider || 'gemini';
+    const hasKey = (provider === 'gemini') ? s.gemini?.hasKey : s.openai?.hasKey;
+    if (s.enabled !== false && hasKey) {
+      badge.textContent = `AI要約利用可 (${provider === 'gemini' ? 'Gemini' : 'OpenAI'})`;
+      badge.style.color = '#10b981';
+      badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+    } else {
+      badge.textContent = 'API Key未設定 (個別読上)';
+      badge.style.color = 'var(--text-muted)';
+      badge.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+    }
+  }
+
+  function setupAiHandlers() {
+    // プロバイダラジオ切り替え
+    document.querySelectorAll('input[name="aiProvider"]').forEach(r => {
+      r.addEventListener('change', (e) => {
+        const geminiCard = document.getElementById('geminiConfigCard');
+        const openaiCard = document.getElementById('openaiConfigCard');
+        if (geminiCard) geminiCard.style.display = (e.target.value === 'gemini') ? 'block' : 'none';
+        if (openaiCard) openaiCard.style.display = (e.target.value === 'openai') ? 'block' : 'none';
+        if (state.aiStatus) state.aiStatus.provider = e.target.value;
+        renderAiBanner();
+        updateDndAiBadge();
+      });
+    });
+
+    // 最新モデル再取得ボタン
+    document.getElementById('btnRefreshGeminiModels')?.addEventListener('click', () => {
+      loadAiModels('gemini', true);
+    });
+
+    document.getElementById('btnRefreshOpenAiModels')?.addEventListener('click', () => {
+      loadAiModels('openai', true);
+    });
+
+    // キー可視性トグル
+    document.getElementById('btnToggleGeminiKeyVisibility')?.addEventListener('click', () => {
+      const inp = document.getElementById('inputGeminiApiKey');
+      if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      }
+    });
+
+    document.getElementById('btnToggleOpenAiKeyVisibility')?.addEventListener('click', () => {
+      const inp = document.getElementById('inputOpenAiApiKey');
+      if (inp) {
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+      }
+    });
+
+    // AI設定保存ボタン
+    document.getElementById('btnSaveAiSettings')?.addEventListener('click', async () => {
+      try {
+        const enabled = document.getElementById('aiMasterEnabled')?.checked !== false;
+        const provider = document.querySelector('input[name="aiProvider"]:checked')?.value || 'gemini';
+        const geminiApiKey = document.getElementById('inputGeminiApiKey')?.value?.trim() || '';
+        const selectGeminiModel = document.getElementById('selectGeminiModel')?.value || 'gemini-3.8-flash';
+        const openaiApiKey = document.getElementById('inputOpenAiApiKey')?.value?.trim() || '';
+        const selectOpenAiModel = document.getElementById('selectOpenAiModel')?.value || 'gpt-4o-mini';
+        const summarizeDndQueue = document.getElementById('aiSummarizeDndQueue')?.checked !== false;
+        const summaryThreshold = parseInt(document.getElementById('aiSummaryThresholdSelect')?.value || '2', 10);
+        const customPrompt = document.getElementById('aiCustomPrompt')?.value?.trim() || '';
+        const summarizeDailyCalendar = document.getElementById('aiSummarizeDailyCalendar')?.checked !== false;
+        const dailyCalendarPrompt = document.getElementById('aiDailyCalendarPrompt')?.value?.trim() || '';
+
+        const payload = {
+          ai: {
+            enabled,
+            provider,
+            geminiApiKey,
+            geminiModel: selectGeminiModel,
+            openaiApiKey,
+            openaiModel: selectOpenAiModel,
+            summarizeDndQueue,
+            summaryThreshold,
+            customPrompt,
+            summarizeDailyCalendar,
+            dailyCalendarPrompt
+          }
+        };
+
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error('保存失敗');
+        showToast('AI API Key および 連携設定を保存しました', 'success');
+        await loadAiSettings();
+        await loadDndSettings();
+      } catch (e) {
+        showToast('AI設定保存エラー: ' + e.message, 'error');
+      }
+    });
+
+    // マスター切り替え
+    document.getElementById('aiMasterEnabled')?.addEventListener('change', async (e) => {
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ai: { enabled: e.target.checked } })
+        });
+        if (!res.ok) throw new Error('更新失敗');
+        showToast(`AI連携を ${e.target.checked ? '有効化' : '無効化'} しました`, 'info');
+        await loadAiSettings();
+      } catch (err) {
+        showToast('設定更新エラー: ' + err.message, 'error');
+      }
+    });
+
+    // 接続テストボタン
+    document.getElementById('btnTestAiConnection')?.addEventListener('click', async () => {
+      const resultBox = document.getElementById('aiTestResultBox');
+      const provider = document.querySelector('input[name="aiProvider"]:checked')?.value || 'gemini';
+      const typedKey = (provider === 'gemini')
+        ? document.getElementById('inputGeminiApiKey')?.value?.trim()
+        : document.getElementById('inputOpenAiApiKey')?.value?.trim();
+      const model = (provider === 'gemini')
+        ? document.getElementById('selectGeminiModel')?.value
+        : document.getElementById('selectOpenAiModel')?.value;
+
+      if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.style.background = 'rgba(99, 102, 241, 0.08)';
+        resultBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+        resultBox.style.color = 'var(--text-color)';
+        resultBox.textContent = `⏳ ${provider === 'gemini' ? 'Google Gemini' : 'OpenAI'} API と通信中...`;
+      }
+
+      try {
+        const res = await fetch('/api/ai/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider,
+            apiKey: typedKey || undefined,
+            model
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          if (resultBox) {
+            resultBox.style.background = 'rgba(16, 185, 129, 0.12)';
+            resultBox.style.border = '1px solid rgba(16, 185, 129, 0.4)';
+            resultBox.style.color = '#34d399';
+            resultBox.replaceChildren();
+            const strong = document.createElement('strong');
+            strong.textContent = `✅ 接続成功！ (${data.provider === 'gemini' ? 'Gemini' : 'OpenAI'} / ${data.model})`;
+            resultBox.appendChild(strong);
+
+            if (data.notice) {
+              const noticeP = document.createElement('div');
+              noticeP.style.marginTop = '6px';
+              noticeP.style.color = '#fbbf24';
+              noticeP.style.fontWeight = '500';
+              noticeP.textContent = `⚠️ ${data.notice}`;
+              resultBox.appendChild(noticeP);
+            }
+
+            const p = document.createElement('div');
+            p.style.marginTop = '4px';
+            p.textContent = `AIからの応答: 「${data.reply}」`;
+            resultBox.appendChild(p);
+          }
+          showToast('API Key 接続テストに成功しました！', 'success');
+        } else {
+          if (resultBox) {
+            resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+            resultBox.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+            resultBox.style.color = '#f87171';
+            resultBox.replaceChildren();
+            const strong = document.createElement('strong');
+            strong.textContent = '❌ 接続失敗';
+            const p = document.createElement('div');
+            p.style.marginTop = '4px';
+            p.textContent = data.error || '通信エラーが発生しました';
+            resultBox.appendChild(strong);
+            resultBox.appendChild(p);
+          }
+          showToast('接続テストに失敗しました: ' + (data.error || '不明なエラー'), 'error');
+        }
+      } catch (e) {
+        if (resultBox) {
+          resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+          resultBox.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+          resultBox.style.color = '#f87171';
+          resultBox.textContent = `❌ エラー: ${e.message}`;
+        }
+        showToast('接続テスト失敗: ' + e.message, 'error');
+      }
+    });
+
+    // 朝の予定まとめテスト試聴ボタン
+    document.getElementById('btnTestAiCalendarSummary')?.addEventListener('click', async () => {
+      const resultBox = document.getElementById('aiTestResultBox');
+      const dailyPrompt = document.getElementById('aiDailyCalendarPrompt')?.value?.trim();
+
+      if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.style.background = 'rgba(99, 102, 241, 0.08)';
+        resultBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+        resultBox.style.color = 'var(--text-color)';
+        resultBox.textContent = '⏳ サンプル予定3件（朝会・レビュー・用事）をもとに朝のアナウンス文章をAI生成中...';
+      }
+
+      try {
+        const res = await fetch('/api/ai/calendar-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ promptHint: dailyPrompt })
+        });
+
+        const data = await res.json();
+        if (data.success && data.summary) {
+          if (resultBox) {
+            resultBox.style.background = 'rgba(59, 130, 246, 0.1)';
+            resultBox.style.border = '1px solid rgba(59, 130, 246, 0.3)';
+            resultBox.style.color = '#93c5fd';
+            resultBox.replaceChildren();
+            const strong = document.createElement('strong');
+            strong.textContent = '🎙️ 朝の予定まとめ AIアナウンス生成結果 (音声をプレビュー中):';
+            const p = document.createElement('div');
+            p.style.marginTop = '4px';
+            p.textContent = data.summary;
+            resultBox.appendChild(strong);
+            resultBox.appendChild(p);
+          }
+          // プレビュー再生
+          const audio = new Audio(`/api/preview?text=${encodeURIComponent(data.summary)}`);
+          audio.play().catch(err => console.warn('オーディオ再生ブロック:', err));
+          showToast('朝の予定まとめテスト音声をブラウザで再生開始しました', 'success');
+        } else {
+          throw new Error(data.error || '予定まとめの生成に失敗しました');
+        }
+      } catch (err) {
+        if (resultBox) {
+          resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+          resultBox.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+          resultBox.style.color = '#f87171';
+          resultBox.textContent = `❌ 朝の予定まとめテスト失敗: ${err.message}`;
+        }
+        showToast('朝の予定まとめテストエラー: ' + err.message, 'error');
+      }
+    });
+
+    // 要約テスト試聴ボタン
+    document.getElementById('btnTestAiSummarize')?.addEventListener('click', async () => {
+      const resultBox = document.getElementById('aiTestResultBox');
+      const customPrompt = document.getElementById('aiCustomPrompt')?.value?.trim();
+
+      if (resultBox) {
+        resultBox.style.display = 'block';
+        resultBox.style.background = 'rgba(99, 102, 241, 0.08)';
+        resultBox.style.border = '1px solid rgba(99, 102, 241, 0.3)';
+        resultBox.style.color = 'var(--text-color)';
+        resultBox.textContent = '⏳ サンプル通知3件（宅配便・給湯器・室温）をAI要約中...';
+      }
+
+      try {
+        const res = await fetch('/api/ai/summarize-test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ promptHint: customPrompt })
+        });
+
+        const data = await res.json();
+        if (data.success && data.summary) {
+          const speechText = `会議・おやすみモードが終了しました。保留されていた 3 件の通知をAIが要約してお知らせします。${data.summary}`;
+          if (resultBox) {
+            resultBox.style.background = 'rgba(59, 130, 246, 0.1)';
+            resultBox.style.border = '1px solid rgba(59, 130, 246, 0.3)';
+            resultBox.style.color = '#93c5fd';
+            resultBox.replaceChildren();
+            const strong = document.createElement('strong');
+            strong.textContent = '📢 AI要約テスト結果 (プレビュー音声を再生中):';
+            const p = document.createElement('div');
+            p.style.marginTop = '4px';
+            p.textContent = speechText;
+            resultBox.appendChild(strong);
+            resultBox.appendChild(p);
+          }
+          // プレビュー再生
+          const audio = new Audio(`/api/preview?text=${encodeURIComponent(speechText)}`);
+          audio.play().catch(err => console.warn('オーディオ再生ブロック:', err));
+          showToast('要約テスト音声をブラウザで再生開始しました', 'success');
+        } else {
+          throw new Error(data.error || '要約の生成に失敗しました');
+        }
+      } catch (err) {
+        if (resultBox) {
+          resultBox.style.background = 'rgba(239, 68, 68, 0.12)';
+          resultBox.style.border = '1px solid rgba(239, 68, 68, 0.4)';
+          resultBox.style.color = '#f87171';
+          resultBox.textContent = `❌ 要約テスト失敗: ${err.message}`;
+        }
+        showToast('要約テストエラー: ' + err.message, 'error');
+      }
     });
   }
 

@@ -48,6 +48,41 @@ class DeviceManager {
     return settingsManager.setDefaultDeviceId(id);
   }
 
+  /**
+   * デバイスのカテゴリ優先順位を取得:
+   * 1: Group GH (Google Home グループ)
+   * 2: Group Alexa (Alexa グループ)
+   * 3: Group Homepod (HomePod グループ)
+   * 4: GH (単体 Google Home)
+   * 5: Alexa (単体 Alexa)
+   * 6: Homepod (単体 HomePod)
+   */
+  getDeviceCategoryOrder(dev) {
+    const type = (dev.type || 'google').toLowerCase();
+    const name = (dev.name || '').toLowerCase();
+    const model = (dev.model || '').toLowerCase();
+    const ip = (dev.ip || '').toLowerCase();
+
+    const isGroup = !!dev.isGroup ||
+      ip.endsWith(':all') ||
+      model.includes('group') ||
+      model.includes('グループ') ||
+      name.includes('全室') ||
+      name.includes('グループ');
+
+    if (isGroup) {
+      if (type === 'google') return 1; // Group GH
+      if (type === 'alexa') return 2;  // Group Alexa
+      if (type === 'homepod') return 3;// Group HomePod
+      return 1;
+    } else {
+      if (type === 'google') return 4; // GH
+      if (type === 'alexa') return 5;  // Alexa
+      if (type === 'homepod') return 6;// HomePod
+      return 4;
+    }
+  }
+
   async getDevices() {
     const defaultIp = this.getDefaultDeviceIp();
     const result = Array.from(this.devices.values()).map(dev => ({
@@ -72,6 +107,16 @@ class DeviceManager {
     } catch (e) {
       console.warn('HomePod デバイス一覧取得エラー:', e.message);
     }
+
+    // 順序付け: Group GH -> Group Alexa -> Group Homepod -> GH -> Alexa -> Homepod
+    result.sort((a, b) => {
+      const orderA = this.getDeviceCategoryOrder(a);
+      const orderB = this.getDeviceCategoryOrder(b);
+      if (orderA !== orderB) return orderA - orderB;
+      if (a.isDefault && !b.isDefault) return -1;
+      if (!a.isDefault && b.isDefault) return 1;
+      return (a.name || '').localeCompare(b.name || '', 'ja');
+    });
 
     return result;
   }
@@ -108,20 +153,39 @@ class DeviceManager {
       };
     }
 
-    // IP完全一致
+    // IP完全一致 または host:port 一致
     if (this.devices.has(normalized)) {
       return this.devices.get(normalized);
     }
 
-    // 名前やIDでの検索
+    const normLower = normalized.toLowerCase();
+
+    // 1. 完全一致 (グループを優先)
     for (const dev of this.devices.values()) {
-      if (dev.name === normalized || dev.id === normalized || dev.name.includes(normalized)) {
+      if (dev.isGroup && (dev.name.toLowerCase() === normLower || dev.ip === normalized || dev.id === normalized)) {
+        return dev;
+      }
+    }
+    for (const dev of this.devices.values()) {
+      if (!dev.isGroup && (dev.name.toLowerCase() === normLower || dev.ip === normalized || dev.id === normalized)) {
+        return dev;
+      }
+    }
+
+    // 2. 部分一致 (グループ優先)
+    for (const dev of this.devices.values()) {
+      if (dev.isGroup && (dev.name.toLowerCase().includes(normLower) || normLower.includes(dev.name.toLowerCase()))) {
+        return dev;
+      }
+    }
+    for (const dev of this.devices.values()) {
+      if (!dev.isGroup && dev.name.toLowerCase().includes(normLower)) {
         return dev;
       }
     }
 
     // IPアドレス形式なら一時デバイスとして返す
-    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(normalized)) {
+    if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(normalized)) {
       return { id: normalized, name: normalized, ip: normalized, model: 'Custom IP', type: 'google' };
     }
 
@@ -129,7 +193,7 @@ class DeviceManager {
   }
 
   /**
-   * avahi-browse を利用して LAN 内の新規 Google Cast デバイスを動的追加
+   * avahi-browse を利用して LAN 内の新規 Google Cast デバイスおよび Cast グループを動的追加
    */
   scanDevices() {
     exec('avahi-browse -r -t -p _googlecast._tcp', (err, stdout) => {
@@ -140,6 +204,7 @@ class DeviceManager {
         const parts = line.split(';');
         if (parts[0] === '=' && parts[2] === 'IPv4' && parts[7]) {
           const ip = parts[7];
+          const port = parseInt(parts[8], 10) || 8009;
           const txtRaw = parts[9] || '';
           let name = `Cast-${ip}`;
           let model = 'Google Cast';
@@ -157,23 +222,40 @@ class DeviceManager {
             model = decodeAvahiString(mdMatch[1]);
           }
 
-          if (this.devices.has(ip)) {
+          const isGroup = model === 'Google Cast Group' || (parts[3] && parts[3].startsWith('Google-Cast-Group'));
+          const key = isGroup ? `group_${ip}_${port}` : ip;
+          const formattedIp = isGroup ? `${ip}:${port}` : ip;
+
+          if (this.devices.has(key)) {
             // 既に存在していても Friendly Name が取れていれば更新
-            const existing = this.devices.get(ip);
+            const existing = this.devices.get(key);
             if (fnMatch) existing.name = name;
+            existing.port = port;
+            existing.isGroup = isGroup;
             continue;
           }
 
-          this.devices.set(ip, {
-            id: `dev_${ip.replace(/\./g, '_')}`,
+          this.devices.set(key, {
+            id: isGroup ? `group_${port}_${ip.replace(/\./g, '_')}` : `dev_${ip.replace(/\./g, '_')}`,
             name,
-            ip,
+            ip: formattedIp,
+            host: ip,
+            port,
             model,
+            isGroup,
             type: 'google'
           });
         }
       }
     });
+  }
+
+  getGoogleGroups() {
+    return Array.from(this.devices.values()).filter(d => d.type === 'google' && d.isGroup);
+  }
+
+  getIndividualGoogleDevices() {
+    return Array.from(this.devices.values()).filter(d => d.type === 'google' && !d.isGroup);
   }
 }
 
