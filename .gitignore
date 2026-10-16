@@ -29,6 +29,14 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+venv/
+.venv/
+
 # Logs and scratch backups
 *.log
 npm-debug.log*
@@ -37,3 +45,4 @@ yarn-error.log*
 *.bak
 *.patch
 test_*.mp3
+
