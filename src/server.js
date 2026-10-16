@@ -448,7 +448,11 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
 
   // 音量レベルの決定 (未指定の場合は時間帯別自動音量カーブを適用)
   let effectiveVolumeLevel = options.volumeLevel;
-  if (effectiveVolumeLevel === undefined) {
+  if (typeof effectiveVolumeLevel === 'string') effectiveVolumeLevel = parseFloat(effectiveVolumeLevel);
+  if (typeof effectiveVolumeLevel === 'number' && !isNaN(effectiveVolumeLevel)) {
+    if (effectiveVolumeLevel > 1.0) effectiveVolumeLevel = effectiveVolumeLevel / 100;
+    effectiveVolumeLevel = Math.max(0.01, Math.min(1.0, effectiveVolumeLevel));
+  } else if (effectiveVolumeLevel === undefined || effectiveVolumeLevel === null) {
     const autoVol = getAutoVolumeLevel();
     if (autoVol !== null) {
       effectiveVolumeLevel = autoVol;
@@ -517,9 +521,9 @@ async function speakToMultipleDevices(text, targetList = [], options = {}) {
   if (onvifDevices.length > 0 && sharedSpeech) {
     for (const dev of onvifDevices) {
       dispatchPromises.push((async () => {
-        console.log(`[Speak] ONVIF 送信先: ${dev.name} (${dev.ip})`);
+        console.log(`[Speak] ONVIF 送信先: ${dev.name} (${dev.ip})${effectiveVolumeLevel !== undefined ? ` [音量: ${Math.round(effectiveVolumeLevel * 100)}%]` : ''}`);
         try {
-          const res = await onvifManager.playAudio(dev, sharedSpeech.filepath, sharedSpeech.duration);
+          const res = await onvifManager.playAudio(dev, sharedSpeech.filepath, sharedSpeech.duration, effectiveVolumeLevel);
           return { device: dev.name, ip: dev.ip, type: 'onvif', status: 'success', result: res };
         } catch (err) {
           return { device: dev.name, ip: dev.ip, type: 'onvif', status: 'error', error: err.message };
@@ -1055,13 +1059,13 @@ app.post('/api/onvif/register', async (req, res) => {
 // ONVIF カメラスピーカーテスト発話 API
 app.post('/api/onvif/test', async (req, res) => {
   try {
-    const { ip, name, username, password, rtspUrl } = req.body || {};
+    const { ip, name, username, password, rtspUrl, volumeLevel } = req.body || {};
     const dev = { ip, name: name || 'ONVIF Camera', username, password, rtspUrl };
     const speech = await ttsManager.generateSpeech('ポーン♪ ONVIFカメラスピーカーのテスト放送です。', {
       voice: 'ja-JP-NanamiNeural',
       chime: 'dingdong'
     });
-    const result = await onvifManager.playAudio(dev, speech.filepath, speech.duration);
+    const result = await onvifManager.playAudio(dev, speech.filepath, speech.duration, volumeLevel || 1.0);
     res.json({ success: true, result });
   } catch (err) {
     console.error('[ONVIF Test Error]:', err.message);

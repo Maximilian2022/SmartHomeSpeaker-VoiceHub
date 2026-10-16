@@ -1,6 +1,6 @@
 # Smart Home Speaker Voice Hub 🎙️
 
-Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod を統合し、自然な日本語音声（Microsoft Edge TTS）でアナウンスできるスマートスピーカー音声ハブです。
+Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod に加え、**ONVIF ネットワークカメラ（双方向音声スピーカー）** および **DLNA / UPnP ネットワークオーディオ（MediaRenderer）** を統合し、自然な日本語音声（Microsoft Edge TTS）でアナウンスできるスマートスピーカー音声ハブです。
 
 Webブラウザからの直感的な即時発言、定期スケジュール放送、Googleカレンダー予定の自動読み上げ、Webhook（外部API・IFTTT等）経由の発言に対応しています。
 
@@ -15,8 +15,13 @@ Webブラウザからの直感的な即時発言、定期スケジュール放�
 ## ✨ 主な機能
 
 - **高品質な音声合成**: Edge TTSで自然な日本語音声（女性・男性の複数話者）を利用可能。
-- **マルチスピーカー対応**: 宅内の Google Home / Nest、Amazon Echo、Apple HomePod を自動検出し、個別または一括で発言。
-- **Web GUI**: 即時発言、ブラウザ試聴プレビュー、送信先スピーカーの選択。
+- **5大プラットフォーム対応マルチスピーカー**:
+  - **Google Home / Nest**: Google Cast (castv2) によるキャスト再生。グループスピーカー対応。
+  - **Amazon Alexa (Echo)**: 宅内 Echo デバイスへのアナウンス発話。
+  - **Apple HomePod**: AirPlay 2 / RAOP 経由での高音質ストリーミング再生。
+  - **ONVIF ネットワークカメラ**: Reolink や Tapo 等の防犯カメラのスピーカー（Two-Way Audio / Profile T）へのアナウンス発話。
+  - **DLNA / UPnP スピーカー**: Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、foobar2000 等の DLNA MediaRenderer へのストリーミング再生。
+- **Web GUI**: 即時発言、ブラウザ試聴プレビュー、送信先スピーカーの選択、マクロ一括選択。
 - **発言履歴ログ (過去100件)**: Web UI、定期スケジュール、カレンダー連携、外部API/Webhookからの全発話履歴をリアルタイム自動記録。送信元バッジ（色分け）、ステータス、再発言・試聴・テキストコピー機能。
 - **スケジュール・カレンダー統合管理**:
   - 定期アナウンス（毎朝の挨拶、ゴミ出しリマインダーなど）の登録・編集・管理。
@@ -179,6 +184,29 @@ Web GUI の「デバイス一覧」タブにある「Amazon ログインを開�
 
 ---
 
+## 📷 ONVIF ネットワークカメラ連携 (Two-Way Audio / Profile T)
+
+宅内の ONVIF Profile T 対応防犯カメラ（Reolink E1 Pro、TP-Link Tapo など）の内蔵スピーカーへ、アナウンス音声を送信できます。
+
+1. Web GUI の「ONVIF / DLNA」タブを開きます。
+2. カメラ共通の「デフォルト ONVIF ユーザー名」「パスワード」を入力して保存します。
+3. **「＋ デバイスをスキャン」** をクリックすると、WS-Discovery（UDP 3702）により宅内のカメラが自動検出されます。
+4. Profile T（双方向音声）対応のカメラを「＋ 連携登録」することで、即時発話や Webhook から `CAM:ALL` やカメラ名・IP を指定して発声できるようになります。
+5. 音声は `go2rtc` 経由で RTSP バックチャンネル（PCMU コーデック）へプッシュされ、FFmpeg による動的音量ゲイン調整キャッシュファイルが自動適用されます。
+
+---
+
+## 🎵 DLNA / UPnP ネットワークオーディオ連携 (AVTransport)
+
+Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、あるいは PC 上の DLNA レンダラー（foobar2000 + UPnP等）と連携し、高音質なストリーミング再生が可能です。
+
+1. Web GUI の「ONVIF / DLNA」タブで **「＋ デバイスをスキャン」** を実行します。
+2. SSDP（UDP 1900, `MediaRenderer:1`）により、宅内の DLNA レンダラーが ONVIF カメラと一緒に一覧へ自動検出されます。
+3. DLNA デバイスは認証情報（ID/パスワード）が不要なため、名前を確認してそのまま「＋ 連携登録」をクリックするだけで即座に利用可能になります。
+4. 発話時は UPnP 標準プロトコル（SOAP `AVTransport:SetAVTransportURI` および `Play`）により、Voice Hub がホストする MP3 音声がダイレクトに再生されます。`RenderingControl:SetVolume` による音量制御にも対応しています。
+
+---
+
 ## 📜 ライセンス & クレジット
 
 本プロジェクトは **MIT License** の下で公開されています。
@@ -191,3 +219,4 @@ Web GUI の「デバイス一覧」タブにある「Amazon ログインを開�
 - **[castv2-client](https://github.com/thibauts/node-castv2-client)** - Google Cast (Chromecast) 通信プロトコル実装
 - **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** / **[alexa-cookie2](https://github.com/Apollon77/alexa-cookie)** - Amazon Echo 制御および認証連携
 - **[pyatv](https://github.com/postlund/pyatv)** - Apple HomePod AirPlay2 ストリーミング
+- **[go2rtc](https://github.com/AlexxIT/go2rtc)** - ONVIF Profile T 双方向音声バックチャンネルストリーミング

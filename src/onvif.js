@@ -4,6 +4,7 @@ const https = require('https');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const { execFile } = require('child_process');
 const settingsManager = require('./settings');
 
 const WS_DISCOVERY_PROBE = `<?xml version="1.0" encoding="utf-8"?>
@@ -337,12 +338,70 @@ class OnvifManager {
   }
 
   /**
+   * 音声ファイルの音量を ffmpeg で調整したキャッシュファイルを生成または取得
+   * @param {string} sourcePathOrUrl 元のファイルパスまたはURL
+   * @param {number} volumeLevel 0.0〜1.0 (例: 0.5)
+   * @returns {Promise<string>} 調整後のHTTP URL
+   */
+  async _adjustAudioVolume(sourcePathOrUrl, volumeLevel) {
+    const VOICE_DIR = path.resolve(__dirname, '../public/voice');
+    let filename = '';
+
+    if (sourcePathOrUrl.startsWith('http://') || sourcePathOrUrl.startsWith('https://')) {
+      try {
+        const u = new URL(sourcePathOrUrl);
+        filename = path.basename(u.pathname);
+      } catch (e) {
+        filename = path.basename(sourcePathOrUrl);
+      }
+    } else {
+      filename = path.basename(sourcePathOrUrl);
+    }
+
+    const inputPath = path.join(VOICE_DIR, filename);
+    if (!fs.existsSync(inputPath)) {
+      return sourcePathOrUrl.startsWith('http') ? sourcePathOrUrl : `http://127.0.0.1:8080/voice/${filename}`;
+    }
+
+    const parsed = path.parse(filename);
+    const volPercent = Math.round(volumeLevel * 100);
+    const outputFilename = `${parsed.name}_vol${volPercent}${parsed.ext}`;
+    const outputPath = path.join(VOICE_DIR, outputFilename);
+
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+      return `http://127.0.0.1:8080/voice/${outputFilename}`;
+    }
+
+    await new Promise((resolve) => {
+      execFile('ffmpeg', [
+        '-y',
+        '-i', inputPath,
+        '-filter:a', `volume=${volumeLevel.toFixed(2)}`,
+        outputPath
+      ], { timeout: 8000 }, (err) => {
+        if (err) {
+          console.warn('[ONVIF Volume Adjust Error]', err.message);
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      });
+    });
+
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+      return `http://127.0.0.1:8080/voice/${outputFilename}`;
+    }
+    return `http://127.0.0.1:8080/voice/${filename}`;
+  }
+
+  /**
    * go2rtc 経由でカメラのスピーカーに音声を再生
    * @param {Object} camera 登録カメラ情報 ({ ip, port, username, password, ... })
    * @param {string} audioUrl サーバー上の音声URL またはローカルファイルパス
    * @param {number} duration 秒数
+   * @param {number|null} volumeLevel 音量レベル (0.0〜1.0 またはパーセント数値)
    */
-  async playAudio(camera, audioUrl, duration = 8) {
+  async playAudio(camera, audioUrl, duration = 8, volumeLevel = null) {
     const onvifConfig = settingsManager.get().onvif || {};
     const username = camera.username || onvifConfig.defaultUsername || 'admin';
     const password = camera.password || onvifConfig.defaultPassword || '';
@@ -356,8 +415,18 @@ class OnvifManager {
     const onvifSrcUrl = `onvif://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${ip}:${onvifPort}`;
     await this._ensureGo2rtcStream(streamName, rtspUrl, onvifSrcUrl);
 
-    // 2. 音声URLの正規化: ファイルパスが渡された場合は go2rtc が取得できる HTTP URL に変換
+    // 2. 音声URLの正規化および音量調整 (volumeLevel が指定されている場合は ffmpeg でゲイン調整)
     let resolvedAudioUrl = audioUrl;
+    let normVol = volumeLevel;
+    if (typeof normVol === 'string') normVol = parseFloat(normVol);
+    if (typeof normVol === 'number' && !isNaN(normVol)) {
+      if (normVol > 1.0) normVol = normVol / 100; // 0〜100 のパーセント指定を 0.0〜1.0 に正規化
+      normVol = Math.max(0.01, Math.min(2.0, normVol));
+      if (normVol !== 1.0) {
+        resolvedAudioUrl = await this._adjustAudioVolume(audioUrl, normVol);
+      }
+    }
+
     if (!resolvedAudioUrl.startsWith('http://') && !resolvedAudioUrl.startsWith('https://')) {
       const filename = path.basename(resolvedAudioUrl);
       resolvedAudioUrl = `http://127.0.0.1:8080/voice/${filename}`;
@@ -372,7 +441,7 @@ class OnvifManager {
 
     // 再生開始
     const pushUrl = `${this.go2rtcApiUrl}/api/streams?${params.toString()}`;
-    console.log(`[ONVIF Play] Starting audio playback on ${camera.name || ip} (${ip}) using URL: ${resolvedAudioUrl}`);
+    console.log(`[ONVIF Play] Starting audio playback on ${camera.name || ip} (${ip}) vol=${normVol !== null && normVol !== undefined ? Math.round(normVol*100)+'%' : 'default'} URL: ${resolvedAudioUrl}`);
     
     const startRes = await this._httpPost(pushUrl);
     if (startRes.statusCode !== 200) {

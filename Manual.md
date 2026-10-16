@@ -48,13 +48,18 @@
    - 8.9 [AI 連携 エンドポイント](#89-ai-連携-エンドポイント)
    - 8.10 [システム設定＆同期 エンドポイント](#810-システム設定同期-エンドポイント)
    - 8.11 [ハードウェア固有連携 (Alexa / HomePod) エンドポイント](#811-ハードウェア固有連携-alexa--homepod-エンドポイント)
-9. [ファイル構成と永続化ディレクトリ](#9-ファイル構成と永続化ディレクトリ)
+   - 8.12 [ONVIF カメラ＆DLNA スピーカー連携 エンドポイント](#812-onvif-カメラdlna-スピーカー連携-エンドポイント)
+9. [ハードウェア・プロトコル詳細仕様 (ONVIF & DLNA)](#9-ハードウェアプロトコル詳細仕様-onvif--dlna)
+   - 9.1 [ONVIF カメラ双方向音声 (Two-Way Audio / Profile T) アーキテクチャ](#91-onvif-カメラ双方向音声-two-way-audio--profile-t-アーキテクチャ)
+   - 9.2 [DLNA / UPnP ネットワークオーディオ (MediaRenderer / AVTransport) アーキテクチャ](#92-dlna--upnp-ネットワークオーディオ-mediarenderer--avtransport-アーキテクチャ)
+10. [ファイル構成と永続化ディレクトリ](#10-ファイル構成と永続化ディレクトリ)
+11. [次世代 Python (FastAPI) アーキテクチャ設計書 (リファクタリング計画)](#11-次世代-python-fastapi-アーキテクチャ設計書-リファクタリング計画)
 
 ---
 
 ## 1. システムアーキテクチャ概要
 
-Smart Home Speaker Voice Hub は、規格やプロトコルが全く異なる 3大スマートスピーカー（**Google Home / Cast**、**Amazon Echo / Alexa**、**Apple HomePod / AirPlay 2**）を統一抽象化し、高品質な日本語音声合成（Microsoft Edge TTS）を宅内のあらゆる部屋に遅延なくアナウンスするための音声プラットフォームです。
+Smart Home Speaker Voice Hub は、規格やプロトコルが全く異なる 5大スマートスピーカー・音響機器（**Google Home / Cast**、**Amazon Echo / Alexa**、**Apple HomePod / AirPlay 2**、**ONVIF ネットワークカメラ**、**DLNA / UPnP MediaRenderer**）を統一抽象化し、高品質な日本語音声合成（Microsoft Edge TTS）を宅内のあらゆる部屋に遅延なくアナウンスするための音声プラットフォームです。
 
 ```
 [外部 Webhook / IFTTT / Home Assistant]   [ブラウザ Web GUI]   [P2P地震速報 WS / 気象庁 API]
@@ -76,11 +81,11 @@ Smart Home Speaker Voice Hub は、規格やプロトコルが全く異なる 3�
         │  ┌──────────────────────────────────────────────────────────────────┐  │
         │  │       Cross-Platform Sync Engine (EMA Delay Compensation)        │  │
         │  └──────────────────────────────────────────────────────────────────┘  │
-        └─────────────────┬───────────────────┬───────────────────┬──────────────┘
-                          │                   │                   │
-                          ▼                   ▼                   ▼
-                  [ Google Cast ]      [ Amazon Alexa ]    [ Apple HomePod ]
-                 (castv2 / Bonjour)   (Remote Control)     (pyatv / AirPlay)
+        └───┬──────────────────┬──────────────────┬──────────────┬───────────────┘
+            │                  │                  │              │               │
+            ▼                  ▼                  ▼              ▼               ▼
+    [ Google Cast ]     [ Amazon Alexa ]   [ Apple HomePod ] [ ONVIF Camera ] [ DLNA / UPnP ]
+   (castv2 / Bonjour)  (Remote Control)   (pyatv / AirPlay)  (go2rtc / Profile T) (SSDP / AVTransport)
 ```
 
 ---
@@ -147,26 +152,38 @@ Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `we
 
 | 指定文字列 | 対象スピーカー・動作 |
 |---|---|
-| `ALL` または `*` | **家中すべてのスピーカー**。Google Cast全体グループ、全室Echo、全室HomePod を同時に解決し、0msズレで一斉発声。 |
+| `ALL` または `*` | **家中すべてのスピーカー**。Google Cast全体グループ、全室Echo、全室HomePod、登録済みONVIFカメラ、DLNAレンダラーを同時に解決し、一斉発声。 |
 | `GH:ALL` / `GOOGLE:ALL` | 宅内のすべての Google Home / Nest デバイス（全体 Cast グループ優先）。 |
 | `AL:ALL` / `ALEXA:ALL` | 宅内のすべての Amazon Echo デバイス（Echo全体グループ優先）。 |
 | `HP:ALL` / `HOMEPOD:ALL` | 宅内のすべての Apple HomePod デバイス。 |
+| `ONVIF:ALL` / `CAM:ALL` | 宅内のすべての登録済み ONVIF ネットワークカメラ。 |
+| `DLNA:ALL` | 宅内のすべての登録済み DLNA / UPnP ネットワークスピーカー。 |
 | `default` | システムで指定された標準スピーカー（`.my.env` の `GOOGLE_HOME_IP` または GUI 指定のデバイス）。 |
 | カスタムグループ名 (例: `1F`, `LDK`) | 設定画面の「デバイスグループ」で定義したスピーカーの組み合わせを展開。 |
 | デバイス表示名 (例: `リビング`, `書斎`) | デバイス名に部分一致する端末を自動検索して解決。 |
 | `alexa:<デバイス名>` | 特定の Amazon Echo デバイスを直接指定。 |
 | `homepod:<IPまたはMAC>` | 特定の Apple HomePod デバイスを直接指定。 |
+| `onvif:<IP>` | 特定の ONVIF ネットワークカメラを直接指定。 |
+| `dlna:<IP>` | 特定の DLNA / UPnP レンダラーを直接指定。 |
 | IPアドレス (例: `192.168.11.96`) | Google Cast デバイスの IP アドレス直打ち。 |
 
 ### 3.2 スピーカー種別の自動判別と解決アルゴリズム
 
 `speakToMultipleDevices(text, targetList, options)` は以下の優先順序でデバイスを特定・集約します：
 
-1. **マクロ・グループの展開**: `ALL` や `1F` を構成端末の配列へ展開。
+1. **マクロ・グループの展開**: `ALL`, `CAM:ALL`, `DLNA:ALL`, `1F` などを構成端末の配列へ展開。
 2. **Google Cast グループ集約 (`preferNativeGroups`)**:
    - 複数の Google Home を個別指定して同時に鳴らすと、Wi-Fi の揺らぎによってエコー（輪唱）が発生します。
    - `ALL` や全体が指定された場合、個別の IP をすべて破棄し、Google Home アプリ等で作成された **Cast グループ（ポート 32xxx 等）** 1つに集約して送信します。これにより Google Cast プロトコルのネイティブ同期が働き、**ズレ 0ms の完全同期** が実現します。
-3. **重複排除**: 同一の IP やストリーミング先が複数回解決された場合、自動的に単一の呼び出しにまとめます。
+3. **プロトコル別の仕分け**:
+   - **Google Cast**: `type === 'google'` (Avahi / castv2)
+   - **Amazon Alexa**: `type === 'alexa'` (Alexa Remote Control)
+   - **Apple HomePod**: `type === 'homepod'` (pyatv AirPlay 2)
+   - **ONVIF Camera**: `type === 'onvif'` (go2rtc Two-Way Audio / Profile T)
+   - **DLNA Renderer**: `type === 'dlna'` (UPnP AVTransport / RenderingControl)
+4. **重複排除**: 同一の IP やストリーミング先が複数回解決された場合、自動的に単一の呼び出しにまとめます。
+5. **UI 表示優先順位 (Category Order)**:
+   - 1: Group GH → 2: Group Alexa → 3: Group HomePod → 4: 単体 GH → 5: 単体 Alexa → 6: 単体 HomePod → 7: 単体 DLNA → 8: 単体 ONVIF
 
 ### 3.3 マルチプラットフォーム音ズレ補正エンジン (Sync Engine)
 
@@ -606,7 +623,127 @@ API Key を入力して接続テストを実行すると、プロバイダーの
 
 ---
 
-## 9. ファイル構成と永続化ディレクトリ
+### 8.12 ONVIF カメラ＆DLNA スピーカー連携 エンドポイント
+
+* `POST /api/onvif/scan` (または `/api/onvif-dlna/scan`) - LAN 内の ONVIF ネットワークカメラ（WS-Discovery）および DLNA レンダラー（SSDP）を並行自動探索
+  * **リクエストパラメータ**: `{ timeoutMs?: number, username?: string, password?: string }`
+  * **レスポンス**: 検出されたデバイス一覧（`id`, `name`, `ip`, `port`, `category`: `'onvif' | 'dlna'`, `model`, `supportsAudio`: boolean, `status`: `'ok' | 'unauthenticated' | 'unauthorized' | 'error'`, `isRegistered`: boolean）
+* `POST /api/onvif/register` - ONVIF カメラまたは DLNA スピーカーの連携登録・設定変更・登録解除
+  * **リクエストパラメータ**:
+    * 登録・更新: `{ id, name, ip, port, model, type: 'onvif' | 'dlna', username?: string, password?: string, controlUrl?: string, renderingControlUrl?: string }`
+    * 削除（連携解除）: `{ ip, delete: true }` または `{ id, delete: true }`
+  * **レスポンス**: `{ success: true, registeredDevices: [...] }`
+* `POST /api/onvif/test` - 対象カメラまたは DLNA スピーカーに対する即時テスト発声
+  * **リクエストパラメータ**: `{ ip: string, text?: string, voice?: string, volumeLevel?: number }`
+  * **レスポンス**: `{ success: true, message: "Playback started" }`
+* `POST /api/onvif/default-auth` - カメラ共通のデフォルト認証情報の保存
+  * **リクエストパラメータ**: `{ defaultUsername: string, defaultPassword?: string }`
+  * **レスポンス**: `{ success: true }`
+
+---
+
+## 9. ハードウェア・プロトコル詳細仕様 (ONVIF & DLNA)
+
+### 9.1 ONVIF カメラ双方向音声 (Two-Way Audio / Profile T) アーキテクチャ
+
+防犯ネットワークカメラ（Reolink E1 Pro、TP-Link Tapo 等）の内蔵スピーカーを「キャスト先スマートスピーカー」として活用するための技術仕様です。
+
+#### 1. デバイス探索 (WS-Discovery)
+- **プロトコル**: UDP 3702, SOAP 1.2 Probe Envelope
+- **宛先**: マルチキャスト `239.255.255.250:3702` および ブロードキャスト `255.255.255.255:3702`
+- **探索対象 Types**: `dn:NetworkVideoTransmitter tds:Device`
+- **情報抽出**:
+  - `XAddrs`: カメラの ONVIF デバイスサービス URL（例: `http://192.168.11.203:8000/onvif/device_service`）
+  - `Scopes`: ハードウェアモデル名 (`hardware/...`)、ユーザー設定のカメラ名 (`odm:name:...` や `name/...`)、および **Profile T 対応フラグ (`Profile/T`)** を未認証のまま事前抽出。
+
+#### 2. ONVIF WS-Security 認証仕様
+カメラの詳細情報取得および SOAP 通信時には、ONVIF 仕様準拠の `UsernameToken (PasswordDigest)` ヘッダーを生成して送信します。
+```text
+Nonce = Base64(16バイト暗号乱数)
+Created = YYYY-MM-DDTHH:mm:ssZ (ミリ秒なしUTC)
+PasswordDigest = Base64( SHA-1( NonceBytes + ASCII(Created) + ASCII(Password) ) )
+```
+
+#### 3. Profile T（双方向音声バックチャンネル）判定アルゴリズム
+- カメラがスピーカー出力に対応しているかは、ONVIF Profile T（または Audio Backchannel）をサポートしているかで厳密に判定されます。
+- `tds:GetScopes` SOAP 呼び出しにより、Scope 一覧に `onvif://www.onvif.org/Profile/T` が含まれる端末を `supportsAudio: true`（スピーカー対応）として認識します。
+
+#### 4. ストリーミング転送基盤 (go2rtc 連携)
+Reolink や Tapo などのカメラは、通常の RTSP 配信（カメラ→クライアント）とは異なり、クライアントからカメラへ音声を送り込むための特殊な RTSP プロトコル交渉（`Require: www.onvif.org/ver20/backchannel`）を要求します。
+- **プロデューサー登録 (PUT)**:
+  - `PUT /api/streams?name=onvif_<ip>&src=<RTSP_URL>&src=<ONVIF_URL>`
+  - go2rtc に対して RTSP 映像ソースと ONVIF メディアソースの 2つをまとめて定義。
+- **バックチャンネルプッシュ (POST)**:
+  - `POST /api/streams?dst=onvif_<ip>&src=ffmpeg:<Audio_URL>#audio=pcmu#input=file`
+  - Voice Hub で生成・ホストしている音声ファイル（MP3）を、FFmpeg パイプライン経由で `PCMU (G.711u)` コーデックにリアルタイム変換してカメラへ送信。
+- **セッション安全解放**:
+  - 音声再生の尺（Duration + 1.5秒余裕）経過後に `POST /api/streams?dst=onvif_<ip>&src=` を送信し、カメラ側の RTSP 双方向セッションを切断。
+
+#### 5. FFmpeg 音量事前ゲイン調整キャッシュ
+カメラ側でハードウェア音量変更 API をサポートしていない場合でも柔軟に対応できるよう、ソフトウェアゲイン調整エンジンを備えています。
+- 指定された音量（`volumeLevel: 0.0〜1.0` またはパーセント）に基づき、FFmpeg でゲインを事前調整した専用キャッシュファイル（例: `reolink_test_vol30.mp3`）を動的生成してストリーミング配信します。
+
+---
+
+### 9.2 DLNA / UPnP ネットワークオーディオ (MediaRenderer / AVTransport) アーキテクチャ
+
+Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、foobar2000 等の DLNA / UPnP 対応機器を、完全なゼロコンフィグ（認証不要）でスピーカーとして統合する技術仕様です。
+
+#### 1. デバイス探索 (SSDP)
+- **プロトコル**: UDP 1900, SSDP (Simple Service Discovery Protocol)
+- **宛先**: マルチキャスト `239.255.255.250:1900`
+- **送信パケット**:
+  ```http
+  M-SEARCH * HTTP/1.1
+  HOST: 239.255.255.250:1900
+  MAN: "ssdp:discover"
+  MX: 2
+  ST: urn:schemas-upnp-org:device:MediaRenderer:1
+  ```
+- **応答処理**:
+  - 応答ヘッダーの `LOCATION`（例: `http://192.168.11.158:1426/`）を取得。
+  - XML ディスクリプション（SCPD）を非同期取得し、以下を抽出・保持：
+    - `friendlyName`: デバイス名（例: `foobar2000 Renderer (shuns) [MASTEROMEN2025]`）
+    - `modelName`: 機種名
+    - `UDN`: 一意なデバイス識別子（UUID）
+    - `urn:schemas-upnp-org:service:AVTransport:1` の `controlURL`
+    - `urn:schemas-upnp-org:service:RenderingControl:1` の `controlURL`
+
+#### 2. AVTransport 音声再生制御 (SOAP)
+DLNA レンダラーへ Voice Hub でホスト中の MP3 音声 URL を指定し、ストリーミング再生させます。
+1. **SetAVTransportURI**:
+   - **SOAPAction**: `"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI"`
+   - **Body**:
+     ```xml
+     <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+       <InstanceID>0</InstanceID>
+       <CurrentURI>http://<VOICE_HUB_IP>:8080/voice/speech_<MD5>.mp3</CurrentURI>
+       <CurrentURIMetaData></CurrentURIMetaData>
+     </u:SetAVTransportURI>
+     ```
+2. **Play**:
+   - **SOAPAction**: `"urn:schemas-upnp-org:service:AVTransport:1#Play"`
+   - **Body**:
+     ```xml
+     <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+       <InstanceID>0</InstanceID>
+       <Speed>1</Speed>
+     </u:Play>
+     ```
+
+#### 3. RenderingControl 音量制御 (SOAP)
+- **音量取得 (GetVolume)**:
+  - **SOAPAction**: `"urn:schemas-upnp-org:service:RenderingControl:1#GetVolume"`
+  - **Body**: `<InstanceID>0</InstanceID><Channel>Master</Channel>`
+  - **レスポンス**: `<CurrentVolume>0〜100</CurrentVolume>`
+- **音量設定 (SetVolume)**:
+  - **SOAPAction**: `"urn:schemas-upnp-org:service:RenderingControl:1#SetVolume"`
+  - **Body**: `<InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>0〜100</DesiredVolume>`
+  - 発声パラメータで音量が指定されている場合、発声直前に指定音量へセットします。
+
+---
+
+## 10. ファイル構成と永続化ディレクトリ
 
 Docker コンテナ運用時、以下のディレクトリ構造でデータが永続化されます：
 
@@ -614,13 +751,13 @@ Docker コンテナ運用時、以下のディレクトリ構造でデータが�
 /root/google-home-voicetext-docker/
 ├── .my.env                     # 環境設定ファイル (秘密情報・ポート等)
 ├── .my.env.sample              # 環境設定サンプル
-├── docker-compose.yml          # Docker Compose 定義
+├── docker-compose.yml          # Docker Compose 定義 (Voice Hub + go2rtc)
 ├── Dockerfile                  # マルチステージビルド定義 (Node + Python + pyatv)
-├── Manual.md                   # 本詳細仕様書
+├── Manual.md                   # 本詳細仕様書 (仕様・API・アーキテクチャ)
 ├── README.md                   # 簡易概要・導入ガイド
 │
 ├── data/                       # [Named Volume: smart_speaker_data]
-│   ├── settings.json           # システム設定 (DND, 防災, AI, デバイスグループ等)
+│   ├── settings.json           # システム設定 (DND, 防災, AI, デバイスグループ, ONVIF/DLNA登録情報)
 │   ├── schedules.json          # 定期スケジュール定義
 │   ├── dnd_queue.json          # DND 保留メッセージキュー (WAL)
 │   ├── webhook_queue.json      # Webhook 非同期永続化キュー (WAL)
@@ -635,10 +772,12 @@ Docker コンテナ運用時、以下のディレクトリ構造でデータが�
 │   └── voice/                  # [Named Volume: smart_speaker_cache]
 │       └── speech_<MD5>.mp3    # 生成された Edge TTS 音声キャッシュファイル
 │
-├── src/                        # バックエンド実装 (Node.js)
+├── src/                        # バックエンド実装 (現行 Node.js)
 │   ├── server.js               # Express サーバー、ルーティング、境界セキュリティ
 │   ├── tts.js                  # Edge TTS、チャイム結合、LRU キャッシュ管理
 │   ├── devices.js              # デバイス管理、Castv2、mDNS ディスカバリー
+│   ├── onvif.js                # ONVIF マネージャー (WS-Discovery, WS-Security, go2rtc 制御)
+│   ├── dlna.js                 # DLNA マネージャー (SSDP, AVTransport, RenderingControl)
 │   ├── settings.js             # 設定マネージャー、永続化
 │   ├── dnd.js                  # おやすみ・会議モード (DND) 判定エンジン
 │   ├── calendar.js             # Google カレンダー同期、直前リマインド、予定まとめ
@@ -653,3 +792,70 @@ Docker コンテナ運用時、以下のディレクトリ構造でデータが�
     ├── alexa_remote_control.sh # Alexa 制御シェルスクリプト
     └── homepod_scan.py         # pyatv スキャン・AirPlay2 ストリーミング実行スクリプト
 ```
+
+---
+
+## 11. 次世代 Python (FastAPI) アーキテクチャ設計書 (リファクタリング計画)
+
+今後の **Bluetooth (bleak)** および **Matter (python-matter-server)** への拡張、並びにシステム全体の堅牢性・単一言語統一を見据えた、Python への完全リファクタリング設計書です。
+
+### 11.1 技術スタック選定
+- **ベースイメージ**: `python:3.14-slim` (Debian ベース、イメージサイズ約 350MB)
+- **Web フレームワーク**: **FastAPI** + **Uvicorn** (フル非同期 `async/await`、高速ルーティング、OpenAPI 自動生成)
+- **主要スマートホームライブラリ**:
+  - **Google Cast**: `pychromecast` (Home Assistant 公式採用。castv2 より圧倒的に安定したネイティブ実装)
+  - **Apple HomePod**: `pyatv` (AirPlay 2 / RAOP のデファクトスタンダード。Python ネイティブ直結)
+  - **DLNA / UPnP**: `async_upnp_client` (Home Assistant 標準の非同期 UPnP / AVTransport クライアント)
+  - **Amazon Alexa**: `alexapy` または現行スクリプト統合
+  - **音声合成**: `edge-tts` (Python 公式パッケージ、ストリーミング合成対応)
+  - **カメラ音声プッシュ**: `go2rtc` バイナリ（コンテナ内同梱）への `httpx` 非同期 HTTP リクエスト
+  - **将来拡張**: `bleak` (Bluetooth BLE/Audio), `python-matter-server` (Matter)
+
+### 11.2 モジュール構成設計 (新ディレクトリ案)
+```text
+app/
+├── main.py                     # FastAPI エントリーポイント、CORS、境界防御、ライフサイクル
+├── config.py                   # Pydantic Settings による型安全な環境変数・設定管理
+│
+├── core/
+│   ├── security.py             # Cloudflare Tunnel / トークン / Cookie 認証
+│   ├── deduplication.py        # 連呼防止・重複排除エンジン
+│   ├── sync_engine.py          # EMA ネットワーク遅延補正エンジン
+│   └── queue_manager.py        # asyncio.Queue + WAL 永続化
+│
+├── services/
+│   ├── tts_service.py          # edge-tts + ffmpeg チャイム結合 + LRU 音声キャッシュ
+│   ├── cast_service.py         # pychromecast による Google Home / Cast 再生
+│   ├── alexa_service.py        # Amazon Echo 再生
+│   ├── homepod_service.py      # pyatv による AirPlay 2 再生
+│   ├── onvif_service.py        # WS-Discovery + WS-Security + go2rtc バックチャネルプッシュ
+│   ├── dlna_service.py         # async_upnp_client による AVTransport / RenderingControl
+│   ├── calendar_service.py     # icalendar による予定解析、直前リマインド、朝サマリー
+│   ├── disaster_service.py     # aiohttp WebSocket (P2P地震情報) + 気象庁 API 差分監視
+│   ├── ai_service.py           # google-genai / openai による DND保留メッセージ・予定要約
+│   └── dnd_service.py          # おやすみ・会議モード多層判定
+│
+├── routers/
+│   ├── speech.py               # /api/say, /api/tts
+│   ├── devices.py              # /api/devices, /api/groups
+│   ├── onvif_dlna.py           # /api/onvif/*, /api/dlna/*
+│   ├── settings.py             # /api/settings
+│   ├── history.py              # /api/history
+│   ├── calendar.py             # /api/calendar/*
+│   └── dnd.py                  # /api/dnd/*
+│
+└── static/                     # 現行の public/ (HTML/CSS/JS) をそのまま完全流用
+```
+
+### 11.3 リファクタリング移行ロードマップ
+1. **フェーズ 1: コアエンジン＆TTS・Web API 基盤**
+   - FastAPI サーバーの立ち上げ、既存 `public/` の静的配信
+   - `edge-tts` + `ffmpeg` チャイム結合エンジン、設定マネージャー（`settings.json` 互換性維持）
+2. **フェーズ 2: 5大スピーカー出力エンジンの Python 化**
+   - `pychromecast`、`pyatv`、`async_upnp_client` (DLNA)、`onvif_service` (go2rtc連携) の実装
+   - `POST /api/say` のマルチプラットフォーム同時発声・マクロ展開の実装
+3. **フェーズ 3: インテリジェント連携機能の移行**
+   - DND (会議モード/スケジュール)、Google カレンダー同期、P2P地震速報・気象庁API監視、AI要約
+4. **フェーズ 4: 1コンテナ化＆検証**
+   - `Dockerfile` を `python:3.14-slim` に移行し、go2rtc 単一バイナリを同梱して完全 1 コンテナ稼働を達成。
+
