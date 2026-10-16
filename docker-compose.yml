@@ -1,5 +1,5 @@
 services:
-  google-home-speaker:
+  voice-hub:
     build: .
     container_name: google-home-speaker
     restart: unless-stopped
@@ -8,7 +8,7 @@ services:
       - path: ./.my.env
         required: false
     volumes:
-      - ./src:/app/src
+      - ./app:/app/app
       - ./public:/app/public
       - voice_data:/app/data
       - voice_cache:/app/public/voice
@@ -26,16 +26,8 @@ services:
       - path: ./.my.env
         required: false
 
-  go2rtc:
-    image: alexxit/go2rtc:latest
-    container_name: voicehub-go2rtc
-    restart: unless-stopped
-    network_mode: "host"
-
 volumes:
   voice_data:
     name: smart_speaker_data
   voice_cache:
     name: smart_speaker_cache
-
-

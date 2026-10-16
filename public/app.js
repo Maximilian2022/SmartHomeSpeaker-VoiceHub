@@ -4120,18 +4120,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tbody.innerHTML = discoveredOnvifDevices.map(dev => {
       const isReg = registered.some(r => r.ip === dev.ip);
-      const isSupported = !!(dev.isProfileT || dev.hasProfileT || dev.supportsAudio);
+      const isDlna = (dev.category === 'dlna' || dev.type === 'dlna');
+      const isSupported = isDlna || !!(dev.isProfileT || dev.hasProfileT || dev.supportsAudio);
       const rowStyle = !isSupported ? 'opacity: 0.55;' : '';
 
       let profileBadge = '';
-      if (isSupported) {
-        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-weight:600;">Profile T (双方向音声対応)</span>`;
+      if (isDlna) {
+        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(6,182,212,0.2);color:#22d3ee;border:1px solid rgba(6,182,212,0.4);font-weight:600;">🎵 DLNA (MediaRenderer)</span>`;
+      } else if (isSupported) {
+        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-weight:600;">📷 Profile T (双方向音声対応)</span>`;
       } else {
         profileBadge = `<span class="speaker-chip-badge" style="background:rgba(255,255,255,0.06);color:var(--text-muted);border:1px solid rgba(255,255,255,0.12);">Profile S (スピーカー非対応)</span>`;
       }
 
       let authStatus = '';
-      if (dev.status === 'ok') {
+      if (isDlna) {
+        authStatus = `<span style="color:#22d3ee;font-size:0.8rem;">✓ 認証不要 (DLNA)</span>`;
+      } else if (dev.status === 'ok') {
         authStatus = `<span style="color:#34d399;font-size:0.8rem;">✓ 認証・通信確認済</span>`;
       } else if (dev.status === 'unauthorized') {
         authStatus = `<span style="color:#fbbf24;font-size:0.8rem;">要認証 (Profile T対応)</span>`;
@@ -4148,16 +4153,17 @@ document.addEventListener('DOMContentLoaded', () => {
         actionHtml = `<button type="button" class="btn btn-primary btn-sm btn-open-onvif-modal" data-ip="${escapeHtml(dev.ip)}">＋ 連携登録</button>`;
       }
 
-      // カメラ名優先表示: ユーザー設定名(Roof, Den等) > 機種名 > ONVIF Camera
-      const primaryName = dev.friendlyName || dev.name || 'ONVIF Camera';
+      const primaryName = dev.friendlyName || dev.name || (isDlna ? 'DLNA Speaker' : 'ONVIF Camera');
       const subInfo = (dev.model && dev.model !== primaryName)
         ? `${escapeHtml(dev.model)}`
-        : `Camera`;
+        : (isDlna ? 'MediaRenderer' : 'Camera');
+
+      const icon = isDlna ? '🎵' : '📷';
 
       return `
         <tr style="${rowStyle}">
           <td>
-            <strong>📷 ${escapeHtml(primaryName)}</strong>
+            <strong>${icon} ${escapeHtml(primaryName)}</strong>
             <div style="font-size:0.75rem;color:var(--text-muted);">${subInfo} ${dev.serialNumber ? '(' + escapeHtml(dev.serialNumber) + ')' : ''}</div>
           </td>
           <td><code>${escapeHtml(dev.ip)}:${dev.port || 80}</code></td>
@@ -4190,12 +4196,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('onvifRegUser');
     const passInput = document.getElementById('onvifRegPass');
 
-    const defaultName = dev.friendlyName || dev.name || (dev.model ? `${dev.model}_${dev.ip.split('.').pop()}` : '防犯カメラ');
+    const isDlna = (dev.category === 'dlna' || dev.type === 'dlna');
+    const defaultName = dev.friendlyName || dev.name || (dev.model ? `${dev.model}_${dev.ip.split('.').pop()}` : (isDlna ? 'DLNAスピーカー' : '防犯カメラ'));
     if (nameInput) nameInput.value = defaultName;
     if (ipInput) ipInput.value = `${dev.ip}:${dev.port || 80}`;
-    if (modelInput) modelInput.value = `${dev.model || 'ONVIF'} (Profile T 双方向音声)`;
-    if (userInput) userInput.value = '';
-    if (passInput) passInput.value = '';
+    if (modelInput) modelInput.value = isDlna ? `${dev.model || 'DLNA'} (UPnP MediaRenderer)` : `${dev.model || 'ONVIF'} (Profile T 双方向音声)`;
+    if (userInput) {
+      userInput.value = '';
+      userInput.placeholder = isDlna ? '不要 (DLNA)' : 'ユーザー名 (空欄でデフォルト)';
+      userInput.disabled = isDlna;
+    }
+    if (passInput) {
+      passInput.value = '';
+      passInput.placeholder = isDlna ? '不要 (DLNA)' : 'パスワード (空欄でデフォルト)';
+      passInput.disabled = isDlna;
+    }
 
     modal.style.display = 'flex';
     setTimeout(() => nameInput?.focus(), 50);
@@ -4237,11 +4252,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      const isDlna = (dev.category === 'dlna' || dev.type === 'dlna');
       const defaultUser = document.getElementById('onvifDefaultUser')?.value.trim() || 'admin';
       const defaultPass = document.getElementById('onvifDefaultPass')?.value || '';
 
-      const username = userInput?.value.trim() || defaultUser;
-      const password = passInput?.value || defaultPass;
+      const username = isDlna ? '' : (userInput?.value.trim() || defaultUser);
+      const password = isDlna ? '' : (passInput?.value || defaultPass);
 
       try {
         btnSubmit.disabled = true;
@@ -4256,8 +4272,11 @@ document.addEventListener('DOMContentLoaded', () => {
               name,
               username,
               password,
-              rtspUrl: dev.defaultRtspUrl || '',
-              type: 'onvif'
+              port: dev.port || (isDlna ? 1426 : 8000),
+              model: dev.model || (isDlna ? 'DLNA MediaRenderer' : 'ONVIF Camera'),
+              controlUrl: dev.controlUrl || '',
+              renderingControlUrl: dev.renderingControlUrl || '',
+              type: isDlna ? 'dlna' : 'onvif'
             }
           })
         });
@@ -4269,7 +4288,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.settings.onvif) state.settings.onvif = {};
         state.settings.onvif.registeredDevices = data.registeredDevices;
 
-        showToast(`「${name}」をカメラスピーカーとして登録しました`, 'success');
+        showToast(`「${name}」を${isDlna ? 'DLNA' : 'カメラ'}スピーカーとして登録しました`, 'success');
         closeOnvifRegisterModal();
         await loadDevices();
         renderRegisteredOnvifTable();
@@ -4278,7 +4297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('登録エラー: ' + err.message, 'error');
       } finally {
         btnSubmit.disabled = false;
-        btnSubmit.textContent = '＋ スピーカーとして連携登録';
+        btnSubmit.textContent = 'この内容で登録する';
       }
     });
   }
