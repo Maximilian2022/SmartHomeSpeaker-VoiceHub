@@ -18,8 +18,9 @@ class CastService:
                 pass
 
         try:
-            cast = pychromecast.get_chromecast_from_host((host, port, None, None, None), timeout=3.0)
-            cast.wait(timeout=3.0)
+            cast = pychromecast.get_chromecast_from_host((host, port, None, None, None), timeout=4.0)
+            cast.start()
+            cast.wait(timeout=4.0)
             self._cast_cache[key] = cast
             return cast
         except Exception as e:
@@ -37,7 +38,8 @@ class CastService:
 
             mc: MediaController = cast.media_controller
             mc.play_media(media_url, "audio/mp3")
-            mc.block_until_active(timeout=3.0)
+            mc.block_until_active(timeout=4.0)
+            print(f"[CastService] Playback started on {host}:{port}: {media_url}")
             return True
         except Exception as e:
             print(f"[CastService] Play failed on {host}:{port}: {e}")

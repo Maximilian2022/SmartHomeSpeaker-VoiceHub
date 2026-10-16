@@ -12,6 +12,7 @@ from app.services.dlna_service import dlna_service
 from app.services.onvif_service import onvif_service
 from app.services.alexa_service import alexa_service
 from app.services.dnd_service import dnd_service
+from app.config import settings
 from app.services.calendar_service import calendar_service
 from app.core.deduplication import deduplicator
 
@@ -20,7 +21,12 @@ MAX_HISTORY = 100
 
 class SpeechService:
     def __init__(self):
-        self.server_base_url = "http://127.0.0.1:8080"
+        pass
+
+    @property
+    def server_base_url(self) -> str:
+        ip = settings.wireless_ip or "127.0.0.1"
+        return f"http://{ip}:{settings.server_port}"
 
     def get_history(self) -> List[Dict[str, Any]]:
         return HISTORY_LOG
