@@ -199,28 +199,40 @@ class DeviceManager:
                     "renderingControlUrl": d.get("renderingControlUrl")
                 }
 
-        # Google Cast IP / 完全一致
+        # Google Cast IP / 完全一致 (グループ優先)
         if norm in self.devices:
             return self.devices[norm]
 
         for dev in self.devices.values():
-            if dev.get("isGroup") and (dev["name"].lower() == norm_lower or dev["ip"] == norm):
+            if dev.get("isGroup") and (dev.get("name", "").lower() == norm_lower or dev.get("ip") == norm or dev.get("id") == norm):
                 return dev
         for dev in self.devices.values():
-            if not dev.get("isGroup") and (dev["name"].lower() == norm_lower or dev["ip"] == norm):
+            if not dev.get("isGroup") and (dev.get("name", "").lower() == norm_lower or dev.get("ip") == norm or dev.get("id") == norm):
                 return dev
 
         # 部分一致
         for dev in self.devices.values():
-            if dev.get("isGroup") and (norm_lower in dev["name"].lower() or dev["name"].lower() in norm_lower):
+            if dev.get("isGroup") and (norm_lower in dev.get("name", "").lower() or dev.get("name", "").lower() in norm_lower):
                 return dev
         for dev in self.devices.values():
-            if not dev.get("isGroup") and (norm_lower in dev["name"].lower()):
+            if not dev.get("isGroup") and (norm_lower in dev.get("name", "").lower()):
                 return dev
 
-        # IP 形式直打ち
+        # IP 形式直打ち (例: 192.168.11.85 または 192.168.11.85:32094)
         if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$", norm):
-            return {"id": norm, "name": norm, "ip": norm, "model": "Custom IP", "type": "google"}
+            parts = norm.split(":")
+            h = parts[0]
+            p = int(parts[1]) if len(parts) > 1 else 8009
+            return {
+                "id": norm,
+                "name": norm,
+                "ip": norm,
+                "host": h,
+                "port": p,
+                "model": "Custom IP",
+                "type": "google",
+                "isGroup": (p != 8009)
+            }
 
         return None
 

@@ -77,7 +77,13 @@ class SpeechService:
         if not urgent and dedup_conf.get("enabled", True):
             cooldown = dedup_conf.get("cooldownSeconds", 30)
             if deduplicator.is_duplicate(text, client_name, cooldown):
-                return {"status": "skipped", "message": "Deduplicated", "deduplicated": True}
+                return {
+                    "success": True,
+                    "status": "skipped",
+                    "message": f"直前の同一通知から {cooldown} 秒以内のためスキップしました",
+                    "deduplicated": True,
+                    "results": []
+                }
 
         # 2. DND 評価 (おやすみ・会議モード)
         current_meeting = calendar_service.get_current_meeting_title()
@@ -86,7 +92,14 @@ class SpeechService:
         if dnd_result.get("active"):
             action = dnd_result.get("action", "skip")
             if action == "skip":
-                return {"status": "skipped", "message": f"DND active ({dnd_result.get('reason')})", "dnd": True}
+                return {
+                    "success": True,
+                    "status": "skipped",
+                    "dndSuppressed": True,
+                    "message": f"DND active ({dnd_result.get('reason')})",
+                    "dnd": True,
+                    "results": []
+                }
             elif action == "queue":
                 dnd_service.add_to_queue({
                     "text": text,
@@ -94,7 +107,15 @@ class SpeechService:
                     "voice": voice,
                     "client": client_name
                 })
-                return {"status": "queued", "message": f"Queued for DND ({dnd_result.get('reason')})", "dnd": True}
+                return {
+                    "success": True,
+                    "status": "queued",
+                    "dndSuppressed": True,
+                    "queued": True,
+                    "message": f"Queued for DND ({dnd_result.get('reason')})",
+                    "dnd": True,
+                    "results": []
+                }
             elif action == "whisper":
                 volume_level = dnd_result.get("whisperVolume", 10)
 
@@ -189,8 +210,17 @@ class SpeechService:
         for dev in unique_targets:
             dtype = dev.get("type", "google")
             if dtype == "google":
-                host = dev.get("host") or dev.get("ip", "").split(":")[0]
-                port = dev.get("port", 8009)
+                ip_val = str(dev.get("ip", ""))
+                if ":" in ip_val:
+                    parts = ip_val.split(":")
+                    host = parts[0]
+                    try:
+                        port = int(parts[1])
+                    except ValueError:
+                        port = 8009
+                else:
+                    host = dev.get("host") or ip_val
+                    port = int(dev.get("port", 8009))
                 tasks.append(cast_service.play_audio(host, port, audio_url, effective_vol))
             elif dtype == "homepod":
                 tasks.append(homepod_service.play_audio(dev.get("ip", ""), audio_url))
@@ -203,6 +233,19 @@ class SpeechService:
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        detailed_results = []
+        for i, dev in enumerate(unique_targets):
+            res_val = results[i] if i < len(results) else False
+            is_ok = (res_val is True or (isinstance(res_val, dict) and res_val.get("status") != "error"))
+            err_msg = str(res_val) if isinstance(res_val, Exception) else (None if is_ok else "Playback failed")
+            detailed_results.append({
+                "target": dev.get("name") or dev.get("ip"),
+                "status": "success" if is_ok else "error",
+                "error": err_msg
+            })
+
+        has_success = any(r["status"] == "success" for r in detailed_results)
+
         # 6. 履歴記録
         history_entry = {
             "id": f"hist_{int(time.time()*1000)}",
@@ -212,16 +255,18 @@ class SpeechService:
             "client": client_name,
             "audioUrl": f"/voice/{speech['filename']}",
             "duration": speech["duration"],
-            "status": "success" if any(r is True or isinstance(r, dict) for r in results) else "error"
+            "status": "success" if has_success else "error"
         }
         self.record_history(history_entry)
 
         return {
-            "status": "success",
-            "message": "Playback initiated",
+            "success": has_success,
+            "status": "success" if has_success else "error",
+            "message": "Playback initiated" if has_success else "Playback failed on all devices",
             "targets": [d.get("name") for d in unique_targets],
             "audioUrl": history_entry["audioUrl"],
-            "duration": speech["duration"]
+            "duration": speech["duration"],
+            "results": detailed_results
         }
 
 speech_service = SpeechService()

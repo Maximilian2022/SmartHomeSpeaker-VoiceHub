@@ -49,6 +49,8 @@ async def unmute_dnd():
             "manualReason": ""
         }
     })
+    return {"success": True}
+
 @router.post("/api/dnd/quick")
 async def quick_dnd(req: Dict[str, Any]):
     minutes = int(req.get("minutes", 60))
