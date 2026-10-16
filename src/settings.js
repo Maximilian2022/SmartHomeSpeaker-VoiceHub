@@ -56,7 +56,7 @@ const DEFAULT_SETTINGS = {
     targetDevices: [],
     action: 'skip', // 'skip' | 'whisper' | 'queue'
     whisperVolume: 10,
-    topMuteDuration: '60', // '30' | '60' | '120' | '1440' | 'indefinite'
+    topMuteDuration: 'indefinite', // 'indefinite' | '30' | '60' | '120' | '1440'
     aiSummaryEnabled: true,
     aiSummaryThreshold: 2,
     aiSummaryCustomPrompt: ''

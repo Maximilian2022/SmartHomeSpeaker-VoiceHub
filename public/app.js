@@ -2696,7 +2696,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. ヘッダー表示
     if (headerText) {
       if (s.isActive) {
-        let reasonShort = s.reason ? s.reason.replace('カレンダー予定中: ', '📅').replace('定時サイレント: ', '⏰').replace('手動サイレント (即時)', '🔇手動') : '🔇発動中';
+        let reasonShort = s.reason ? s.reason.replace('カレンダー予定中: ', '📅').replace('定時サイレント: ', '⏰').replace(/手動サイレント.*/, '🔇手動ミュート') : '🔇ミュート中';
         if (reasonShort.length > 14) reasonShort = reasonShort.slice(0, 14) + '...';
         headerText.textContent = `DND: ${reasonShort}`;
         if (headerChip) {
@@ -2720,15 +2720,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (s.isActive) {
         toggleBtn.classList.add('is-muted');
         toggleIcon.textContent = '🔊';
-        toggleText.textContent = 'アンミュート';
-        toggleBtn.title = 'クリックでミュートを解除 (通常モードへ復帰)';
+        toggleText.textContent = 'ミュート解除';
+        toggleBtn.title = '現在ミュート中 (クリックでミュート解除)';
       } else {
         toggleBtn.classList.remove('is-muted');
         toggleIcon.textContent = '🔇';
         toggleText.textContent = 'ミュート';
-        const topDur = state.dndConfig?.topMuteDuration || '60';
+        const topDur = state.dndConfig?.topMuteDuration || 'indefinite';
         const durLabel = (topDur === 'indefinite') ? '手動解除までずっと' : (topDur === '1440' ? '1日間' : (topDur === '120' ? '2時間' : (topDur === '30' ? '30分間' : '1時間')));
-        toggleBtn.title = `ワンタップで即時ミュート (${durLabel}サイレント)`;
+        toggleBtn.title = `ワンタップで即時ミュート (${durLabel})`;
       }
     }
 
@@ -3059,9 +3059,12 @@ document.addEventListener('DOMContentLoaded', () => {
         whisperVolume: parseInt(document.getElementById('dndWhisperVolume')?.value || '10', 10),
         targetScope: document.querySelector('input[name="dndTargetScope"]:checked')?.value || 'all',
         targetDevices: spk,
-        topMuteDuration: document.querySelector('input[name="dndTopMuteDuration"]:checked')?.value || '60',
+        topMuteDuration: document.querySelector('input[name="dndTopMuteDuration"]:checked')?.value || 'indefinite',
         aiSummaryEnabled: document.getElementById('dndAiSummaryEnabled')?.checked !== false,
-        aiSummaryThreshold: parseInt(document.getElementById('dndAiSummaryThreshold')?.value || '2', 10)
+        aiSummaryThreshold: parseInt(document.getElementById('dndAiSummaryThreshold')?.value || '2', 10),
+        manualUntil: dnd.manualUntil !== undefined ? dnd.manualUntil : null,
+        manualReason: dnd.manualReason || '',
+        manualUnmutedUntil: dnd.manualUnmutedUntil !== undefined ? dnd.manualUnmutedUntil : null
       }
     };
 
@@ -3192,9 +3195,9 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast('ミュートを解除し、通常モードに復帰しました', 'success');
         } else {
           // 設定された期間でミュート実行
-          const durationSetting = state.dndConfig?.topMuteDuration || '60';
-          let minutes = 60;
-          let label = '1時間';
+          const durationSetting = state.dndConfig?.topMuteDuration || 'indefinite';
+          let minutes = -1;
+          let label = '手動解除までずっと';
           if (durationSetting === 'indefinite') {
             minutes = -1;
             label = '手動解除までずっと';

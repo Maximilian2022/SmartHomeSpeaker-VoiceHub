@@ -1,4 +1,5 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.my.env') });
+const http = require('http');
 const express = require('express');
 const path = require('path');
 const os = require('os');
@@ -108,8 +109,8 @@ function detectUserAgentClient(userAgent = '') {
 // セキュリティフィルター: Cloudflare Tunnel からのアクセス時は Web GUI へのアクセスを遮断
 app.use((req, res, next) => {
   if (isTunnelRequest(req)) {
-    // 許可するエンドポイント: Webhook (/api/say のみ)
-    const allowedPaths = ['/api/say'];
+    // 許可するエンドポイント: Webhook (/api/say, /api/webhook)
+    const allowedPaths = ['/api/say', '/api/webhook'];
     const isAllowed = allowedPaths.some(p => req.path.startsWith(p));
 
     if (!isAllowed) {
@@ -615,10 +616,15 @@ webhookQueue.setExecutor(async (text, targets, options) => {
   return await speakToMultipleDevices(text, targets, options);
 });
 
-// 初期カレンダーイベントの同期開始
-calendarManager.syncEvents().catch(err => {
-  console.warn('[Calendar] 初回同期エラー:', err.message);
-});
+// 初期カレンダーイベントの同期開始 (同期完了後に DND 起動時キュー判定を行うことで、会議中の誤再生・誤解除を防止)
+calendarManager.syncEvents()
+  .then(() => {
+    dndManager.checkStartupQueue();
+  })
+  .catch(err => {
+    console.warn('[Calendar] 初回同期エラー:', err.message);
+    dndManager.checkStartupQueue();
+  });
 
 // Webhook認証ミドルウェア (外部Cloudflare Tunnel等からのアクセス保護用)
 function requireWebhookAuth(req, res, next) {
@@ -1201,7 +1207,8 @@ app.post('/api/alexa/token', (req, res) => {
 });
 
 // 起動
-app.listen(PORT, '0.0.0.0', () => {
+// 1. IPv4: 全インターフェース (0.0.0.0) で待ち受け (宅内 LAN からの Web GUI / API アクセス用)
+const serverV4 = app.listen(PORT, '0.0.0.0', () => {
   console.log('====================================================');
   console.log(` Google Home & Alexa TTS Platform 起動完了`);
   console.log(` Web GUI:         http://localhost:${PORT}`);
@@ -1212,3 +1219,17 @@ app.listen(PORT, '0.0.0.0', () => {
   }
   console.log('====================================================');
 });
+
+// 2. IPv6: ループバック (::1) のみで待ち受け (localhost 名前解決をカバーし、外部グローバル IPv6 直打ちは遮断)
+try {
+  const serverV6 = http.createServer(app);
+  serverV6.listen(PORT, '::1', () => {
+    console.log(`[Security] IPv6 はループバック ([::1]:${PORT}) のみでリッスン (グローバルIPv6露出を防止)`);
+  });
+  serverV6.on('error', (err) => {
+    console.warn(`[Network] IPv6 ループバックリッスン警告: ${err.message}`);
+  });
+} catch (err) {
+  console.warn(`[Network] IPv6 初期化エラー: ${err.message}`);
+}
+

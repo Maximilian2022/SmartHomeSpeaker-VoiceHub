@@ -59,7 +59,6 @@ class DndManager {
 
   setSpeakerExecutor(fn) {
     this.speakerExecutor = fn;
-    this.checkStartupQueue();
   }
 
   /**
@@ -74,7 +73,7 @@ class DndManager {
         this.checkAndFlushQueue();
       }, 5000);
     } else {
-      console.log(`[DND] 起動時復元: 現在もサイレント中のため保留キュー (${this.queue.length}件) を保持します`);
+      console.log(`[DND] 起動時復元: 現在もサイレント中 (${status.reason}) のため保留キュー (${this.queue.length}件) を保持します`);
     }
   }
 
@@ -95,8 +94,9 @@ class DndManager {
       return { isDnd: false };
     }
 
-    // 2. 対象スピーカーのスコープ判定
-    if (dndConfig.targetScope === 'specific' && Array.isArray(dndConfig.targetDevices) && dndConfig.targetDevices.length > 0) {
+    // 2. 対象スピーカーのスコープ判定 (全体ステータス問い合わせ dummy_check や global の場合はスキップ)
+    const isGlobalQuery = !targetDeviceId || targetDeviceId === 'dummy_check' || targetDeviceId === 'global' || targetDeviceId === 'all';
+    if (!isGlobalQuery && dndConfig.targetScope === 'specific' && Array.isArray(dndConfig.targetDevices) && dndConfig.targetDevices.length > 0) {
       const isTarget = dndConfig.targetDevices.includes(targetDeviceId) || 
                        dndConfig.targetDevices.includes('all');
       if (!isTarget) {
