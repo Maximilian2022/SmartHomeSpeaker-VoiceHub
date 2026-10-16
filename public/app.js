@@ -21,6 +21,13 @@ document.addEventListener('DOMContentLoaded', () => {
     serverStatusText: document.getElementById('serverStatusText'),
     cacheStatusText: document.getElementById('cacheStatusText'),
     defaultDeviceText: document.getElementById('defaultDeviceText'),
+    // 認証
+    loginOverlay: document.getElementById('loginOverlay'),
+    loginForm: document.getElementById('loginForm'),
+    loginPassword: document.getElementById('loginPassword'),
+    loginErrorMsg: document.getElementById('loginErrorMsg'),
+    loginSubmitBtn: document.getElementById('loginSubmitBtn'),
+    headerLogoutBtn: document.getElementById('headerLogoutBtn'),
     // タブ
     tabBtns: document.querySelectorAll('.tab-btn'),
     tabPanes: document.querySelectorAll('.tab-pane'),
@@ -105,6 +112,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let alexaPollTimer = null;
 
+  // 認証関連ヘルパー
+  function showLoginOverlay() {
+    if (!el.loginOverlay) return;
+    el.loginOverlay.style.display = 'flex';
+    if (el.loginErrorMsg) el.loginErrorMsg.style.display = 'none';
+    if (el.loginPassword) {
+      el.loginPassword.value = '';
+      setTimeout(() => el.loginPassword.focus(), 100);
+    }
+  }
+
+  function hideLoginOverlay() {
+    if (el.loginOverlay) el.loginOverlay.style.display = 'none';
+  }
+
+  async function checkAuthStatus() {
+    try {
+      const res = await fetch('/api/auth/status');
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('[Auth] ステータス取得エラー:', e.message);
+    }
+    return { authRequired: false, authenticated: true };
+  }
+
   // ================= 1. 初期データ読み込み =================
   async function init() {
     setupEventListeners();
@@ -113,6 +147,24 @@ document.addEventListener('DOMContentLoaded', () => {
     setupDndHandlers();
     setupSettingsHandlers();
     setupAiHandlers();
+
+    // 認証ステータスの確認 (ADMIN_PASSWORD 設定時)
+    const auth = await checkAuthStatus();
+    if (auth.authRequired) {
+      if (!auth.authenticated) {
+        showLoginOverlay();
+        return;
+      }
+      if (el.headerLogoutBtn) el.headerLogoutBtn.style.display = 'inline-flex';
+    }
+
+    await loadInitialData();
+
+    // DND ステータスを定期ポーリング (15秒ごと)
+    setInterval(loadDndStatus, 15000);
+  }
+
+  async function loadInitialData() {
     await loadServerStatus();
     await Promise.all([
       loadDevices(),
@@ -128,9 +180,6 @@ document.addEventListener('DOMContentLoaded', () => {
       loadSettings(),
       loadAiSettings()
     ]);
-
-    // DND ステータスを定期ポーリング (15秒ごと)
-    setInterval(loadDndStatus, 15000);
   }
 
   // サーバー状態
@@ -829,6 +878,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ================= 3. イベントリスナー =================
   function setupEventListeners() {
+    // ログインフォーム送信
+    if (el.loginForm) {
+      el.loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const password = el.loginPassword ? el.loginPassword.value.trim() : '';
+        if (!password) return;
+
+        if (el.loginSubmitBtn) {
+          el.loginSubmitBtn.disabled = true;
+          el.loginSubmitBtn.textContent = '認証中...';
+        }
+        if (el.loginErrorMsg) el.loginErrorMsg.style.display = 'none';
+
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            hideLoginOverlay();
+            if (el.headerLogoutBtn) el.headerLogoutBtn.style.display = 'inline-flex';
+            if (typeof showToast === 'function') {
+              showToast('ログインしました', 'success');
+            }
+            await loadInitialData();
+          } else {
+            if (el.loginErrorMsg) {
+              el.loginErrorMsg.textContent = data.error || 'パスワードが正しくありません';
+              el.loginErrorMsg.style.display = 'block';
+            }
+          }
+        } catch (err) {
+          if (el.loginErrorMsg) {
+            el.loginErrorMsg.textContent = '通信エラー: ' + err.message;
+            el.loginErrorMsg.style.display = 'block';
+          }
+        } finally {
+          if (el.loginSubmitBtn) {
+            el.loginSubmitBtn.disabled = false;
+            el.loginSubmitBtn.textContent = 'ログイン';
+          }
+        }
+      });
+    }
+
+    // ログアウトボタン
+    if (el.headerLogoutBtn) {
+      el.headerLogoutBtn.addEventListener('click', async () => {
+        if (confirm('ログアウトしますか？')) {
+          try {
+            await fetch('/api/auth/logout', { method: 'POST' });
+          } catch (e) {}
+          window.location.reload();
+        }
+      });
+    }
+
     // メインタブ切り替え
     el.tabBtns.forEach(btn => {
       btn.addEventListener('click', () => {

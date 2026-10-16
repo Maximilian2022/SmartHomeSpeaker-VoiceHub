@@ -1,5 +1,6 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.my.env') });
 const http = require('http');
+const crypto = require('crypto');
 const express = require('express');
 const path = require('path');
 const os = require('os');
@@ -655,6 +656,65 @@ function requireWebhookAuth(req, res, next) {
   });
 }
 
+// ================= Web GUI 認証管理 (ADMIN_PASSWORD 設定時のみ有効) =================
+const activeSessions = new Map(); // token -> expiresAt
+
+function parseCookies(req) {
+  const list = {};
+  const rc = req.headers.cookie;
+  if (rc) {
+    rc.split(';').forEach(cookie => {
+      const parts = cookie.split('=');
+      list[parts.shift().trim()] = decodeURI(parts.join('='));
+    });
+  }
+  return list;
+}
+
+function verifyAdminSession(req) {
+  const adminPass = process.env.ADMIN_PASSWORD;
+  if (!adminPass || !adminPass.trim()) return true; // 未設定時は認証不要 (誰でもアクセス可能)
+
+  const trimmedTarget = adminPass.trim();
+
+  // 1. スクリプト・curl 用ダイレクト認証ヘッダー (X-Admin-Password または Bearer トークン)
+  const directPass = req.headers['x-admin-password'];
+  const authHeader = req.headers['authorization'] || '';
+  const bearerPass = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  const candidatePass = directPass || bearerPass;
+  if (candidatePass) {
+    const bufInput = crypto.createHash('sha256').update(String(candidatePass)).digest();
+    const bufTarget = crypto.createHash('sha256').update(String(trimmedTarget)).digest();
+    if (crypto.timingSafeEqual(bufInput, bufTarget)) {
+      return true;
+    }
+  }
+
+  // 2. セッションCookie または X-Admin-Token
+  const cookies = parseCookies(req);
+  const token = cookies.voicehub_session || req.headers['x-admin-token'];
+  if (token && activeSessions.has(token)) {
+    const expiresAt = activeSessions.get(token);
+    if (Date.now() < expiresAt) {
+      return true;
+    }
+    activeSessions.delete(token);
+  }
+  return false;
+}
+
+// 管理 API 認証ミドルウェア
+function requireAdminAuth(req, res, next) {
+  if (verifyAdminSession(req)) {
+    return next();
+  }
+  return res.status(401).json({
+    error: 'Unauthorized',
+    authRequired: true,
+    message: 'Web GUI へのアクセスにはログインが必要です。'
+  });
+}
+
 // ================= API エンドポイント =================
 
 // 1. 発声 API (最新・複数デバイス対応 & 非同期レスポンス対応)
@@ -830,6 +890,52 @@ app.post('/api/say', requireWebhookAuth, handleSay);
 app.get('/api/say', requireWebhookAuth, handleSay);
 app.post('/api/webhook', requireWebhookAuth, handleSay);
 app.get('/api/webhook', requireWebhookAuth, handleSay);
+
+// ================= 認証 API (オプショナル: ADMIN_PASSWORD 設定時) =================
+app.get('/api/auth/status', (req, res) => {
+  const adminPass = process.env.ADMIN_PASSWORD;
+  const authRequired = !!(adminPass && adminPass.trim());
+  const authenticated = verifyAdminSession(req);
+  res.json({ authRequired, authenticated });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const adminPass = process.env.ADMIN_PASSWORD;
+  if (!adminPass || !adminPass.trim()) {
+    return res.json({ success: true, message: 'パスワード未設定のため認証不要です' });
+  }
+
+  const { password } = req.body || {};
+  if (!password) {
+    return res.status(400).json({ error: 'パスワードを入力してください' });
+  }
+
+  const bufInput = crypto.createHash('sha256').update(String(password)).digest();
+  const bufTarget = crypto.createHash('sha256').update(String(adminPass.trim())).digest();
+
+  if (crypto.timingSafeEqual(bufInput, bufTarget)) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = Date.now() + 30 * 24 * 3600 * 1000; // 30日間有効
+    activeSessions.set(token, expiresAt);
+
+    // Cookie 設定 (30日)
+    res.setHeader('Set-Cookie', `voicehub_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`);
+    return res.json({ success: true, token });
+  }
+
+  return res.status(401).json({ error: 'パスワードが正しくありません' });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const cookies = parseCookies(req);
+  const token = cookies.voicehub_session || req.headers['x-admin-token'];
+  if (token) activeSessions.delete(token);
+  res.setHeader('Set-Cookie', 'voicehub_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+  res.json({ success: true });
+});
+
+// 管理用 API へのアクセスを保護 (ADMIN_PASSWORD 設定時)
+app.use('/api', requireAdminAuth);
 
 // 永続化キュー状態確認 API
 app.get('/api/queue', (req, res) => {
