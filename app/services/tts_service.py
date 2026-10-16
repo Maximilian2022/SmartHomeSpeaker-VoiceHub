@@ -29,6 +29,19 @@ class TtsService:
     def get_voices(self):
         return VOICES
 
+    def get_cache_stats(self) -> Dict[str, Any]:
+        try:
+            files = list(self.voice_dir.glob("*.mp3"))
+            total_bytes = sum(f.stat().st_size for f in files)
+            return {
+                "count": len(files),
+                "totalBytes": total_bytes,
+                "totalMB": f"{total_bytes / 1024 / 1024:.2f}",
+                "maxMB": "1024"
+            }
+        except Exception:
+            return {"count": 0, "totalBytes": 0, "totalMB": "0", "maxMB": "1024"}
+
     def _generate_cache_key(self, text: str, voice: str, rate: str, pitch: str, chime: str) -> str:
         raw = f"{text}_{voice}_{rate}_{pitch}_{chime}"
         return hashlib.md5(raw.encode("utf-8")).hexdigest()

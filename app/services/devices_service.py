@@ -89,8 +89,6 @@ class DeviceManager:
         # 3. HomePod デバイス
         try:
             hp_devs = homepod_service.devices_cache
-            if not hp_devs:
-                hp_devs = await homepod_service.scan_devices(timeout=2)
             for hd in hp_devs:
                 d = dict(hd)
                 d["isDefault"] = (d["ip"] == default_ip)

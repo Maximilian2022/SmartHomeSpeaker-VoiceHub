@@ -14,9 +14,13 @@ class AlexaService:
         self.cookie_path = COOKIE_FILE
 
     def is_enabled(self) -> bool:
+        if not settings.alexa_enabled:
+            return False
         return self.cookie_path.exists() or bool(settings.refresh_token)
 
     async def _run_command(self, args: List[str]) -> str:
+        if not self.is_enabled():
+            return ""
         env = os.environ.copy()
         env["SET_ALEXA_COOKIE_PATH"] = str(self.cookie_path)
         if settings.refresh_token:
@@ -30,7 +34,8 @@ class AlexaService:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            err = stderr.decode(errors="ignore")
+            err = stderr.decode(errors="ignore").strip()
+            # 認証切れ等の通常警告
             print(f"[AlexaService] Command error {args}: {err}")
             raise RuntimeError(err or "Alexa script execution failed")
         return stdout.decode(errors="ignore")

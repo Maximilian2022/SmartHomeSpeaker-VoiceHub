@@ -10,6 +10,7 @@ from app.core.security import check_tunnel_access, check_admin_auth
 from app.services.disaster_service import disaster_service
 from app.services.calendar_service import calendar_service
 from app.services.speech_service import speech_service
+from app.services.scheduler_service import scheduler_service
 
 # Routers
 from app.routers import (
@@ -23,7 +24,9 @@ from app.routers import (
     disaster,
     ai,
     auth,
-    homepod_alexa
+    homepod_alexa,
+    status,
+    schedules
 )
 
 @asynccontextmanager
@@ -31,6 +34,9 @@ async def lifespan(app: FastAPI):
     # 起動時処理
     print("[VoiceHub] Starting Python FastAPI Voice Hub Engine...")
     
+    # スケジューラー定期実行タスク開始
+    await scheduler_service.start()
+
     # 防災速報コールバックの設定
     async def on_disaster_alert(text: str, urgent: bool = True):
         await speech_service.speak(text=text, targets="ALL", urgent=urgent)
@@ -91,6 +97,8 @@ app.include_router(disaster.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
 app.include_router(homepod_alexa.router)
+app.include_router(status.router)
+app.include_router(schedules.router)
 
 # 静的ファイルの配信
 app.mount("/voice", StaticFiles(directory=str(VOICE_DIR)), name="voice")

@@ -11,6 +11,25 @@ DND_QUEUE_FILE = DATA_DIR / "dnd_queue.json"
 class DndService:
     def __init__(self):
         self.queue: List[Dict[str, Any]] = self._load_queue()
+        self.history: List[Dict[str, Any]] = []
+
+    def record_history(self, text: str, reason: str, action: str, target: str = ""):
+        self.history.insert(0, {
+            "id": f"dnd_hist_{int(time.time()*1000)}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "text": text,
+            "target": target,
+            "reason": reason,
+            "action": action
+        })
+        if len(self.history) > 50:
+            self.history = self.history[:50]
+
+    def get_history(self) -> List[Dict[str, Any]]:
+        return self.history
+
+    def clear_history(self):
+        self.history = []
 
     def _load_queue(self) -> List[Dict[str, Any]]:
         if DND_QUEUE_FILE.exists():

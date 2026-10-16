@@ -8,6 +8,56 @@ class AiService:
     def __init__(self):
         pass
 
+    def mask_key(self, key: str) -> str:
+        if not key:
+            return ""
+        trimmed = key.strip()
+        if len(trimmed) <= 8:
+            return "****"
+        return f"{trimmed[:4]}...{trimmed[-4:]}"
+
+    def get_status(self) -> Dict[str, Any]:
+        ai_conf = settings_manager.get().get("ai", {})
+        dnd_conf = settings_manager.get().get("dnd", {})
+        gemini_key = ai_conf.get("geminiApiKey") or settings.effective_gemini_key
+        openai_key = ai_conf.get("openaiApiKey") or settings.openai_api_key
+
+        return {
+            "enabled": ai_conf.get("enabled", True),
+            "provider": ai_conf.get("provider", "gemini"),
+            "gemini": {
+                "hasKey": bool(gemini_key),
+                "keyMasked": self.mask_key(gemini_key),
+                "source": "settings" if ai_conf.get("geminiApiKey") else ("env" if gemini_key else "none"),
+                "model": ai_conf.get("geminiModel", "gemini-2.5-flash")
+            },
+            "openai": {
+                "hasKey": bool(openai_key),
+                "keyMasked": self.mask_key(openai_key),
+                "source": "settings" if ai_conf.get("openaiApiKey") else ("env" if openai_key else "none"),
+                "model": ai_conf.get("openaiModel", "gpt-4o-mini")
+            },
+            "dndSummary": {
+                "enabled": dnd_conf.get("aiSummaryEnabled", True),
+                "threshold": int(dnd_conf.get("aiSummaryThreshold", 2)),
+                "customPrompt": dnd_conf.get("aiSummaryCustomPrompt", "")
+            },
+            "calendarSummary": {
+                "enabled": ai_conf.get("summarizeDailyCalendar", True)
+            }
+        }
+
+    async def test_connection(self, provider: str, api_key: str, model: str) -> Dict[str, Any]:
+        prompt = "接続テストです。日本語で一言返答してください。"
+        if provider == "gemini":
+            res = await self._call_gemini(api_key, model or "gemini-2.5-flash", prompt)
+            return {"success": bool(res), "reply": res, "error": None if res else "Gemini API 呼び出しに失敗しました"}
+        elif provider == "openai":
+            res = await self._call_openai(api_key, model or "gpt-4o-mini", prompt)
+            return {"success": bool(res), "reply": res, "error": None if res else "OpenAI API 呼び出しに失敗しました"}
+        return {"success": False, "error": f"Unknown provider {provider}"}
+
+
     async def summarize_dnd_messages(self, messages: List[str]) -> str:
         if not messages:
             return ""

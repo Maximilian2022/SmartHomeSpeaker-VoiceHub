@@ -1,3 +1,4 @@
+import asyncio
 from typing import Dict, Any, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -12,12 +13,23 @@ class DefaultDeviceRequest(BaseModel):
 
 @router.get("/api/devices")
 async def get_devices():
-    return await device_manager.get_devices()
+    devs = await device_manager.get_devices()
+    return {
+        "devices": devs,
+        "defaultIp": device_manager.get_default_device_ip()
+    }
 
+@router.post("/api/devices/rescan-all")
 @router.post("/api/devices/scan")
-async def scan_devices():
-    device_manager.scan_google_devices()
-    return await device_manager.get_devices()
+async def rescan_all_devices():
+    await asyncio.to_thread(device_manager.scan_google_devices)
+    devs = await device_manager.get_devices()
+    return {
+        "success": True,
+        "count": len(devs),
+        "devices": devs,
+        "defaultIp": device_manager.get_default_device_ip()
+    }
 
 @router.get("/api/devices/default")
 async def get_default_device():

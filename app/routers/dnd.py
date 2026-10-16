@@ -1,5 +1,5 @@
 import time
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 from app.services.dnd_service import dnd_service
@@ -49,6 +49,29 @@ async def unmute_dnd():
             "manualReason": ""
         }
     })
+@router.post("/api/dnd/quick")
+async def quick_dnd(req: Dict[str, Any]):
+    minutes = int(req.get("minutes", 60))
+    reason = req.get("reason", "手動サイレント (即時)")
+    now_ts = time.time()
+    until_ts = now_ts + (minutes * 60)
+    dnd_conf = settings_manager.get().get("dnd", {})
+    settings_manager.update({
+        "dnd": {
+            **dnd_conf,
+            "manualUntil": until_ts,
+            "manualReason": reason
+        }
+    })
+    return {"success": True, "manualUntil": until_ts, "reason": reason}
+
+@router.get("/api/dnd/history")
+async def get_dnd_history():
+    return dnd_service.get_history()
+
+@router.delete("/api/dnd/history")
+async def clear_dnd_history():
+    dnd_service.clear_history()
     return {"success": True}
 
 @router.get("/api/dnd/queue")
