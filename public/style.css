@@ -430,6 +430,11 @@ body {
   border-color: rgba(245, 158, 11, 0.45);
 }
 
+.speaker-chip.dlna-chip.checked {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.45);
+}
+
 .speaker-chip-name {
   font-size: 0.85rem;
   font-weight: 500;
@@ -482,6 +487,12 @@ body {
   background: rgba(245, 158, 11, 0.15);
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.speaker-chip-badge.dlna-badge {
+  background: rgba(6, 182, 212, 0.15);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.35);
 }
 
 .speaker-chip-badge.default-badge {
@@ -1293,6 +1304,16 @@ input:checked + .slider:before {
   background: rgba(255, 255, 255, 0.12);
   color: #f1f5f9;
   border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.device-card.dlna-dev {
+  border-left: 3px solid #06b6d4;
+}
+
+.device-tag.dlna {
+  background: rgba(6, 182, 212, 0.15);
+  color: #22d3ee;
+  border: 1px solid rgba(6, 182, 212, 0.35);
 }
 
 .token-banner-card {

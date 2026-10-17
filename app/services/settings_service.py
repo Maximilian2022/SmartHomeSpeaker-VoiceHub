@@ -101,6 +101,53 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "homepodDelayMs": 0,
         "googleDelayMs": 0,
         "dynamicAutoAdjust": True
+    },
+    "disaster": {
+        "enabled": True,
+        "targetScope": "all",
+        "targetDevices": ["ALL"],
+        "area": {
+            "prefCode": "130000",
+            "prefName": "東京都",
+            "cityCode": "1310100",
+            "cityName": "千代田区"
+        },
+        "earthquake": {
+            "enabled": True,
+            "eewEnabled": True,
+            "eewUrgent": True,
+            "eewVolume": 80,
+            "reportEnabled": True,
+            "minScale": 30,
+            "reportUrgent": False,
+            "targetScope": "local"
+        },
+        "weatherWarning": {
+            "enabled": True,
+            "level": "warning",
+            "notifyClear": True,
+            "urgent": False,
+            "checkIntervalMinutes": 5
+        },
+        "dailyWeather": {
+            "enabled": True,
+            "includeAdvice": True
+        }
+    },
+    "mqtt": {
+        "enabled": False,
+        "broker": "192.168.11.1",
+        "port": 1883,
+        "username": "",
+        "password": "",
+        "clientId": "voice-hub",
+        "keepalive": 60,
+        "baseTopic": "voicehub",
+        "defaultTarget": "",
+        "publishEvents": True,
+        "tls": False,
+        "haDiscoveryEnabled": True,
+        "haDiscoveryPrefix": "homeassistant"
     }
 }
 

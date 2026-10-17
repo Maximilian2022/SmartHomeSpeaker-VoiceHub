@@ -10,6 +10,7 @@ async def get_settings():
     return settings_manager.get()
 
 @router.put("/api/settings")
+@router.post("/api/settings")
 async def update_settings(payload: Dict[str, Any]):
     return settings_manager.update(payload)
 

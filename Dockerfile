@@ -1,13 +1,16 @@
 # Stage 1: go2rtc official binary
 FROM alexxit/go2rtc:latest AS go2rtc-src
 
-# Stage 2: Voice Hub Python 3.12 Runtime
-FROM python:3.12-slim
+# Stage 2: Voice Hub Python 3.14 Runtime
+FROM python:3.14-slim
 
 WORKDIR /app
 
 # go2rtc 単一バイナリを同梱
 COPY --from=go2rtc-src /usr/local/bin/go2rtc /usr/local/bin/go2rtc
+
+# IPv4 優先設定 (IPv6到達不能環境での接続タイムアウト防止)
+RUN echo "precedence ::ffff:0:0/96 100" > /etc/gai.conf
 
 # 必須システムパッケージのインストール (Python のみ)
 RUN apt-get update && apt-get install -y --no-install-recommends \

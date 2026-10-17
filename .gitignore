@@ -1,5 +1,19 @@
-# Dependencies
-node_modules/
+# AI Agent Rules & Workspace configuration (ローカル/エージェント作業用)
+.agents/
+
+# Logs & Debug history (作業ログ・履歴)
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Scratch directory & temporary testing files (一時テスト・短期記憶)
+scratch/
+*.bak
+*.patch
+*.tmp
+test_*.mp3
 
 # Environment variables & secrets (絶対コミット禁止)
 .env
@@ -13,15 +27,27 @@ node_modules/
 firebase*.json
 *.secret
 
-# Generated audio files
+# Generated audio files & cache
 *.wav
 *.mp3
 public/voice/*
 !public/voice/.gitkeep
 
-# Persistent user data (スケジュール内容・履歴)
+# Persistent user data (端末固有の登録情報・履歴・スケジュール)
 data/*
 !data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+.env/
 
 # OS and Editor
 .DS_Store
@@ -29,20 +55,5 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-venv/
-.venv/
-
-# Logs and scratch backups
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-*.bak
-*.patch
-test_*.mp3
-
+# Dependencies
+node_modules/

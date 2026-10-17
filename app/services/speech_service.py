@@ -14,10 +14,30 @@ from app.services.alexa_service import alexa_service
 from app.services.dnd_service import dnd_service
 from app.config import settings
 from app.services.calendar_service import calendar_service
-from app.core.deduplication import deduplicator
+from app.core.logger import get_logger
+from app.services.history_service import history_manager
 
-HISTORY_LOG: List[Dict[str, Any]] = []
-MAX_HISTORY = 100
+log = get_logger("Speech")
+
+class Deduplicator:
+    def __init__(self):
+        self._cache: Dict[str, float] = {}
+
+    def is_duplicate(self, text: str, client_key: str = "API", cooldown_seconds: int = 30) -> bool:
+        if cooldown_seconds <= 0:
+            return False
+        now = time.time()
+        key = f"{client_key}:::{text.strip()}"
+        last_time = self._cache.get(key)
+        if last_time and (now - last_time) < cooldown_seconds:
+            return True
+        self._cache[key] = now
+        if len(self._cache) > 1000:
+            expire_threshold = now - 3600
+            self._cache = {k: v for k, v in self._cache.items() if v >= expire_threshold}
+        return False
+
+deduplicator = Deduplicator()
 
 class SpeechService:
     def __init__(self):
@@ -25,17 +45,14 @@ class SpeechService:
 
     @property
     def server_base_url(self) -> str:
-        ip = settings.wireless_ip or "127.0.0.1"
+        ip = settings.effective_wireless_ip
         return f"http://{ip}:{settings.server_port}"
 
     def get_history(self) -> List[Dict[str, Any]]:
-        return HISTORY_LOG
+        return history_manager.get_history()
 
     def record_history(self, item: Dict[str, Any]):
-        global HISTORY_LOG
-        HISTORY_LOG.insert(0, item)
-        if len(HISTORY_LOG) > MAX_HISTORY:
-            HISTORY_LOG = HISTORY_LOG[:MAX_HISTORY]
+        return history_manager.add_entry(item)
 
     def _get_effective_volume(self, req_volume: Optional[Union[float, int, str]]) -> Optional[float]:
         if req_volume is not None and str(req_volume).strip() != "":
@@ -66,7 +83,12 @@ class SpeechService:
         volume_level: Optional[Union[float, int, str]] = None,
         chime: Optional[str] = None,
         client_name: str = "API",
-        urgent: bool = False
+        client_ip: Optional[str] = None,
+        source: Optional[str] = None,
+        source_label: Optional[str] = None,
+        urgent: bool = False,
+        was_queued: bool = False,
+        speed: Optional[str] = None
     ) -> Dict[str, Any]:
         text = text.strip()
         if not text:
@@ -89,9 +111,25 @@ class SpeechService:
         current_meeting = calendar_service.get_current_meeting_title()
         dnd_result = dnd_service.evaluate(active_event_title=current_meeting, urgent=urgent)
 
+        effective_source = source or ("web_ui" if "Mozilla" in client_name or "Web" in client_name else "api")
+
         if dnd_result.get("active"):
             action = dnd_result.get("action", "skip")
             if action == "skip":
+                self.record_history({
+                    "text": text,
+                    "source": effective_source,
+                    "sourceLabel": source_label,
+                    "clientName": client_name,
+                    "clientIp": client_ip or "",
+                    "targets": [targets] if isinstance(targets, str) else (targets or ["デフォルト"]),
+                    "voice": voice or "ja-JP-NanamiNeural",
+                    "status": "suppressed",
+                    "statusMessage": f"おやすみ・会議モード (DND) 発動中のため発話を抑制しました ({dnd_result.get('reason')})",
+                    "urgent": urgent,
+                    "wasQueued": False,
+                    "results": []
+                })
                 return {
                     "success": True,
                     "status": "skipped",
@@ -105,7 +143,24 @@ class SpeechService:
                     "text": text,
                     "targets": targets,
                     "voice": voice,
-                    "client": client_name
+                    "client": client_name,
+                    "client_ip": client_ip,
+                    "source": effective_source,
+                    "source_label": source_label
+                })
+                self.record_history({
+                    "text": text,
+                    "source": effective_source,
+                    "sourceLabel": source_label,
+                    "clientName": client_name,
+                    "clientIp": client_ip or "",
+                    "targets": [targets] if isinstance(targets, str) else (targets or ["デフォルト"]),
+                    "voice": voice or "ja-JP-NanamiNeural",
+                    "status": "queued",
+                    "statusMessage": f"DND発動中のため保留キューに追加しました ({dnd_result.get('reason')})",
+                    "urgent": urgent,
+                    "wasQueued": True,
+                    "results": []
                 })
                 return {
                     "success": True,
@@ -190,7 +245,7 @@ class SpeechService:
 
         # 4. 音声合成 (TTS)
         opt_voice = voice or "ja-JP-NanamiNeural"
-        opt_rate = rate or "+0%"
+        opt_rate = rate or speed or "+0%"
         opt_pitch = pitch or "+0Hz"
         opt_chime = chime or settings_manager.get().get("chime", "dingdong")
 
@@ -207,8 +262,12 @@ class SpeechService:
 
         # 5. 各プラットフォームへの並列ディスパッチ
         tasks = []
+        target_names = [f"{d.get('name')} ({d.get('type')}:{d.get('ip')})" for d in unique_targets]
+        log.info(f"Dispatching speech '{text[:40]}' to {len(unique_targets)} device(s): {', '.join(target_names)}")
+
         for dev in unique_targets:
             dtype = dev.get("type", "google")
+            dev_name = dev.get("name") or dev.get("ip")
             if dtype == "google":
                 ip_val = str(dev.get("ip", ""))
                 if ":" in ip_val:
@@ -221,52 +280,84 @@ class SpeechService:
                 else:
                     host = dev.get("host") or ip_val
                     port = int(dev.get("port", 8009))
+                log.info(f"[Dispatch -> Google Cast] {dev_name} ({host}:{port}) URL: {audio_url}")
                 tasks.append(cast_service.play_audio(host, port, audio_url, effective_vol))
             elif dtype == "homepod":
-                tasks.append(homepod_service.play_audio(dev.get("ip", ""), audio_url))
+                log.info(f"[Dispatch -> HomePod] {dev_name} ({dev.get('ip')}) File: {speech['filepath']}")
+                tasks.append(homepod_service.play_audio(dev.get("ip", ""), speech["filepath"]))
             elif dtype == "dlna":
+                log.info(f"[Dispatch -> DLNA] {dev_name} ({dev.get('ip')}) URL: {audio_url}")
                 tasks.append(dlna_service.play_audio(dev, audio_url, effective_vol))
             elif dtype == "onvif":
+                log.info(f"[Dispatch -> ONVIF] {dev_name} ({dev.get('ip')}) file: {speech['filepath']}")
                 tasks.append(onvif_service.play_audio(dev, speech["filepath"], speech["duration"], effective_vol))
             elif dtype == "alexa":
+                log.info(f"[Dispatch -> Alexa] {dev_name} text: '{text[:30]}'")
                 tasks.append(alexa_service.speak(dev.get("name", ""), text))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         detailed_results = []
         for i, dev in enumerate(unique_targets):
+            dev_name = dev.get("name") or dev.get("ip")
             res_val = results[i] if i < len(results) else False
             is_ok = (res_val is True or (isinstance(res_val, dict) and res_val.get("status") != "error"))
-            err_msg = str(res_val) if isinstance(res_val, Exception) else (None if is_ok else "Playback failed")
+            err_msg = None
+            if isinstance(res_val, Exception):
+                err_msg = f"{type(res_val).__name__}: {res_val}"
+                log.error(f"[Dispatch Result] ❌ {dev_name} failed with exception: {err_msg}")
+            elif not is_ok:
+                err_msg = "Playback failed"
+                log.warning(f"[Dispatch Result] ❌ {dev_name} failed (result={res_val})")
+            else:
+                log.info(f"[Dispatch Result] ✅ {dev_name} success")
+
             detailed_results.append({
-                "target": dev.get("name") or dev.get("ip"),
+                "target": dev_name,
                 "status": "success" if is_ok else "error",
                 "error": err_msg
             })
 
         has_success = any(r["status"] == "success" for r in detailed_results)
+        all_success = len(detailed_results) > 0 and all(r["status"] == "success" for r in detailed_results)
 
-        # 6. 履歴記録
+        history_status = "success" if all_success else ("partial" if has_success else "error")
+        history_msg = f"{len(detailed_results)} 台のスピーカーへ送信成功" if all_success else (
+            f"一部端末のみ成功 ({sum(1 for r in detailed_results if r['status'] == 'success')}/{len(detailed_results)} 台)" if has_success else "全デバイスへの送信に失敗しました"
+        )
+
+        # 6. 永続化履歴記録
         history_entry = {
-            "id": f"hist_{int(time.time()*1000)}",
             "text": text,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "targets": [d.get("name") for d in unique_targets],
-            "client": client_name,
+            "source": effective_source,
+            "sourceLabel": source_label,
+            "clientName": client_name,
+            "clientIp": client_ip or "",
+            "wasQueued": was_queued,
+            "targets": [d.get("name") or d.get("ip") for d in unique_targets],
+            "voice": opt_voice,
+            "rate": opt_rate,
+            "pitch": opt_pitch,
             "audioUrl": f"/voice/{speech['filename']}",
             "duration": speech["duration"],
-            "status": "success" if has_success else "error"
+            "status": history_status,
+            "statusMessage": history_msg,
+            "urgent": urgent,
+            "results": detailed_results
         }
         self.record_history(history_entry)
 
         return {
             "success": has_success,
-            "status": "success" if has_success else "error",
-            "message": "Playback initiated" if has_success else "Playback failed on all devices",
+            "status": history_status,
+            "message": history_msg,
             "targets": [d.get("name") for d in unique_targets],
             "audioUrl": history_entry["audioUrl"],
             "duration": speech["duration"],
             "results": detailed_results
         }
+
+    # say / speak の相互運用性保証エイリアス
+    say = speak
 
 speech_service = SpeechService()

@@ -5,8 +5,10 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from app.config import DATA_DIR, BASE_DIR, settings
-
 from app.services.alexa_proxy_service import AlexaAuthProxy
+from app.core.logger import get_logger
+
+log = get_logger("Alexa")
 
 ALEXA_SCRIPT = BASE_DIR / "bin" / "alexa_remote_control.sh"
 COOKIE_FILE = DATA_DIR / ".alexa.cookie"
@@ -107,67 +109,93 @@ class AlexaService:
             self.cookie_path.unlink(missing_ok=True)
         settings.refresh_token = ""
         self.devices_cache = []
-        print("[AlexaService] Logged out.")
+        log.info("Logged out.")
 
     async def _run_command(self, args: List[str]) -> str:
         if not self.is_configured():
+            log.warning("Alexa is not configured, command ignored.")
             return ""
         env = os.environ.copy()
         env["SET_ALEXA_COOKIE_PATH"] = str(self.cookie_path)
+        env["AMAZON"] = os.environ.get("ALEXA_AMAZON", "amazon.co.jp")
+        env["ALEXA"] = os.environ.get("ALEXA_ALEXA", "alexa.amazon.co.jp")
+
         token = settings.refresh_token
         if not token and self.credentials_path.exists():
             try:
                 data = json.loads(self.credentials_path.read_text(encoding="utf-8"))
                 token = data.get("refreshToken", "")
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"Failed to read credentials file: {e}")
         if token:
             env["REFRESH_TOKEN"] = token
 
-        proc = await asyncio.create_subprocess_exec(
-            "bash", str(self.script_path), *args,
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            err = stderr.decode(errors="ignore").strip()
-            print(f"[AlexaService] Command error {args}: {err}")
-            raise RuntimeError(err or "Alexa script execution failed")
-        return stdout.decode(errors="ignore")
+        cmd_str = f"bash {self.script_path} {' '.join(args)}"
+        log.info(f"Executing: {cmd_str}")
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "bash", str(self.script_path), *args,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            out_str = stdout.decode(errors="ignore").strip()
+            err_str = stderr.decode(errors="ignore").strip()
+
+            if proc.returncode != 0:
+                log.error(f"Command failed (code {proc.returncode}): {err_str or out_str}")
+                raise RuntimeError(err_str or out_str or "Alexa script execution failed")
+
+            log.info(f"Command succeeded: {out_str[:120]}")
+            return out_str
+        except asyncio.TimeoutError:
+            log.error(f"Command timed out after 30s: {cmd_str}")
+            raise TimeoutError("Alexa command timed out")
+        except Exception as e:
+            log.error(f"Execution error on {cmd_str}: {e}")
+            raise
 
     async def speak(self, device_name: str, text: str) -> bool:
         clean_name = device_name.replace("alexa:", "").strip()
+        clean_name = re.sub(r"^Alexa \((.+)\)$", r"\1", clean_name)
+        log.info(f"Speak request to target='{clean_name}' (raw='{device_name}'): '{text[:30]}'")
+
         try:
-            await self._run_command(["-d", clean_name, "-e", f"speak:{text}"])
+            clean_text = text.replace("'", "")
+            await self._run_command(["-d", clean_name, "-e", f"speak:{clean_text}"])
+            log.info(f"✅ Successfully spoke to Alexa device: {clean_name}")
             return True
         except Exception as e:
-            print(f"[AlexaService] Speak failed on {clean_name}: {e}")
+            log.error(f"❌ Failed to speak to Alexa device {clean_name}: {e}")
             return False
 
     async def list_devices(self) -> List[Dict[str, Any]]:
         if not self.is_configured():
+            log.info("Alexa not configured, skipping device listing.")
             return []
         try:
             out = await self._run_command(["-a"])
             devices = []
             for line in out.splitlines():
                 line = line.strip()
-                if not line or line.startswith(("#", "Available")):
+                if not line or line.startswith(("#", "Available", "the following")):
                     continue
                 dev_name = line.strip('"')
                 devices.append({
                     "id": f"alexa_{dev_name.replace(' ', '_')}",
                     "name": f"Alexa ({dev_name})",
+                    "rawName": dev_name,
                     "ip": f"alexa:{dev_name}",
                     "model": "Amazon Echo",
                     "type": "alexa"
                 })
             self.devices_cache = devices
+            log.info(f"Discovered {len(devices)} Alexa device(s).")
             return devices
         except Exception as e:
-            print(f"[AlexaService] List devices error: {e}")
+            log.error(f"Failed to list Alexa devices: {e}")
             return []
 
 alexa_service = AlexaService()

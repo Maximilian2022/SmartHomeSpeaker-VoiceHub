@@ -37,14 +37,46 @@ class DefaultAuthRequest(BaseModel):
     defaultUsername: str = "admin"
     defaultPassword: Optional[str] = ""
 
+@router.get("/api/onvif/scan")
 @router.post("/api/onvif/scan")
+@router.get("/api/onvif-dlna/scan")
 @router.post("/api/onvif-dlna/scan")
+@router.get("/api/dlna/scan")
+@router.post("/api/dlna/scan")
 async def scan_onvif_dlna(req: Optional[ScanRequest] = None):
     timeout_ms = req.timeoutMs if req and req.timeoutMs else 3500
     username = req.username if req and req.username else ""
     password = req.password if req and req.password else ""
-    return await onvif_service.scan_all_devices(timeout_ms, username, password)
+    devices = await onvif_service.scan_all_devices(timeout_ms, username, password)
+    return {
+        "success": True,
+        "devices": devices,
+        "total": len(devices)
+    }
 
+@router.post("/api/dlna/probe")
+async def probe_dlna(payload: Dict[str, Any]):
+    """指定された IP と ポートの DLNA / UPnP MediaRenderer を直接検証"""
+    ip = payload.get("ip", "").strip()
+    port = int(payload.get("port", 80))
+    if not ip:
+        raise HTTPException(status_code=400, detail="IP address is required")
+    location = payload.get("location") or f"http://{ip}:{port}/description.xml"
+    
+    import httpx
+    async with httpx.AsyncClient(timeout=4.0) as client:
+        info = await dlna_service._fetch_device_info(client, location)
+        if not info:
+            # 別のよくあるXMLパスも試行
+            for fallback in [f"http://{ip}:{port}/rootDesc.xml", f"http://{ip}:{port}/devicedesc.xml", f"http://{ip}:{port}/"]:
+                info = await dlna_service._fetch_device_info(client, fallback)
+                if info:
+                    break
+    if not info:
+        raise HTTPException(status_code=404, detail="DLNA MediaRenderer が見つかりませんでした (AVTransport未検出)")
+    return {"success": True, "device": info}
+
+@router.post("/api/dlna/register")
 @router.post("/api/onvif/register")
 async def register_device(raw_req: Dict[str, Any]):
     # { device: { ... } } 形式またはフラット形式の両方を吸収
@@ -82,6 +114,7 @@ async def register_device(raw_req: Dict[str, Any]):
     settings_manager.update({"onvif": {**onvif_conf, "registeredDevices": reg_list}})
     return {"success": True, "registeredDevices": reg_list}
 
+@router.post("/api/dlna/test")
 @router.post("/api/onvif/test")
 async def test_playback(req: TestRequest):
     onvif_conf = settings_manager.get().get("onvif", {})
@@ -103,7 +136,8 @@ async def test_playback(req: TestRequest):
     dev_type = target_dev.get("type", "onvif")
 
     if dev_type == "dlna":
-        audio_url = f"http://127.0.0.1:8080/voice/{speech['filename']}"
+        from app.config import settings
+        audio_url = f"http://{settings.effective_wireless_ip}:{settings.server_port}/voice/{speech['filename']}"
         success = await dlna_service.play_audio(target_dev, audio_url, req.volumeLevel)
         if not success:
             raise HTTPException(status_code=500, detail="DLNA playback failed")

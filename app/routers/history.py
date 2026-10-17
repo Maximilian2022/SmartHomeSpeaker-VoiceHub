@@ -1,14 +1,18 @@
-from fastapi import APIRouter
-from app.services.speech_service import speech_service, HISTORY_LOG
+from typing import Optional
+from fastapi import APIRouter, Query
+from app.services.history_service import history_manager
 
 router = APIRouter()
 
 @router.get("/api/history")
-async def get_history():
-    return speech_service.get_history()
+async def get_history(limit: int = Query(default=100, ge=1, le=500)):
+    items = history_manager.get_history(limit=limit)
+    return {
+        "history": items,
+        "total": len(items)
+    }
 
 @router.delete("/api/history")
 async def clear_history():
-    global HISTORY_LOG
-    HISTORY_LOG.clear()
+    history_manager.clear()
     return {"success": True, "message": "History cleared"}

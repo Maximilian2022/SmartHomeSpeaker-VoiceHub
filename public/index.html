@@ -463,8 +463,8 @@
         <div class="card glass-card">
           <div class="card-header flex-between" style="flex-wrap: wrap; gap: 10px;">
             <div>
-              <h2>宅内接続デバイス一覧 (Google Home / Alexa / HomePod / ONVIF)</h2>
-              <span class="card-sub">ネットワーク内に検出されたスマートスピーカーおよび登録カメラです</span>
+              <h2>宅内接続デバイス一覧 (Google Home / Alexa / HomePod / ONVIF / DLNA)</h2>
+              <span class="card-sub">ネットワーク内に検出されたスマートスピーカーおよび登録カメラ・DLNA機器です</span>
             </div>
             <button type="button" id="btnRefreshDevices" class="btn btn-primary btn-sm">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -480,7 +480,7 @@
             <!-- 外部連携・カメラ連携への案内バナー -->
             <div style="margin-top: 24px; padding: 14px 18px; background: rgba(255, 255, 255, 0.03); border: 1px dashed rgba(255, 255, 255, 0.12); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
               <div style="font-size: 0.85rem; color: var(--text-muted);">
-                💡 Amazon Alexa や Apple HomePod の認証・設定は「<a href="#" id="linkGoToIntegrations" style="color: var(--accent); text-decoration: underline;">外部連携</a>」、ONVIF カメラの検出・登録は「<a href="#" id="linkGoToOnvif" style="color: var(--accent); text-decoration: underline;">📷 ONVIF カメラ</a>」設定で行えます。
+                💡 Amazon Alexa や Apple HomePod の認証・設定は「<a href="#" id="linkGoToIntegrations" style="color: var(--accent); text-decoration: underline;">外部連携</a>」、ONVIF カメラや DLNA スピーカーの検出・登録は「<a href="#" id="linkGoToOnvif" style="color: var(--accent); text-decoration: underline;">📷 ONVIF / 🎵 DLNA</a>」設定で行えます。
               </div>
             </div>
           </div>
@@ -505,7 +505,7 @@
           </button>
           <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-onvif" id="btnSubtabSettingsOnvif">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            📷 ONVIF カメラ
+            📷 ONVIF / 🎵 DLNA
           </button>
           <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-webhook" id="btnSubtabSettingsWebhook">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
@@ -514,6 +514,14 @@
           <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-disaster" id="btnSubtabSettingsDisaster">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             🚨 緊急速報・天気
+          </button>
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-mqtt" id="btnSubtabSettingsMqtt">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.93 19.07a10 10 0 0 1 0-14.14"/><path d="M7.76 16.24a6 6 0 0 1 0-8.48"/><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.48"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            📡 MQTT 連携
+          </button>
+          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-mcp" id="btnSubtabSettingsMcp">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></svg>
+            🤖 MCP 連携
           </button>
         </div>
 
@@ -1336,22 +1344,24 @@
           </div>
         </div>
 
-        <!-- 3-B. ONVIF カメラスピーカー連携 サブペイン -->
+        <!-- 3-B. ONVIF & DLNA スピーカー連携 サブペイン -->
         <div id="subtab-settings-onvif" class="sub-tab-pane">
           <div class="card glass-card">
             <div class="card-header flex-between" style="flex-wrap: wrap; gap: 10px;">
               <div>
-                <h2>📷 ONVIF カメラスピーカー連携</h2>
-                <span class="card-sub">宅内の ONVIF / RTSP 対応防犯カメラを音声出力先（スマートスピーカー）として追加・発声させます</span>
+                <h2>📷 ONVIF / 🎵 DLNA スピーカー連携</h2>
+                <span class="card-sub">宅内の ONVIF 防犯カメラや DLNA / UPnP MediaRenderer スピーカーを検出し、音声出力先（スマートスピーカー）として追加・発声させます</span>
               </div>
-              <button type="button" id="btnScanOnvif" class="btn btn-primary btn-sm">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                ONVIF カメラ自動スキャン
-              </button>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" id="btnScanOnvif" class="btn btn-primary btn-sm">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                  ONVIF / DLNA 自動スキャン
+                </button>
+              </div>
             </div>
 
             <div class="card-body">
-              <!-- 基本認証設定 (デフォルトID/PW) -->
+              <!-- 基本認証設定 (デフォルトID/PW - ONVIFカメラ用) -->
               <div class="settings-grid" style="margin-bottom: 20px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 8px;">
                 <div class="form-group" style="margin: 0;">
                   <label for="onvifDefaultUser" class="form-label">デフォルト ONVIF ユーザー名</label>
@@ -1359,7 +1369,7 @@
                 </div>
                 <div class="form-group" style="margin: 0;">
                   <label for="onvifDefaultPass" class="form-label">デフォルト ONVIF パスワード</label>
-                  <input type="password" id="onvifDefaultPass" class="form-input" placeholder="カメラ共通のパスワード">
+                  <input type="password" id="onvifDefaultPass" class="form-input" placeholder="カメラ共通のパスワード (DLNAは認証不要)">
                 </div>
                 <div style="grid-column: 1 / -1; display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 4px;">
                   <span id="onvifAuthSavedMsg" style="font-size: 0.8rem; color: #34d399; display: none;">✓ 保存しました</span>
@@ -1367,51 +1377,87 @@
                 </div>
               </div>
 
-              <!-- 検出された ONVIF カメラ一覧 -->
+              <!-- 検出された ONVIF / DLNA デバイス一覧 -->
               <div style="margin-bottom: 24px;">
                 <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
-                  <h3 style="margin: 0; font-size: 1rem; color: var(--text-color);">📡 検出されたカメラ一覧</h3>
+                  <h3 style="margin: 0; font-size: 1rem; color: var(--text-color);">📡 検出されたデバイス一覧 (ONVIF カメラ / DLNA スピーカー)</h3>
                   <span id="onvifScanCount" style="font-size: 0.8rem; color: var(--text-muted);">スキャン待機中</span>
                 </div>
                 <div class="table-responsive">
                   <table class="schedule-table">
                     <thead>
                       <tr>
-                        <th>カメラ名</th>
+                        <th>種別</th>
+                        <th>デバイス名 / モデル</th>
                         <th>IPアドレス / ポート</th>
-                        <th>Profile / スピーカー対応</th>
+                        <th>対応規格 / スピーカー機能</th>
                         <th>認証・状態</th>
                         <th>操作</th>
                       </tr>
                     </thead>
                     <tbody id="onvifDiscoveredTableBody">
                       <tr>
-                        <td colspan="5" class="text-center loading-cell">「ONVIF カメラ自動スキャン」を押すと、宅内のカメラを自動検出します</td>
+                        <td colspan="6" class="text-center loading-cell">「ONVIF / DLNA 自動スキャン」を押すと、宅内のカメラおよびDLNAスピーカーを自動検出します</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
 
-              <!-- 登録済みカメラスピーカー一覧 -->
+              <!-- 手動デバイス追加 (IP直接登録フォーム) -->
+              <div style="margin-bottom: 24px; background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.12); padding: 16px; border-radius: 8px;">
+                <div class="flex-between" style="align-items: center; margin-bottom: 12px;">
+                  <h3 style="margin: 0; font-size: 0.95rem; color: var(--text-color);">➕ 手動でデバイスを追加 (IP直接登録)</h3>
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">自動スキャンで検出されない場合や固定IP機器を直接指定して登録</span>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end;">
+                  <div class="form-group" style="margin: 0;">
+                    <label class="form-label" style="font-size: 0.8rem;">デバイス種別</label>
+                    <select id="manualDevType" class="form-input">
+                      <option value="dlna">🎵 DLNA スピーカー (MediaRenderer)</option>
+                      <option value="onvif">📷 ONVIF カメラ (Profile T 双方向音声)</option>
+                    </select>
+                  </div>
+                  <div class="form-group" style="margin: 0;">
+                    <label class="form-label" style="font-size: 0.8rem;">表示名 (スピーカー名) *</label>
+                    <input type="text" id="manualDevName" class="form-input" placeholder="例: リビングDLNA, 玄関カメラ">
+                  </div>
+                  <div class="form-group" style="margin: 0;">
+                    <label class="form-label" style="font-size: 0.8rem;">IP アドレス *</label>
+                    <input type="text" id="manualDevIp" class="form-input" placeholder="例: 192.168.11.200">
+                  </div>
+                  <div class="form-group" style="margin: 0;">
+                    <label class="form-label" style="font-size: 0.8rem;">ポート番号</label>
+                    <input type="number" id="manualDevPort" class="form-input" placeholder="空欄で自動 (DLNA:80, ONVIF:8000)">
+                  </div>
+                  <div class="form-group" style="margin: 0;">
+                    <button type="button" id="btnManualAddDevice" class="btn btn-primary" style="width: 100%; height: 38px;">
+                      ＋ スピーカー登録
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 登録済みスピーカー一覧 -->
               <div>
                 <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
-                  <h3 style="margin: 0; font-size: 1rem; color: var(--text-color);">🔊 登録済みカメラスピーカー (Voice Hub に連携中)</h3>
+                  <h3 style="margin: 0; font-size: 1rem; color: var(--text-color);">🔊 登録済み ONVIF / DLNA スピーカー (Voice Hub に連携中)</h3>
                 </div>
                 <div class="table-responsive">
                   <table class="schedule-table">
                     <thead>
                       <tr>
+                        <th>種別</th>
                         <th>登録スピーカー名</th>
                         <th>IPアドレス</th>
-                        <th>RTSP URL</th>
+                        <th>接続先 / 制御URL</th>
                         <th>認証ユーザー</th>
                         <th>操作</th>
                       </tr>
                     </thead>
                     <tbody id="onvifRegisteredTableBody">
                       <tr>
-                        <td colspan="5" class="text-center loading-cell">登録済みのカメラスピーカーはありません</td>
+                        <td colspan="6" class="text-center loading-cell">登録済みのスピーカーはありません</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1918,6 +1964,379 @@ Body:
             </div>
           </div>
         </div>
+
+        <!-- 7. MQTT 連携 サブペイン (Node-RED / n8n メッセージ読み上げ) -->
+        <div id="subtab-settings-mqtt" class="sub-tab-pane">
+          <div class="two-col-layout">
+            <!-- 左カラム: ブローカー接続設定 & ステータス -->
+            <div class="col">
+              <div class="card glass-card">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2>📡 MQTT ブローカー接続設定</h2>
+                    <span class="card-sub">Node-RED や n8n、Home Assistant からのメッセージ読み上げを可能にします</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settingMqttEnabled">
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+                <div class="card-body">
+                  <!-- 接続ステータスインジケーター -->
+                  <div id="mqttStatusBanner" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <span id="mqttStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #64748b; display: inline-block;"></span>
+                      <div>
+                        <div id="mqttStatusText" style="font-weight: 600; font-size: 0.95rem;">未接続 / 無効</div>
+                        <div id="mqttStatusDetail" style="font-size: 0.8rem; color: var(--text-muted);">設定を有効にして保存するとブローカーに自動接続します</div>
+                      </div>
+                    </div>
+                    <button type="button" id="btnReconnectMqtt" class="btn btn-secondary btn-sm">
+                      🔄 再接続
+                    </button>
+                  </div>
+
+                  <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                      <label for="settingMqttBroker" class="form-label">ブローカー IP / ホスト名 *</label>
+                      <input type="text" id="settingMqttBroker" class="form-input" placeholder="例: 192.168.11.xxx または localhost">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                      <label for="settingMqttPort" class="form-label">ポート番号 *</label>
+                      <input type="number" id="settingMqttPort" class="form-input" placeholder="1883" value="1883">
+                    </div>
+                  </div>
+
+                  <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                      <label for="settingMqttUsername" class="form-label">ユーザー名 (任意)</label>
+                      <input type="text" id="settingMqttUsername" class="form-input" placeholder="空欄時は認証なし">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                      <label for="settingMqttPassword" class="form-label">パスワード (任意)</label>
+                      <input type="password" id="settingMqttPassword" class="form-input" placeholder="空欄時はパスワードなし">
+                    </div>
+                  </div>
+
+                  <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
+                    <div class="form-group" style="margin: 0;">
+                      <label for="settingMqttBaseTopic" class="form-label">ベーストピック *</label>
+                      <input type="text" id="settingMqttBaseTopic" class="form-input" placeholder="voicehub" value="voicehub">
+                      <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">購読: <code>{baseTopic}/say</code>, <code>{baseTopic}/say/#</code></div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                      <label for="settingMqttClientId" class="form-label">クライアント ID</label>
+                      <input type="text" id="settingMqttClientId" class="form-input" placeholder="voice-hub" value="voice-hub">
+                    </div>
+                  </div>
+
+                  <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="settingMqttDefaultTarget" class="form-label">デフォルト読み上げ先スピーカー</label>
+                    <select id="settingMqttDefaultTarget" class="form-input">
+                      <option value="">全体デフォルトスピーカーに従う</option>
+                    </select>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">トピックやメッセージ内でスピーカー指定が無い場合に使用されます</div>
+                  </div>
+
+                  <div class="form-group flex-between" style="padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">イベント通知の自動発行 (Publish)</div>
+                      <small style="color: var(--text-muted);">発話完了時に <code>{baseTopic}/events/say</code> へ結果を通知します</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingMqttPublishEvents" checked>
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+
+                  <div class="form-group flex-between" style="padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">MQTTS (TLS/SSL 暗号化通信)</div>
+                      <small style="color: var(--text-muted);">クラウド上のブローカー（ポート8883等）への通信を安全に暗号化します</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingMqttTls">
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+
+                  <!-- Home Assistant MQTT Auto-Discovery -->
+                  <div class="form-group flex-between" style="padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <div>
+                      <div style="font-weight: 500; font-size: 0.9rem;">🏠 Home Assistant 自動検出 (MQTT Discovery)</div>
+                      <small style="color: var(--text-muted);">HA のデバイス一覧に Voice Hub（通知・DNDスイッチ・センサー・ボタン）を完全自動登録します</small>
+                    </div>
+                    <label class="switch">
+                      <input type="checkbox" id="settingMqttHaDiscoveryEnabled" checked>
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+
+                  <div id="haDiscoveryOptions" style="padding: 12px 14px; background: rgba(0,0,0,0.25); border-radius: 8px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05);">
+                    <div class="form-group" style="margin: 0 0 10px 0;">
+                      <label for="settingMqttHaDiscoveryPrefix" class="form-label" style="font-size: 0.8rem;">HA Discovery プレフィックス</label>
+                      <input type="text" id="settingMqttHaDiscoveryPrefix" class="form-input" placeholder="homeassistant" value="homeassistant" style="font-size: 0.85rem;">
+                    </div>
+                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                      <button type="button" id="btnResendHaDiscovery" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
+                        🔄 Discovery トピック再送信
+                      </button>
+                      <button type="button" id="btnClearHaDiscovery" class="btn btn-secondary btn-sm" style="font-size: 0.78rem; color: #f87171;">
+                        🗑️ HA から解除
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 保存ボタン -->
+                  <div style="margin-top: 20px; text-align: right;">
+                    <button type="button" id="btnSaveMqttSettings" class="btn btn-primary" style="padding: 10px 24px;">
+                      💾 MQTT 設定を保存
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右カラム: テスト送信 & Node-RED / n8n 連携ガイド -->
+            <div class="col">
+              <!-- テスト送信カード -->
+              <div class="card glass-card">
+                <div class="card-header">
+                  <h2>🧪 MQTT テスト発話送信</h2>
+                  <span class="card-sub">接続中のブローカーにテストメッセージを発行し、Voice Hubの読み上げ動作を検証します</span>
+                </div>
+                <div class="card-body">
+                  <div class="form-group">
+                    <label for="inputMqttTestText" class="form-label">テスト発話テキスト</label>
+                    <input type="text" id="inputMqttTestText" class="form-input" value="MQTT連携からのテスト発話です。正常に受信しました。">
+                  </div>
+                  <div class="form-group">
+                    <label for="selectMqttTestTarget" class="form-label">送信先トピック / スピーカー</label>
+                    <select id="selectMqttTestTarget" class="form-input">
+                      <option value="">{baseTopic}/say (デフォルトスピーカー)</option>
+                    </select>
+                  </div>
+                  <button type="button" id="btnSendMqttTest" class="btn btn-secondary" style="width: 100%;">
+                    📤 テストメッセージをPublish＆発声
+                  </button>
+                </div>
+              </div>
+
+              <!-- Home Assistant 連携仕様カード -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header">
+                  <h2>🏠 Home Assistant 自動生成エンティティ</h2>
+                  <span class="card-sub">HA 側での追加作業不要！自動的に以下のエンティティが登録されます</span>
+                </div>
+                <div class="card-body" style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary);">
+                  <ul style="padding-left: 20px; margin: 0 0 10px 0;">
+                    <li><strong><code>notify.voicehub_say</code></strong> : HA オートメーションから使える通知サービス</li>
+                    <li><strong><code>switch.voicehub_dnd</code></strong> : おやすみ・会議モードの即時切替スイッチ</li>
+                    <li><strong><code>sensor.voicehub_last_say</code></strong> : 直前に読み上げたメッセージ内容</li>
+                    <li><strong><code>binary_sensor.voicehub_status</code></strong> : Voice Hub のオンライン/オフライン死活監視</li>
+                    <li><strong><code>button.voicehub_test_speak</code></strong> : HA からのワンタップテスト発話</li>
+                    <li><strong><code>button.voicehub_flush_queue</code></strong> : DND保留通知の強制フラッシュ</li>
+                  </ul>
+                  <div style="font-size: 0.78rem; color: var(--text-muted); background: rgba(56, 189, 248, 0.08); border-left: 3px solid #38bdf8; padding: 6px 10px; border-radius: 4px;">
+                    💡 HA の「設定」→「デバイスとサービス」→「MQTT」内に <strong>SmartSpeaker Voice Hub</strong> として認識されます。
+                  </div>
+                </div>
+              </div>
+
+              <!-- Node-RED / n8n 連携仕様ガイド -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header">
+                  <h2>📖 Node-RED / n8n 連携ガイド</h2>
+                  <span class="card-sub">MQTT経由で簡単にスマートホーム通知を呼び出せます</span>
+                </div>
+                <div class="card-body" style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary);">
+                  <div style="font-weight: 600; color: var(--text-color); margin-bottom: 6px;">1. トピック設計</div>
+                  <ul style="padding-left: 20px; margin-bottom: 12px; margin-top: 0;">
+                    <li><code>voicehub/say</code> : デフォルトスピーカーで発話</li>
+                    <li><code>voicehub/say/リビング</code> : トピック名でスピーカー指定</li>
+                    <li><code>voicehub/say/ALL</code> : 全室スピーカー一斉アナウンス</li>
+                  </ul>
+
+                  <div style="font-weight: 600; color: var(--text-color); margin-bottom: 6px;">2. ペイロード (JSON または プレーンテキスト)</div>
+                  <pre style="background: rgba(0,0,0,0.4); padding: 10px; border-radius: 6px; font-size: 0.8rem; overflow-x: auto; color: #7dd3fc; margin: 0 0 12px 0;">{
+  "text": "お風呂が沸きました",
+  "target": "リビング",
+  "volume": 0.8,
+  "urgent": false
+}</pre>
+                  <div style="font-size: 0.78rem; color: var(--text-muted);">
+                    ※ 単なる文字列（<code>"お風呂が沸きました"</code>）をそのまま送るだけでも即時発話されます。<br>
+                    ※ 発話完了時に <code>voicehub/events/say</code> へ完了通知が届くため、後続フローのトリガーとしても活用できます。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 8. MCP 連携 サブペイン (Model Context Protocol: Claude Desktop / Cursor / Cline) -->
+        <div id="subtab-settings-mcp" class="sub-tab-pane">
+          <div class="two-col-layout">
+            <!-- 左カラム: MCP サーバー状態 & Claude Desktop / Cursor 設定 -->
+            <div class="col">
+              <div class="card glass-card">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2>🤖 MCP サーバー連携</h2>
+                    <span class="card-sub">Claude Desktop、Cursor、Cline、AIエージェントから自然言語でスピーカーを操作</span>
+                  </div>
+                  <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 4px 10px; font-weight: 500;">
+                    🟢 常時稼働中 (ポート 8080)
+                  </span>
+                </div>
+                <div class="card-body">
+                  <!-- ステータス概要バナー -->
+                  <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                    <div>
+                      <div style="font-weight: 600; font-size: 0.95rem; color: #38bdf8;">⚡ Model Context Protocol (SSE)</div>
+                      <div id="mcpStatusDetail" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+                        公開ツール: <code>speak</code>, <code>list_speakers</code>, <code>get_status</code>, <code>set_dnd</code>, <code>get_history</code>
+                      </div>
+                    </div>
+                    <div id="mcpCallStats" style="font-size: 0.8rem; color: var(--text-secondary); text-align: right;">
+                      セッション: 0 | 呼出: 0 回
+                    </div>
+                  </div>
+
+                  <!-- 接続モード切り替え (ローカル LAN / インターネット Tunnel) -->
+                  <div style="margin-bottom: 14px;">
+                    <label class="form-label">接続環境の選択</label>
+                    <div style="display: flex; gap: 8px;">
+                      <button type="button" id="btnMcpModeLocal" class="btn btn-secondary btn-sm active" style="flex: 1;">
+                        🏠 宅内 LAN (ローカル)
+                      </button>
+                      <button type="button" id="btnMcpModeInternet" class="btn btn-secondary btn-sm" style="flex: 1;">
+                        🌐 インターネット (Cloudflare Tunnel / 外出先)
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Claude Desktop 設定スニペット -->
+                  <div class="form-group">
+                    <div class="flex-between" style="align-items: center; margin-bottom: 6px;">
+                      <label class="form-label" style="margin: 0;">Claude Desktop 設定 (<code>claude_desktop_config.json</code>)</label>
+                      <button type="button" id="btnCopyClaudeConfig" class="btn btn-secondary btn-sm" style="padding: 2px 10px; font-size: 0.75rem;">
+                        📋 コピー
+                      </button>
+                    </div>
+                    <pre id="preClaudeConfig" style="background: rgba(0,0,0,0.45); padding: 12px; border-radius: 6px; font-size: 0.82rem; overflow-x: auto; color: #a5f3fc; border: 1px solid rgba(255,255,255,0.08); margin: 0;"></pre>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                      ※ macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code><br>
+                      ※ Windows: <code>%APPDATA%\Claude\claude_desktop_config.json</code>
+                    </div>
+                  </div>
+
+                  <!-- Cursor / Cline 設定スニペット -->
+                  <div class="form-group" style="margin-top: 14px;">
+                    <div class="flex-between" style="align-items: center; margin-bottom: 6px;">
+                      <label class="form-label" style="margin: 0;">Cursor / Cline 設定 (MCP Servers)</label>
+                      <button type="button" id="btnCopyCursorConfig" class="btn btn-secondary btn-sm" style="padding: 2px 10px; font-size: 0.75rem;">
+                        📋 コピー
+                      </button>
+                    </div>
+                    <pre id="preCursorConfig" style="background: rgba(0,0,0,0.45); padding: 12px; border-radius: 6px; font-size: 0.82rem; overflow-x: auto; color: #fde68a; border: 1px solid rgba(255,255,255,0.08); margin: 0;"></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右カラム: ツール実行シミュレーター & 利用可能なツール解説 -->
+            <div class="col">
+              <!-- ツール実行テスト -->
+              <div class="card glass-card">
+                <div class="card-header">
+                  <h2>🧪 MCP ツール実行シミュレーター</h2>
+                  <span class="card-sub">AI クライアントからツールが呼び出されたときの挙動をブラウザから直接テスト</span>
+                </div>
+                <div class="card-body">
+                  <div class="form-group">
+                    <label for="selectMcpSimTool" class="form-label">テスト実行するツール</label>
+                    <select id="selectMcpSimTool" class="form-input">
+                      <option value="speak">speak (指定スピーカーで音声読み上げ)</option>
+                      <option value="list_speakers">list_speakers (全スピーカー・グループ一覧)</option>
+                      <option value="get_status">get_status (DND・システム状態・会議)</option>
+                      <option value="get_history">get_history (直近の発言履歴ログ)</option>
+                      <option value="set_dnd">set_dnd (おやすみ・会議モード切替)</option>
+                    </select>
+                  </div>
+
+                  <!-- ツールごとの引数入力ブロック -->
+                  <div id="mcpSimArgsSpeak" class="mcp-sim-args">
+                    <div class="form-group">
+                      <label class="form-label">発話メッセージ (text) *</label>
+                      <input type="text" id="mcpSimSpeakText" class="form-input" value="MCPサーバーからのテスト発話です。AIとの連携に成功しました。">
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">発声先スピーカー (target)</label>
+                      <select id="mcpSimSpeakTarget" class="form-input">
+                        <option value="">デフォルトスピーカー</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div id="mcpSimArgsDnd" class="mcp-sim-args" style="display: none;">
+                    <div class="form-group flex-between" style="padding: 6px 0;">
+                      <label class="form-label" style="margin: 0;">DND 有効化</label>
+                      <label class="switch">
+                        <input type="checkbox" id="mcpSimDndEnabled" checked>
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">理由 (reason)</label>
+                      <input type="text" id="mcpSimDndReason" class="form-input" value="MCPテスト">
+                    </div>
+                  </div>
+
+                  <button type="button" id="btnExecuteMcpSim" class="btn btn-primary" style="width: 100%; margin-top: 8px;">
+                    ▶ ツールを実行
+                  </button>
+
+                  <!-- 実行結果表示 -->
+                  <div style="margin-top: 14px;">
+                    <label class="form-label">実行結果レスポンス (JSON-RPC Result)</label>
+                    <pre id="preMcpSimResult" style="background: rgba(0,0,0,0.5); padding: 10px; border-radius: 6px; font-size: 0.8rem; overflow-x: auto; color: #86efac; max-height: 200px; margin: 0; min-height: 50px;">ツールの実行結果がここに表示されます</pre>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 公開ツール仕様一覧カード -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header">
+                  <h2>📖 公開 MCP ツール仕様</h2>
+                  <span class="card-sub">AI が理解し自律的に呼び出すツール定義</span>
+                </div>
+                <div class="card-body" style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary);">
+                  <div style="margin-bottom: 8px;">
+                    <strong style="color: #38bdf8;">1. speak(text, target?, volume?, voice?, urgent?)</strong><br>
+                    スマートスピーカーから音声を読み上げます。「ALL」で全室一斉放送も可能。
+                  </div>
+                  <div style="margin-bottom: 8px;">
+                    <strong style="color: #38bdf8;">2. list_speakers()</strong><br>
+                    家にある Google Cast, Alexa, HomePod, DLNA, ONVIF スピーカー一覧を取得。
+                  </div>
+                  <div style="margin-bottom: 8px;">
+                    <strong style="color: #38bdf8;">3. get_status()</strong><br>
+                    おやすみモード（DND）の動作状態、現在進行中のカレンダー会議名を確認。
+                  </div>
+                  <div style="margin-bottom: 8px;">
+                    <strong style="color: #38bdf8;">4. set_dnd(enabled, durationMinutes?, reason?)</strong><br>
+                    一時的な集中や睡眠に合わせてスピーカーのミュートを制御。
+                  </div>
+                  <div>
+                    <strong style="color: #38bdf8;">5. get_history(limit?)</strong><br>
+                    直近にどんなアナウンスが流れたかを AI が把握。
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 
@@ -1950,7 +2369,7 @@ Body:
       </div>
     </div>
 
-    <!-- ONVIFカメラスピーカー連携登録モーダル -->
+    <!-- ONVIF / DLNA スピーカー連携登録モーダル -->
     <div id="modalOnvifRegister" class="modal-backdrop" style="display: none;">
       <div class="modal-content glass-card" style="max-width: 520px;">
         <div class="modal-header">
@@ -1958,13 +2377,13 @@ Body:
           <button type="button" id="btnCloseOnvifModal" class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="alert alert-info" style="margin-bottom: 16px; font-size: 0.85rem; padding: 10px 14px; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px;">
-            このカメラを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。
+          <div id="modalOnvifAlert" class="alert alert-info" style="margin-bottom: 16px; font-size: 0.85rem; padding: 10px 14px; background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px;">
+            このデバイスを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。
           </div>
           
           <div class="form-group">
             <label for="onvifRegName" class="form-label">スピーカー表示名 *</label>
-            <input type="text" id="onvifRegName" class="form-input" placeholder="例: 書斎カメラ, リビング, 玄関">
+            <input type="text" id="onvifRegName" class="form-input" placeholder="例: 書斎DLNA, リビング, 玄関カメラ">
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">アナウンス選択やWebhookコマンドで呼び出す名前です</div>
           </div>
 
@@ -1974,14 +2393,14 @@ Body:
               <input type="text" id="onvifRegIp" class="form-input" readonly style="opacity: 0.85; background: rgba(0,0,0,0.25);">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label">機種 / プロファイル</label>
+              <label class="form-label">機種 / プロトコル</label>
               <input type="text" id="onvifRegModel" class="form-input" readonly style="opacity: 0.85; background: rgba(0,0,0,0.25);">
             </div>
           </div>
 
-          <div class="form-group" style="margin-top: 10px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+          <div id="onvifAuthBlock" class="form-group" style="margin-top: 10px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
             <div class="flex-between" style="margin-bottom: 6px;">
-              <label class="form-label" style="margin: 0; font-size: 0.85rem;">カメラ個別認証 (必要な場合のみ)</label>
+              <label class="form-label" style="margin: 0; font-size: 0.85rem;">カメラ個別認証 (ONVIFのみ)</label>
               <span style="font-size: 0.75rem; color: var(--text-muted);">空欄時はデフォルト設定を使用</span>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">

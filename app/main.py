@@ -26,8 +26,11 @@ from app.routers import (
     auth,
     homepod_alexa,
     status,
-    schedules
+    schedules,
+    mqtt,
+    mcp
 )
+from app.services.mqtt_service import mqtt_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,33 +41,54 @@ async def lifespan(app: FastAPI):
     await scheduler_service.start()
 
     # 防災速報コールバックの設定
-    async def on_disaster_alert(text: str, urgent: bool = True):
-        await speech_service.speak(text=text, targets="ALL", urgent=urgent)
+    async def on_disaster_speech(text: str, targets=None, urgent: bool = True, volume_level: int = None):
+        await speech_service.speak(text=text, targets=targets or "ALL", urgent=urgent, volume_level=volume_level)
 
-    disaster_service.set_alert_callback(on_disaster_alert)
+    disaster_service.set_speech_executor(on_disaster_speech)
     await disaster_service.start()
 
-    # カレンダー同期のバックグラウンドタスク
+    # DND サービスのバックグラウンドタスク開始
+    from app.services.dnd_service import dnd_service
+    dnd_service.set_speaker_executor(on_disaster_speech)
+    dnd_service.start_background_tasks()
+
+    # カレンダーサービスの初期化とバックグラウンドスケジューラー開始
+    calendar_service.set_speech_executor(speech_service.speak)
+    calendar_service.start_background_scheduler()
+
+    # カレンダー定期同期タスク (15分ごと)
     async def calendar_loop():
         while True:
             try:
                 await calendar_service.sync_all()
             except Exception as e:
-                print(f"[VoiceHub] Calendar sync error: {e}")
-            await asyncio.sleep(15 * 60) # 15分ごと
+                log.warning(f"Calendar sync error: {e}")
+            await asyncio.sleep(15 * 60)
 
     asyncio.create_task(calendar_loop())
+
+    # MQTT サービスのバックグラウンドワーカー開始
+    mqtt_service.start()
 
     yield
 
     # 終了時処理
     print("[VoiceHub] Shutting down...")
+    await mqtt_service.stop()
+
 
 app = FastAPI(
     title="Smart Home Speaker Voice Hub",
     version="2.0.0",
     lifespan=lifespan
 )
+
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from app.core.logger import get_logger
+import traceback
+
+log = get_logger("API")
 
 # CORS (宅内WebGUIおよびローカル連携用)
 app.add_middleware(
@@ -75,15 +99,62 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# セキュリティミドルウェア (境界防御 & 管理者認証)
+# アクセス＆エラー監視ミドルウェア
 @app.middleware("http")
-async def security_middleware(request: Request, call_next):
+async def logging_and_security_middleware(request: Request, call_next):
     # Tunnel 境界チェック
     check_tunnel_access(request)
     # 管理者認証チェック
     check_admin_auth(request)
-    response = await call_next(request)
-    return response
+
+    path = request.url.path
+    # 頻繁なステータスポーリング (/api/dnd/status 等) は DEBUG レベル相当にする
+    is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/favicon.ico")
+
+    try:
+        response = await call_next(request)
+        if response.status_code >= 400:
+            log.warning(f"[{request.method}] {path} -> HTTP {response.status_code} (Client: {request.client.host if request.client else 'unknown'})")
+        elif not is_frequent_poll:
+            log.info(f"[{request.method}] {path} -> HTTP {response.status_code}")
+        return response
+    except Exception as exc:
+        tb = traceback.format_exc()
+        log.error(f"Unhandled Exception on [{request.method}] {path}:\n{tb}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal Server Error",
+                "message": str(exc),
+                "detail": str(exc),
+                "path": path
+            }
+        )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    log.warning(f"Validation Error on [{request.method}] {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation Error",
+            "message": "リクエストパラメータの形式が正しくありません",
+            "detail": exc.errors()
+        }
+    )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    log.error(f"Global Exception on [{request.method}] {request.url.path}: {exc}\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": str(exc),
+            "detail": str(exc)
+        }
+    )
 
 # ルーター登録
 app.include_router(speech.router)
@@ -99,6 +170,10 @@ app.include_router(auth.router)
 app.include_router(homepod_alexa.router)
 app.include_router(status.router)
 app.include_router(schedules.router)
+app.include_router(mqtt.router)
+app.include_router(mcp.router)
+
+
 
 # 静的ファイルの配信
 app.mount("/voice", StaticFiles(directory=str(VOICE_DIR)), name="voice")

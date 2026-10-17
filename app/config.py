@@ -1,4 +1,5 @@
 import os
+import socket
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
@@ -12,17 +13,28 @@ SOUND_DIR = PUBLIC_DIR / "sound"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_DIR.mkdir(parents=True, exist_ok=True)
 
+def auto_detect_local_ip() -> str:
+    """LAN内のプライベートIPアドレスを自動検出"""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 class Settings(BaseSettings):
     tz: str = Field(default="Asia/Tokyo", alias="TZ")
     server_port: int = Field(default=8080, alias="SERVER_PORT")
     port: int = Field(default=8080, alias="PORT")
     host: str = Field(default="0.0.0.0", alias="HOST")
     
-    wireless_ip: str = Field(default="192.168.11.244", alias="WIRELESS_IP")
-    wireless_module_name: str = Field(default="ens192", alias="WIRELESS_MODULE_NAME")
+    wireless_ip: str = Field(default="", alias="WIRELESS_IP")
+    wireless_module_name: str = Field(default="", alias="WIRELESS_MODULE_NAME")
     
     default_speaker_ip: str = Field(default="", alias="DEFAULT_SPEAKER_IP")
-    google_home_ip: str = Field(default="192.168.11.97", alias="GOOGLE_HOME_IP")
+    google_home_ip: str = Field(default="", alias="GOOGLE_HOME_IP")
     default_voice: str = Field(default="ja-JP-NanamiNeural", alias="DEFAULT_VOICE")
     max_cache_size_mb: int = Field(default=1024, alias="MAX_CACHE_SIZE_MB")
     
@@ -46,6 +58,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    @property
+    def effective_wireless_ip(self) -> str:
+        return self.wireless_ip or auto_detect_local_ip()
 
     @property
     def effective_default_ip(self) -> str:

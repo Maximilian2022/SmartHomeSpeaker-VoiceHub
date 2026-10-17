@@ -1,11 +1,14 @@
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import pyatv
 from pyatv.const import Protocol
 from app.config import DATA_DIR
+from app.core.logger import get_logger
 
+log = get_logger("HomePod")
 HOMEPOD_CACHE_FILE = DATA_DIR / "homepod_devices.json"
 
 class HomePodService:
@@ -16,25 +19,28 @@ class HomePodService:
         if HOMEPOD_CACHE_FILE.exists():
             try:
                 with open(HOMEPOD_CACHE_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
+                    data = json.load(f)
+                    log.info(f"Loaded {len(data)} HomePod devices from cache.")
+                    return data
+            except Exception as e:
+                log.warning(f"Failed to load HomePod cache: {e}")
         return []
 
     def _save_cache(self):
         try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
             with open(HOMEPOD_CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.devices_cache, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[HomePodService] Cache save error: {e}")
+            log.error(f"HomePod cache save error: {e}")
 
     async def scan_devices(self, timeout: int = 4) -> List[Dict[str, Any]]:
         loop = asyncio.get_running_loop()
+        log.info(f"Scanning for HomePod devices (timeout={timeout}s)...")
         try:
             results = await pyatv.scan(loop, timeout=timeout)
             devices = []
             for conf in results:
-                # AirPlay または RAOP プロトコルを持つ端末を抽出
                 has_airplay = any(service.protocol in (Protocol.AirPlay, Protocol.RAOP) for service in conf.services)
                 if has_airplay:
                     ip = str(conf.address)
@@ -49,40 +55,87 @@ class HomePodService:
                     }
                     devices.append(dev_info)
 
-            self.devices_cache = devices
+            # 全体グループを先頭に追加
+            full_list = [
+                {
+                    "id": "homepod_ALL",
+                    "name": "全室 HomePod",
+                    "ip": "homepod:ALL",
+                    "model": "Apple HomePod Group",
+                    "type": "homepod",
+                    "isGroup": True
+                },
+                *devices
+            ]
+            self.devices_cache = full_list
             self._save_cache()
-            return devices
+            log.info(f"Scan complete: {len(devices)} HomePod(s) discovered.")
+            return full_list
         except Exception as e:
-            print(f"[HomePodService] Scan error: {e}")
+            log.error(f"HomePod scan error: {e}")
             return self.devices_cache
 
-    async def play_audio(self, target_ip_or_id: str, audio_url: str) -> bool:
+    async def play_audio(self, target_ip_or_id: str, audio_path: str) -> bool:
+        """
+        ローカル音声ファイル (mp3/wav) を AirPlay 経由で HomePod に直接ストリーミング
+        """
         loop = asyncio.get_running_loop()
-        clean_ip = target_ip_or_id.replace("homepod:", "")
-        try:
-            # 1. デバイスのスキャン/特定
-            results = await pyatv.scan(loop, hosts=[clean_ip], timeout=3)
-            if not results:
-                # 名前やIDでキャッシュから検索
-                cached = next((d for d in self.devices_cache if d["rawIp"] == clean_ip or d["name"] == target_ip_or_id), None)
-                if cached:
-                    results = await pyatv.scan(loop, hosts=[cached["rawIp"]], timeout=3)
+        clean_target = target_ip_or_id.replace("homepod:", "").strip()
 
-            if not results:
-                print(f"[HomePodService] Device not found: {clean_ip}")
+        # ALL の場合は個別全台へ並行ストリーミング
+        if clean_target.upper() == "ALL":
+            individuals = [d for d in self.devices_cache if d.get("ip") != "homepod:ALL" and d.get("rawIp")]
+            if not individuals:
+                log.warning("No individual HomePods found in cache for ALL group.")
+                return False
+            log.info(f"Broadcasting to all HomePods ({len(individuals)} devices)...")
+            tasks = [self.play_audio(d["rawIp"], audio_path) for d in individuals]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            return any(r is True for r in results)
+
+        if not os.path.exists(audio_path):
+            log.error(f"Audio file not found: {audio_path}")
+            return False
+
+        # キャッシュから rawIp を検索
+        found = next((
+            d for d in self.devices_cache
+            if d.get("mac") == clean_target
+            or d.get("rawIp") == clean_target
+            or d.get("rawName") == clean_target
+            or d.get("name") == clean_target
+            or d.get("ip") == f"homepod:{clean_target}"
+            or d.get("id") == target_ip_or_id
+        ), None)
+
+        target_host = found.get("rawIp") if found and found.get("rawIp") else clean_target
+        log.info(f"Connecting to HomePod: target='{target_host}' (raw='{target_ip_or_id}') file='{audio_path}'")
+
+        try:
+            hosts = [target_host] if "." in target_host else None
+            atvs = await pyatv.scan(loop, hosts=hosts, timeout=4)
+            selected = None
+            for a in atvs:
+                if a.identifier == target_host or str(a.address) == target_host or a.name == target_host:
+                    selected = a
+                    break
+            if not selected and atvs:
+                selected = atvs[0]
+
+            if not selected:
+                log.error(f"HomePod device not found for target: {target_host}")
                 return False
 
-            conf = results[0]
-            atv = await pyatv.connect(conf, loop)
+            atv = await pyatv.connect(selected, loop)
             try:
-                await atv.stream.play_url(audio_url)
-                # 再生コマンド発行後、少し待機してクローズ
-                await asyncio.sleep(1.5)
+                log.info(f"Streaming file to HomePod ({selected.name or target_host})...")
+                await atv.stream.stream_file(audio_path)
+                log.info(f"✅ HomePod stream completed successfully on {selected.name or target_host}")
                 return True
             finally:
                 atv.close()
         except Exception as e:
-            print(f"[HomePodService] Play error on {clean_ip}: {e}")
+            log.error(f"❌ Failed to stream to HomePod {target_host}: {e}")
             return False
 
 homepod_service = HomePodService()

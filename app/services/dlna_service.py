@@ -4,17 +4,12 @@ import xml.etree.ElementTree as ET
 from urllib.parse import urljoin, urlparse
 from typing import List, Dict, Any, Optional
 import httpx
+from app.core.logger import get_logger
+
+log = get_logger("DLNA")
 
 SSDP_ADDR = "239.255.255.250"
 SSDP_PORT = 1900
-SSDP_SEARCH_MSG = (
-    "M-SEARCH * HTTP/1.1\r\n"
-    f"HOST: {SSDP_ADDR}:{SSDP_PORT}\r\n"
-    'MAN: "ssdp:discover"\r\n'
-    "MX: 2\r\n"
-    "ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n"
-    "\r\n"
-).encode("utf-8")
 
 class DlnaService:
     def __init__(self):
@@ -22,6 +17,7 @@ class DlnaService:
 
     async def scan_devices(self, timeout_sec: float = 3.5) -> List[Dict[str, Any]]:
         loop = asyncio.get_running_loop()
+        log.info(f"Scanning for DLNA MediaRenderer devices (timeout={timeout_sec}s)...")
 
         def _send_and_recv():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -48,7 +44,7 @@ class DlnaService:
                 ).encode("utf-8")
                 sock.sendto(msg_all, (SSDP_ADDR, SSDP_PORT))
             except Exception as e:
-                print(f"[DlnaService] SSDP send error: {e}")
+                log.warning(f"SSDP send error: {e}")
 
             locs = set()
             import time
@@ -79,9 +75,9 @@ class DlnaService:
                 if isinstance(res, dict) and res.get("controlUrl"):
                     discovered.append(res)
 
-        # IP順にソート
         discovered.sort(key=lambda d: d.get("ip", ""))
         self.cached_devices = discovered
+        log.info(f"DLNA Scan complete: {len(discovered)} MediaRenderer device(s) found.")
         return discovered
 
     async def _fetch_device_info(self, client: httpx.AsyncClient, location: str) -> Optional[Dict[str, Any]]:
@@ -144,7 +140,7 @@ class DlnaService:
                 "supportsAudio": True,
                 "status": "ok"
             }
-        except Exception as e:
+        except Exception:
             return None
 
     async def play_audio(
@@ -153,11 +149,13 @@ class DlnaService:
         audio_url: str,
         volume_level: Optional[float] = None
     ) -> bool:
+        dev_name = device.get("name") or device.get("ip")
         control_url = device.get("controlUrl")
         if not control_url:
-            print(f"[DlnaService] No controlUrl for {device.get('name')}")
+            log.warning(f"No controlUrl for {dev_name}")
             return False
 
+        log.info(f"Playing audio on DLNA device '{dev_name}' -> URL: {audio_url}")
         async with httpx.AsyncClient(timeout=4.0) as client:
             # 1. 音量設定（RenderingControl があり、かつ指定がある場合）
             rc_url = device.get("renderingControlUrl")
@@ -184,7 +182,7 @@ class DlnaService:
                         }
                     )
                 except Exception as e:
-                    print(f"[DlnaService] SetVolume error: {e}")
+                    log.warning(f"DLNA SetVolume error on {dev_name}: {e}")
 
             # 2. SetAVTransportURI
             soap_uri = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -207,10 +205,10 @@ class DlnaService:
                     }
                 )
                 if res1.status_code >= 400:
-                    print(f"[DlnaService] SetAVTransportURI error (HTTP {res1.status_code}): {res1.text[:200]}")
+                    log.error(f"DLNA SetAVTransportURI error (HTTP {res1.status_code}): {res1.text[:200]}")
                     return False
             except Exception as e:
-                print(f"[DlnaService] SetAVTransportURI request failed: {e}")
+                log.error(f"DLNA SetAVTransportURI request failed on {dev_name}: {e}")
                 return False
 
             # 3. Play
@@ -232,9 +230,14 @@ class DlnaService:
                         "SOAPAction": '"urn:schemas-upnp-org:service:AVTransport:1#Play"'
                     }
                 )
-                return res2.status_code == 200
+                if res2.status_code < 400:
+                    log.info(f"✅ DLNA playback started successfully on '{dev_name}'")
+                    return True
+                else:
+                    log.error(f"DLNA Play command error (HTTP {res2.status_code}): {res2.text[:200]}")
+                    return False
             except Exception as e:
-                print(f"[DlnaService] Play request failed: {e}")
+                log.error(f"DLNA Play request failed on {dev_name}: {e}")
                 return False
 
 dlna_service = DlnaService()

@@ -149,6 +149,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setupAiHandlers();
     setupDisasterHandlers();
     setupOnvifSettings();
+    setupMqttSettings();
+    setupMcpSettings();
+
+
 
     // 認証ステータスの確認 (ADMIN_PASSWORD 設定時)
     const auth = await checkAuthStatus();
@@ -194,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.serverInfo = data;
 
       if (el.serverStatusText) el.serverStatusText.textContent = `稼働中 (${data.serverIp}:${data.port})`;
-      if (el.defaultDeviceText) el.defaultDeviceText.textContent = data.defaultDeviceIp ? `デフォルト: ${data.defaultDeviceIp}` : 'デフォルト未設定';
+      updateDefaultDeviceDisplay();
       if (el.apiEndpointUrl) el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
 
       // キャッシュ容量表示
@@ -263,6 +267,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (type === 'google') return 4; // GH
       if (type === 'alexa') return 5;  // Alexa
       if (type === 'homepod') return 6;// HomePod
+      if (type === 'dlna') return 7;   // DLNA
+      if (type === 'onvif') return 8;  // ONVIF
       return 4;
     }
   }
@@ -295,7 +301,34 @@ document.addEventListener('DOMContentLoaded', () => {
     renderDisasterSpeakers();
     renderBuilderSpeakers();
     renderBuilderCustomGroupChips();
+    if (typeof renderMqttSpeakerOptions === 'function') renderMqttSpeakerOptions();
+    if (typeof window.renderMcpSpeakerOptions === 'function') window.renderMcpSpeakerOptions();
     updateBuilderCode();
+  }
+
+  function updateDefaultDeviceDisplay() {
+    if (!el.defaultDeviceText) return;
+    const defIp = state.serverInfo?.defaultDeviceIp || '';
+    const defName = state.serverInfo?.defaultDeviceName || '';
+
+    if (defName && defName !== defIp) {
+      el.defaultDeviceText.textContent = `デフォルト: ${defName}`;
+      el.defaultDeviceText.title = `標準スピーカー: ${defName} (${defIp})`;
+      return;
+    }
+
+    if (defIp) {
+      const found = (state.devices || []).find(d => d.ip === defIp || d.host === defIp || d.id === defIp);
+      if (found && found.name) {
+        const dName = formatSpeakerDisplayName(found.name);
+        el.defaultDeviceText.textContent = `デフォルト: ${dName}`;
+        el.defaultDeviceText.title = `標準スピーカー: ${dName} (${defIp})`;
+      } else {
+        el.defaultDeviceText.textContent = `デフォルト: ${defIp}`;
+      }
+    } else {
+      el.defaultDeviceText.textContent = 'デフォルト未設定';
+    }
   }
 
   // デバイス一覧取得 & 画面反映
@@ -308,6 +341,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       renderDevicesGrid();
       renderAllSpeakerSelectors();
+      updateDefaultDeviceDisplay();
+      if (typeof renderScheduleTable === 'function') renderScheduleTable();
+      if (typeof renderDeviceGroups === 'function') renderDeviceGroups();
+      if (typeof renderFullHistory === 'function') renderFullHistory();
     } catch (err) {
       showToast('デバイス情報の取得に失敗しました', 'error');
     }
@@ -347,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/history?limit=100');
       if (!res.ok) throw new Error('発言履歴取得失敗');
       const data = await res.json();
-      state.history = data.history || [];
+      state.history = Array.isArray(data) ? data : (data.history || []);
 
       renderFullHistory();
       updateHistoryBadges();
@@ -371,6 +408,47 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/^(Alexa:\s*|HomePod:\s*)/i, '')
       .replace(/^Alexa\s*\((全室\s*Echo)\)/i, '$1')
       .replace(/^HomePod\s*\((全室\s*HomePod)\)/i, '$1');
+  }
+
+  // IP/ID/短縮名から最適な日本語表示デバイス名を取得する共通解決関数
+  function getDeviceDisplayName(target) {
+    if (!target) return '';
+    const t = String(target).trim();
+    if (t === 'default') return 'デフォルト (標準)';
+
+    // 1. 完全一致 (ip, host, id, name)
+    let found = (state.devices || []).find(d => d.ip === t || d.host === t || d.id === t || d.name === t);
+
+    // 2. ポートなしIP/プレフィックス除去での一致
+    if (!found) {
+      const cleanIp = t.includes(':') && !t.startsWith('alexa:') && !t.startsWith('homepod:') && !t.startsWith('onvif:')
+        ? t.split(':')[0]
+        : t;
+      found = (state.devices || []).find(d => d.host === cleanIp || (d.ip && d.ip.split(':')[0] === cleanIp));
+    }
+
+    // 3. 名前 (小文字一致)
+    if (!found) {
+      found = (state.devices || []).find(d => d.name && d.name.toLowerCase() === t.toLowerCase());
+    }
+
+    if (found && found.name) {
+      return formatSpeakerDisplayName(found.name);
+    }
+
+    // 4. IPエイリアス設定にあればエイリアス名
+    if (state.settings?.ipAliases && state.settings.ipAliases[t]) {
+      return state.settings.ipAliases[t];
+    }
+
+    // 5. 特殊グループマクロ名
+    if (t.toUpperCase() === 'ALL') return 'ALL (全スピーカー)';
+    if (t.toUpperCase() === 'GH:ALL') return 'GH:ALL (Google全台)';
+    if (t.toUpperCase() === 'AL:ALL') return 'AL:ALL (Alexa全台)';
+    if (t.toUpperCase() === 'HP:ALL') return 'HP:ALL (HomePod全台)';
+    if (t.toUpperCase() === 'CAM:ALL') return 'CAM:ALL (カメラ全台)';
+
+    return formatSpeakerDisplayName(t);
   }
 
   // 汎用マクロボタン群の描画とクリックイベント紐付け
@@ -501,9 +579,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDefault = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
-      const isOnvif = dev.type === 'onvif';
-      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isOnvif ? 'onvif' : 'google'));
-      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'));
+      const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
+      const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
+      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isOnvif ? 'onvif' : 'google')));
+      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isOnvif ? 'onvif-chip' : 'google-chip')));
       const displayName = formatSpeakerDisplayName(dev.name);
 
       let badgeHtml = '';
@@ -523,6 +602,8 @@ document.addEventListener('DOMContentLoaded', () => {
           badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
         } else if (isHomePod) {
           badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+        } else if (isDlna) {
+          badgeHtml += '<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>';
         } else if (isOnvif) {
           badgeHtml += '<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>';
         } else {
@@ -694,11 +775,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 送信先スピーカー名一覧の生成
       const targets = sched.deviceIps || (sched.deviceIp ? [sched.deviceIp] : ['default']);
-      const devNames = targets.map(t => {
-        if (t === 'default') return 'デフォルト (標準)';
-        const found = state.devices.find(d => d.ip === t);
-        return found ? formatSpeakerDisplayName(found.name) : t;
-      }).join(', ');
+      const devNames = targets.map(t => getDeviceDisplayName(t)).join(', ');
 
       const freqText = formatHumanReadableCron(sched);
       const volBadge = sched.volumeLevel 
@@ -936,7 +1013,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 送信先スピーカー表示
       const targetsList = Array.isArray(item.targets) ? item.targets : (item.targets ? [item.targets] : ['デフォルト']);
-      const targetsHtml = targetsList.map(t => `<span class="speaker-tag">${escapeHtml(formatSpeakerDisplayName(t))}</span>`).join(' ');
+      const targetsHtml = targetsList.map(t => {
+        const dName = getDeviceDisplayName(t);
+        return `<span class="speaker-tag" title="${escapeHtml(t)}">${escapeHtml(dName)}</span>`;
+      }).join(' ');
 
       // 音声オプション
       const voiceName = (item.voice || '').replace('ja-JP-', '').replace('Neural', '') || '七海';
@@ -1122,7 +1202,14 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById(subtabId)?.classList.add('active');
             if (subtabId === 'subtab-settings-disaster') {
               loadDisasterSettings();
+            } else if (subtabId === 'subtab-settings-mqtt') {
+              if (typeof updateMqttStatus === 'function') updateMqttStatus();
+            } else if (subtabId === 'subtab-settings-mcp') {
+              if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
+              if (typeof updateMcpStatus === 'function') updateMcpStatus();
             }
+
+
           }
         });
       });
@@ -1370,12 +1457,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
           if (state.serverInfo) {
             state.serverInfo.defaultDeviceIp = data.defaultDeviceIp;
+            state.serverInfo.defaultDeviceName = name;
           }
-
-          // 即時発言の初期選択や表示を更新
-          if (el.defaultDeviceText) {
-            el.defaultDeviceText.textContent = `デフォルト: ${name} (${data.defaultDeviceIp})`;
-          }
+          updateDefaultDeviceDisplay();
 
           // 全UIを再描画
           renderSpeakersCheckboxes(el.saySpeakersContainer, 'saySpeaker', [data.defaultDeviceIp]);
@@ -3838,7 +3922,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       renderRegisteredOnvifTable();
 
-      // 9. 履歴一覧がすでに描画されている場合、エイリアス設定でIPタグを更新 (エイリアス登録済みIPは非リンク化)
+      // 9. MQTT 設定のフォーム反映
+      if (typeof window.populateMqttSettings === 'function') {
+        window.populateMqttSettings(data.mqtt);
+      }
+
+      // 10. 履歴一覧がすでに描画されている場合、エイリアス設定でIPタグを更新 (エイリアス登録済みIPは非リンク化)
       if (state.historyItems && state.historyItems.length > 0) {
         renderFullHistory();
       }
@@ -3861,7 +3950,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     container.innerHTML = entries.map(([name, members]) => {
-      const memberChips = (members || []).map(m => `<span class="group-member-chip">${escapeHtml(m)}</span>`).join(' ');
+      const memberChips = (members || []).map(m => {
+        const dName = getDeviceDisplayName(m);
+        return `<span class="group-member-chip" title="${escapeHtml(m)}">${escapeHtml(dName)}</span>`;
+      }).join(' ');
       return `
         <div class="group-card-item">
           <div>
@@ -4112,7 +4204,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!tbody) return;
 
     if (!discoveredOnvifDevices.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="text-center loading-cell">「ONVIF カメラ自動スキャン」を押すと、宅内のカメラを自動検出します</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center loading-cell">「ONVIF / DLNA 自動スキャン」を押すと、宅内のカメラおよびDLNAスピーカーを自動検出します</td></tr>`;
       return;
     }
 
@@ -4124,9 +4216,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const isSupported = isDlna || !!(dev.isProfileT || dev.hasProfileT || dev.supportsAudio);
       const rowStyle = !isSupported ? 'opacity: 0.55;' : '';
 
+      let typeBadge = '';
+      if (isDlna) {
+        typeBadge = `<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>`;
+      } else {
+        typeBadge = `<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>`;
+      }
+
       let profileBadge = '';
       if (isDlna) {
-        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(6,182,212,0.2);color:#22d3ee;border:1px solid rgba(6,182,212,0.4);font-weight:600;">🎵 DLNA (MediaRenderer)</span>`;
+        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(6,182,212,0.2);color:#22d3ee;border:1px solid rgba(6,182,212,0.4);font-weight:600;">🎵 UPnP AVTransport</span>`;
       } else if (isSupported) {
         profileBadge = `<span class="speaker-chip-badge" style="background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-weight:600;">📷 Profile T (双方向音声対応)</span>`;
       } else {
@@ -4135,7 +4234,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let authStatus = '';
       if (isDlna) {
-        authStatus = `<span style="color:#22d3ee;font-size:0.8rem;">✓ 認証不要 (DLNA)</span>`;
+        authStatus = `<span style="color:#22d3ee;font-size:0.8rem;">✓ 認証不要 (UPnP)</span>`;
       } else if (dev.status === 'ok') {
         authStatus = `<span style="color:#34d399;font-size:0.8rem;">✓ 認証・通信確認済</span>`;
       } else if (dev.status === 'unauthorized') {
@@ -4162,6 +4261,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       return `
         <tr style="${rowStyle}">
+          <td>${typeBadge}</td>
           <td>
             <strong>${icon} ${escapeHtml(primaryName)}</strong>
             <div style="font-size:0.75rem;color:var(--text-muted);">${subInfo} ${dev.serialNumber ? '(' + escapeHtml(dev.serialNumber) + ')' : ''}</div>
@@ -4190,6 +4290,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const modal = document.getElementById('modalOnvifRegister');
     if (!modal) return;
 
+    const titleEl = document.getElementById('modalOnvifTitle');
+    const alertEl = document.getElementById('modalOnvifAlert');
+    const authBlock = document.getElementById('onvifAuthBlock');
     const nameInput = document.getElementById('onvifRegName');
     const ipInput = document.getElementById('onvifRegIp');
     const modelInput = document.getElementById('onvifRegModel');
@@ -4198,9 +4301,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isDlna = (dev.category === 'dlna' || dev.type === 'dlna');
     const defaultName = dev.friendlyName || dev.name || (dev.model ? `${dev.model}_${dev.ip.split('.').pop()}` : (isDlna ? 'DLNAスピーカー' : '防犯カメラ'));
+
+    if (titleEl) {
+      titleEl.textContent = isDlna ? '🎵 DLNAスピーカー連携登録' : '📷 カメラスピーカー連携登録';
+    }
+    if (alertEl) {
+      alertEl.textContent = isDlna
+        ? 'この DLNA / UPnP MediaRenderer スピーカーを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。'
+        : 'このカメラを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。';
+    }
+    if (authBlock) {
+      authBlock.style.display = isDlna ? 'none' : 'block';
+    }
+
     if (nameInput) nameInput.value = defaultName;
-    if (ipInput) ipInput.value = `${dev.ip}:${dev.port || 80}`;
-    if (modelInput) modelInput.value = isDlna ? `${dev.model || 'DLNA'} (UPnP MediaRenderer)` : `${dev.model || 'ONVIF'} (Profile T 双方向音声)`;
+    if (ipInput) ipInput.value = `${dev.ip}:${dev.port || (isDlna ? 80 : 8000)}`;
+    if (modelInput) modelInput.value = isDlna ? `${dev.model || 'DLNA'} (UPnP AVTransport)` : `${dev.model || 'ONVIF'} (Profile T 双方向音声)`;
     if (userInput) {
       userInput.value = '';
       userInput.placeholder = isDlna ? '不要 (DLNA)' : 'ユーザー名 (空欄でデフォルト)';
@@ -4272,7 +4388,7 @@ document.addEventListener('DOMContentLoaded', () => {
               name,
               username,
               password,
-              port: dev.port || (isDlna ? 1426 : 8000),
+              port: dev.port || (isDlna ? 80 : 8000),
               model: dev.model || (isDlna ? 'DLNA MediaRenderer' : 'ONVIF Camera'),
               controlUrl: dev.controlUrl || '',
               renderingControlUrl: dev.renderingControlUrl || '',
@@ -4308,26 +4424,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const list = state.settings?.onvif?.registeredDevices || [];
     if (!list.length) {
-      tbody.innerHTML = `<tr><td colspan="5" class="text-center loading-cell">登録済みのカメラスピーカーはありません</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center loading-cell">登録済みのスピーカーはありません</td></tr>`;
       return;
     }
 
-    tbody.innerHTML = list.map(dev => `
-      <tr>
-        <td><strong>📷 ${escapeHtml(dev.name)}</strong></td>
-        <td><code>${escapeHtml(dev.ip)}</code></td>
-        <td><code style="font-size:0.75rem;word-break:break-all;">${escapeHtml(dev.rtspUrl || 'rtsp://...')}</code></td>
-        <td><span>${escapeHtml(dev.username || 'admin')}</span></td>
-        <td style="white-space:nowrap;">
-          <button type="button" class="btn btn-secondary btn-sm btn-test-onvif" data-ip="${escapeHtml(dev.ip)}" style="margin-right:6px;">
-            🔊 テスト発話
-          </button>
-          <button type="button" class="btn-chip text-danger btn-delete-onvif" data-ip="${escapeHtml(dev.ip)}" title="連携解除">
-            解除
-          </button>
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = list.map(dev => {
+      const isDlna = (dev.type === 'dlna');
+      const icon = isDlna ? '🎵' : '📷';
+      const typeBadge = isDlna
+        ? `<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>`
+        : `<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>`;
+      const connUrl = isDlna
+        ? (dev.controlUrl || 'UPnP AVTransport')
+        : (dev.rtspUrl || 'RTSP Backchannel');
+      const authUser = isDlna
+        ? `<span style="color:var(--text-muted);font-size:0.8rem;">不要 (UPnP)</span>`
+        : escapeHtml(dev.username || 'admin');
+
+      return `
+        <tr>
+          <td>${typeBadge}</td>
+          <td><strong>${icon} ${escapeHtml(dev.name)}</strong></td>
+          <td><code>${escapeHtml(dev.ip)}</code></td>
+          <td><code style="font-size:0.75rem;word-break:break-all;">${escapeHtml(connUrl)}</code></td>
+          <td>${authUser}</td>
+          <td style="white-space:nowrap;">
+            <button type="button" class="btn btn-secondary btn-sm btn-test-onvif" data-ip="${escapeHtml(dev.ip)}" style="margin-right:6px;">
+              🔊 テスト発話
+            </button>
+            <button type="button" class="btn-chip text-danger btn-delete-onvif" data-ip="${escapeHtml(dev.ip)}" title="連携解除">
+              解除
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
 
     // テスト発話
     tbody.querySelectorAll('.btn-test-onvif').forEach(btn => {
@@ -4365,13 +4496,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const ip = btn.getAttribute('data-ip');
         const dev = list.find(d => d.ip === ip);
         const name = dev?.name || ip;
-        if (!confirm(`「${name}」のカメラスピーカー連携を解除しますか？`)) return;
+        const isDlna = (dev?.type === 'dlna');
+        if (!confirm(`「${name}」の${isDlna ? 'DLNA' : 'カメラ'}スピーカー連携を解除しますか？`)) return;
 
         try {
           const res = await fetch('/api/onvif/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ device: { ip }, action: 'delete' })
+            body: JSON.stringify({ device: { ip }, delete: true })
           });
           const data = await res.json();
           if (!res.ok) throw new Error(data.error || '解除失敗');
@@ -4396,6 +4528,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inputUser = document.getElementById('onvifDefaultUser');
     const inputPass = document.getElementById('onvifDefaultPass');
     const authSavedMsg = document.getElementById('onvifAuthSavedMsg');
+    const btnManualAdd = document.getElementById('btnManualAddDevice');
 
     const onvifConfig = state.settings?.onvif || {};
     setupOnvifRegisterModal();
@@ -4438,6 +4571,73 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    // 手動デバイス追加（IP直接登録）
+    btnManualAdd?.addEventListener('click', async () => {
+      const type = document.getElementById('manualDevType')?.value || 'dlna';
+      const name = document.getElementById('manualDevName')?.value.trim();
+      const ip = document.getElementById('manualDevIp')?.value.trim();
+      let port = parseInt(document.getElementById('manualDevPort')?.value, 10);
+      if (isNaN(port) || port <= 0) {
+        port = (type === 'dlna' ? 80 : 8000);
+      }
+
+      if (!name) {
+        showToast('スピーカー表示名を入力してください', 'warning');
+        document.getElementById('manualDevName')?.focus();
+        return;
+      }
+      if (!ip) {
+        showToast('IP アドレスを入力してください', 'warning');
+        document.getElementById('manualDevIp')?.focus();
+        return;
+      }
+
+      const defaultUser = inputUser?.value.trim() || 'admin';
+      const defaultPass = inputPass?.value || '';
+
+      const devPayload = {
+        ip,
+        name,
+        port,
+        type,
+        model: type === 'dlna' ? 'DLNA MediaRenderer (手動登録)' : 'ONVIF Camera (手動登録)',
+        username: type === 'dlna' ? '' : defaultUser,
+        password: type === 'dlna' ? '' : defaultPass,
+        controlUrl: type === 'dlna' ? `http://${ip}:${port}/upnp/control/rendertr1` : '',
+        enabled: true
+      };
+
+      const origText = btnManualAdd.textContent;
+      btnManualAdd.disabled = true;
+      btnManualAdd.textContent = '登録中...';
+      try {
+        const res = await fetch('/api/onvif/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device: devPayload })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '登録失敗');
+
+        if (!state.settings) state.settings = {};
+        if (!state.settings.onvif) state.settings.onvif = {};
+        state.settings.onvif.registeredDevices = data.registeredDevices;
+
+        showToast(`「${name}」を${type === 'dlna' ? 'DLNA' : 'カメラ'}スピーカーとして手動登録しました`, 'success');
+        document.getElementById('manualDevName').value = '';
+        document.getElementById('manualDevIp').value = '';
+        document.getElementById('manualDevPort').value = '';
+        await loadDevices();
+        renderRegisteredOnvifTable();
+        renderDiscoveredOnvifTable();
+      } catch (err) {
+        showToast('手動登録エラー: ' + err.message, 'error');
+      } finally {
+        btnManualAdd.disabled = false;
+        btnManualAdd.textContent = origText;
+      }
+    });
+
     btnScan?.addEventListener('click', async () => {
       const origHtml = btnScan.innerHTML;
       btnScan.disabled = true;
@@ -4445,12 +4645,12 @@ document.addEventListener('DOMContentLoaded', () => {
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         スキャン中...
       `;
-      showToast('宅内の ONVIF カメラをスキャンしています...');
+      showToast('宅内の ONVIF カメラおよび DLNA スピーカーをスキャンしています...');
 
       const tbody = document.getElementById('onvifDiscoveredTableBody');
       const scanCount = document.getElementById('onvifScanCount');
       if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center loading-cell">ネットワーク内のカメラを検出中 (数秒かかります)...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center loading-cell">ネットワーク内のデバイスを検出中 (数秒かかります)...</td></tr>';
       }
 
       try {
@@ -4464,17 +4664,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'スキャンに失敗しました');
 
-        discoveredOnvifDevices = data.devices || [];
+        discoveredOnvifDevices = Array.isArray(data) ? data : (data.devices || []);
         if (scanCount) {
           scanCount.textContent = `${discoveredOnvifDevices.length} 台検出`;
         }
         renderDiscoveredOnvifTable();
-        showToast(`ONVIF カメラを ${discoveredOnvifDevices.length} 台検出しました`, 'success');
+        showToast(`ONVIF / DLNA デバイスを ${discoveredOnvifDevices.length} 台検出しました`, 'success');
       } catch (err) {
-        console.error('ONVIF スキャンエラー:', err);
-        showToast('ONVIF スキャンエラー: ' + err.message, 'error');
+        console.error('ONVIF/DLNA スキャンエラー:', err);
+        showToast('ONVIF/DLNA スキャンエラー: ' + err.message, 'error');
         if (tbody) {
-          tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">スキャンに失敗しました: ${escapeHtml(err.message)}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">スキャンに失敗しました: ${escapeHtml(err.message)}</td></tr>`;
         }
       } finally {
         btnScan.disabled = false;
@@ -4484,6 +4684,445 @@ document.addEventListener('DOMContentLoaded', () => {
 
     renderRegisteredOnvifTable();
   }
+
+  // ================= 8.5. MQTT 連携設定 (Node-RED / n8n メッセージ読み上げ) =================
+  function renderMqttSpeakerOptions() {
+    const selDef = document.getElementById('settingMqttDefaultTarget');
+    const selTest = document.getElementById('selectMqttTestTarget');
+    if (!selDef && !selTest) return;
+
+    const devs = state.devices || [];
+    const currentDefVal = selDef ? selDef.value : '';
+    const currentTestVal = selTest ? selTest.value : '';
+
+    const optionsHtml = [
+      '<option value="">全体デフォルトスピーカーに従う</option>',
+      '<optgroup label="全室マクロ">',
+      '  <option value="ALL">全スピーカー一斉 (ALL)</option>',
+      '  <option value="GH:ALL">Google Cast 全台 (GH:ALL)</option>',
+      '  <option value="AL:ALL">Alexa 全台 (AL:ALL)</option>',
+      '  <option value="HP:ALL">HomePod 全台 (HP:ALL)</option>',
+      '  <option value="DLNA:ALL">DLNA 全台 (DLNA:ALL)</option>',
+      '</optgroup>',
+      '<optgroup label="個別スピーカー">'
+    ];
+
+    devs.forEach(d => {
+      const dName = getDeviceDisplayName(d.name || d.ip);
+      const val = d.name || d.ip;
+      optionsHtml.push(`  <option value="${escapeHtml(val)}">${escapeHtml(dName)} (${escapeHtml(d.type || 'device')})</option>`);
+    });
+    optionsHtml.push('</optgroup>');
+
+    const groups = state.deviceGroups || {};
+    const groupEntries = Object.entries(groups);
+    if (groupEntries.length > 0) {
+      optionsHtml.push('<optgroup label="カスタムグループ">');
+      groupEntries.forEach(([gName]) => {
+        optionsHtml.push(`  <option value="${escapeHtml(gName)}">🏠 ${escapeHtml(gName)}</option>`);
+      });
+      optionsHtml.push('</optgroup>');
+    }
+
+    const htmlString = optionsHtml.join('\n');
+    if (selDef) {
+      selDef.innerHTML = htmlString;
+      selDef.value = currentDefVal;
+    }
+    if (selTest) {
+      selTest.innerHTML = optionsHtml.slice(0, 1).concat(optionsHtml.slice(1)).join('\n');
+      selTest.value = currentTestVal;
+    }
+  }
+
+  async function updateMqttStatus() {
+    const dot = document.getElementById('mqttStatusDot');
+    const text = document.getElementById('mqttStatusText');
+    const detail = document.getElementById('mqttStatusDetail');
+    if (!dot || !text) return;
+
+    try {
+      const res = await fetch('/api/mqtt/status');
+      if (!res.ok) throw new Error('ステータス取得失敗');
+      const data = await res.json();
+
+      if (!data.enabled) {
+        dot.style.background = '#64748b'; // gray
+        text.textContent = '無効 (未稼働)';
+        text.style.color = 'var(--text-muted)';
+        if (detail) detail.textContent = 'スイッチをONにして保存すると、設定したMQTTブローカーへ接続を開始します';
+      } else if (data.connected) {
+        dot.style.background = '#10b981'; // green
+        text.textContent = `接続中 (${data.broker}:${data.port})`;
+        text.style.color = '#34d399';
+        if (detail) {
+          detail.textContent = `トピック: ${data.baseTopic}/say | 受信: ${data.receivedCount} 件${data.lastMessageAt ? ' (最終: ' + data.lastMessageAt + ')' : ''}`;
+        }
+      } else {
+        dot.style.background = '#ef4444'; // red
+        text.textContent = `切断 / 接続失敗 (${data.broker}:${data.port})`;
+        text.style.color = '#f87171';
+        if (detail) detail.textContent = data.lastError || 'ブローカーに接続できません。IP・ポートやネットワークを確認してください';
+      }
+    } catch (e) {
+      dot.style.background = '#f59e0b';
+      text.textContent = '通信エラー';
+      if (detail) detail.textContent = e.message;
+    }
+  }
+
+  function setupMqttSettings() {
+    const checkEnabled = document.getElementById('settingMqttEnabled');
+    const inputBroker = document.getElementById('settingMqttBroker');
+    const inputPort = document.getElementById('settingMqttPort');
+    const inputUser = document.getElementById('settingMqttUsername');
+    const inputPass = document.getElementById('settingMqttPassword');
+    const inputBaseTopic = document.getElementById('settingMqttBaseTopic');
+    const inputClientId = document.getElementById('settingMqttClientId');
+    const selDefaultTarget = document.getElementById('settingMqttDefaultTarget');
+    const checkPublishEvents = document.getElementById('settingMqttPublishEvents');
+    const checkTls = document.getElementById('settingMqttTls');
+    const checkHaDiscovery = document.getElementById('settingMqttHaDiscoveryEnabled');
+    const inputHaPrefix = document.getElementById('settingMqttHaDiscoveryPrefix');
+
+    const btnSave = document.getElementById('btnSaveMqttSettings');
+    const btnReconnect = document.getElementById('btnReconnectMqtt');
+    const btnTest = document.getElementById('btnSendMqttTest');
+    const btnResendHa = document.getElementById('btnResendHaDiscovery');
+    const btnClearHa = document.getElementById('btnClearHaDiscovery');
+
+    // フォームへの初期値反映関数
+    window.populateMqttSettings = (mqttData) => {
+      const m = mqttData || state.settings?.mqtt || {};
+      if (checkEnabled) checkEnabled.checked = Boolean(m.enabled);
+      if (inputBroker) inputBroker.value = m.broker || '';
+      if (inputPort) inputPort.value = m.port || 1883;
+      if (inputUser) inputUser.value = m.username || '';
+      if (inputPass) inputPass.value = m.password || '';
+      if (inputBaseTopic) inputBaseTopic.value = m.baseTopic || 'voicehub';
+      if (inputClientId) inputClientId.value = m.clientId || 'voice-hub';
+      if (selDefaultTarget && m.defaultTarget !== undefined) selDefaultTarget.value = m.defaultTarget;
+      if (checkPublishEvents) checkPublishEvents.checked = m.publishEvents !== false;
+      if (checkTls) checkTls.checked = Boolean(m.tls);
+      if (checkHaDiscovery) checkHaDiscovery.checked = m.haDiscoveryEnabled !== false;
+      if (inputHaPrefix) inputHaPrefix.value = m.haDiscoveryPrefix || 'homeassistant';
+      updateMqttStatus();
+    };
+
+    // 保存ボタン
+    btnSave?.addEventListener('click', async () => {
+      const origText = btnSave.textContent;
+      btnSave.disabled = true;
+      btnSave.textContent = '💾 保存中...';
+
+      const mqttPayload = {
+        enabled: checkEnabled?.checked || false,
+        broker: inputBroker?.value.trim() || '',
+        port: parseInt(inputPort?.value || '1883', 10),
+        username: inputUser?.value.trim() || '',
+        password: inputPass?.value || '',
+        baseTopic: inputBaseTopic?.value.trim() || 'voicehub',
+        clientId: inputClientId?.value.trim() || 'voice-hub',
+        defaultTarget: selDefaultTarget?.value || '',
+        publishEvents: checkPublishEvents?.checked !== false,
+        tls: checkTls?.checked || false,
+        haDiscoveryEnabled: checkHaDiscovery ? checkHaDiscovery.checked : true,
+        haDiscoveryPrefix: inputHaPrefix?.value.trim() || 'homeassistant'
+      };
+
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mqtt: mqttPayload })
+        });
+        if (!res.ok) throw new Error('MQTT設定保存に失敗しました');
+        const updated = await res.json();
+        if (state.settings) state.settings.mqtt = mqttPayload;
+
+        // クライアント再起動
+        await fetch('/api/mqtt/restart', { method: 'POST' });
+        showToast('MQTT 設定を保存し、クライアントを更新しました', 'success');
+        setTimeout(updateMqttStatus, 1000);
+      } catch (err) {
+        showToast('エラー: ' + err.message, 'error');
+      } finally {
+        btnSave.disabled = false;
+        btnSave.textContent = origText;
+      }
+    });
+
+    // HA Discovery 再送ボタン
+    btnResendHa?.addEventListener('click', async () => {
+      const origText = btnResendHa.textContent;
+      btnResendHa.disabled = true;
+      btnResendHa.textContent = '🔄 送信中...';
+      try {
+        const res = await fetch('/api/mqtt/ha-discovery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clear: false })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Discovery 送信に失敗しました');
+        showToast(`Home Assistant Discovery トピック (${data.count} エンティティ) を発行しました！`, 'success');
+      } catch (err) {
+        showToast('HA Discovery エラー: ' + err.message, 'error');
+      } finally {
+        btnResendHa.disabled = false;
+        btnResendHa.textContent = origText;
+      }
+    });
+
+    // HA Discovery 解除ボタン
+    btnClearHa?.addEventListener('click', async () => {
+      if (!confirm('Home Assistant から Voice Hub の自動検出エンティティを解除（削除）しますか？')) return;
+      const origText = btnClearHa.textContent;
+      btnClearHa.disabled = true;
+      btnClearHa.textContent = '🗑️ 削除中...';
+      try {
+        const res = await fetch('/api/mqtt/ha-discovery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clear: true })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Discovery 削除に失敗しました');
+        showToast('Home Assistant から Discovery エンティティを解除しました', 'success');
+      } catch (err) {
+        showToast('HA Discovery 解除エラー: ' + err.message, 'error');
+      } finally {
+        btnClearHa.disabled = false;
+        btnClearHa.textContent = origText;
+      }
+    });
+
+    // 再接続ボタン
+    btnReconnect?.addEventListener('click', async () => {
+      btnReconnect.disabled = true;
+      btnReconnect.textContent = '🔄 接続中...';
+      try {
+        await fetch('/api/mqtt/restart', { method: 'POST' });
+        showToast('MQTT クライアントを再起動しました');
+        setTimeout(updateMqttStatus, 1500);
+      } catch (err) {
+        showToast('再接続エラー: ' + err.message, 'error');
+      } finally {
+        btnReconnect.disabled = false;
+        btnReconnect.textContent = '🔄 再接続';
+      }
+    });
+
+    // テスト送信ボタン
+    btnTest?.addEventListener('click', async () => {
+      const inputTestText = document.getElementById('inputMqttTestText');
+      const selectTestTarget = document.getElementById('selectMqttTestTarget');
+      const text = inputTestText?.value.trim();
+      const target = selectTestTarget?.value || null;
+
+      if (!text) {
+        showToast('テスト発話テキストを入力してください', 'warning');
+        return;
+      }
+
+      const origText = btnTest.textContent;
+      btnTest.disabled = true;
+      btnTest.textContent = '📤 送信中...';
+
+      try {
+        const res = await fetch('/api/mqtt/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, target })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || data.error || 'テスト送信に失敗しました');
+
+        showToast(`トピック [${data.topic}] にPublishしました！まもなくスピーカーから発声されます`, 'success');
+        setTimeout(updateMqttStatus, 1000);
+      } catch (err) {
+        showToast('MQTTテストエラー: ' + err.message, 'error');
+      } finally {
+        btnTest.disabled = false;
+        btnTest.textContent = origText;
+      }
+    });
+
+    // 定期ポーリング（設定タブ表示時のみ）
+    setInterval(() => {
+      const mqttTab = document.getElementById('subtab-settings-mqtt');
+      if (mqttTab && mqttTab.classList.contains('active')) {
+        updateMqttStatus();
+      }
+    }, 10000);
+
+    renderMqttSpeakerOptions();
+  }
+
+  // ================= 8.6. MCP 連携設定 (Claude Desktop / Cursor / Cline) =================
+  let mcpConnectionMode = 'local'; // 'local' | 'internet'
+
+  function updateMcpConfigSnippets() {
+    const preClaude = document.getElementById('preClaudeConfig');
+    const preCursor = document.getElementById('preCursorConfig');
+    if (!preClaude && !preCursor) return;
+
+    const token = state.settings?.webhookToken || '';
+    const host = location.host || '192.168.11.244:8080';
+    const proto = location.protocol || 'http:';
+
+    let sseUrl = '';
+    if (mcpConnectionMode === 'local') {
+      sseUrl = `${proto}//${host}/mcp/sse`;
+    } else {
+      const isIp = /^[0-9.]+(:[0-9]+)?$/.test(host);
+      const tunnelDomain = isIp ? 'your-tunnel-domain.trycloudflare.com' : host;
+      sseUrl = `https://${tunnelDomain}/mcp/sse${token ? '?token=' + encodeURIComponent(token) : ''}`;
+    }
+
+    // Claude Desktop 設定
+    const claudeJson = {
+      mcpServers: {
+        voicehub: {
+          url: sseUrl
+        }
+      }
+    };
+    if (preClaude) {
+      preClaude.textContent = JSON.stringify(claudeJson, null, 2);
+    }
+
+    // Cursor / Cline 設定
+    const cursorJson = {
+      name: "voicehub",
+      type: "sse",
+      url: sseUrl
+    };
+    if (preCursor) {
+      preCursor.textContent = JSON.stringify(cursorJson, null, 2);
+    }
+  }
+
+  async function updateMcpStatus() {
+    const statsEl = document.getElementById('mcpCallStats');
+    if (!statsEl) return;
+    try {
+      const res = await fetch('/api/mcp/status');
+      if (res.ok) {
+        const data = await res.json();
+        statsEl.textContent = `セッション: ${data.activeSessions || 0} | 呼出: ${data.totalCalls || 0} 回${data.lastCallAt ? ' (最終: ' + data.lastCallAt.slice(11) + ')' : ''}`;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function setupMcpSettings() {
+    const btnLocal = document.getElementById('btnMcpModeLocal');
+    const btnInternet = document.getElementById('btnMcpModeInternet');
+    const btnCopyClaude = document.getElementById('btnCopyClaudeConfig');
+    const btnCopyCursor = document.getElementById('btnCopyCursorConfig');
+    const selectSimTool = document.getElementById('selectMcpSimTool');
+    const btnExecuteSim = document.getElementById('btnExecuteMcpSim');
+    const preSimResult = document.getElementById('preMcpSimResult');
+    const selSimTarget = document.getElementById('mcpSimSpeakTarget');
+
+    // モード切り替え
+    btnLocal?.addEventListener('click', () => {
+      mcpConnectionMode = 'local';
+      btnLocal.classList.add('active');
+      btnInternet?.classList.remove('active');
+      updateMcpConfigSnippets();
+    });
+
+    btnInternet?.addEventListener('click', () => {
+      mcpConnectionMode = 'internet';
+      btnInternet.classList.add('active');
+      btnLocal?.classList.remove('active');
+      updateMcpConfigSnippets();
+    });
+
+    // コピーボタン
+    btnCopyClaude?.addEventListener('click', () => {
+      const text = document.getElementById('preClaudeConfig')?.textContent || '';
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Claude Desktop 設定 JSON をクリップボードにコピーしました！', 'success');
+      });
+    });
+
+    btnCopyCursor?.addEventListener('click', () => {
+      const text = document.getElementById('preCursorConfig')?.textContent || '';
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Cursor / Cline 設定 JSON をクリップボードにコピーしました！', 'success');
+      });
+    });
+
+    // シミュレーター: ツール選択切り替え
+    selectSimTool?.addEventListener('change', (e) => {
+      const val = e.target.value;
+      const argsSpeak = document.getElementById('mcpSimArgsSpeak');
+      const argsDnd = document.getElementById('mcpSimArgsDnd');
+      if (argsSpeak) argsSpeak.style.display = (val === 'speak') ? 'block' : 'none';
+      if (argsDnd) argsDnd.style.display = (val === 'set_dnd') ? 'block' : 'none';
+    });
+
+    // シミュレーター: ツール実行
+    btnExecuteSim?.addEventListener('click', async () => {
+      const tool = selectSimTool?.value || 'speak';
+      const origText = btnExecuteSim.textContent;
+      btnExecuteSim.disabled = true;
+      btnExecuteSim.textContent = '実行中...';
+
+      let args = {};
+      if (tool === 'speak') {
+        const text = document.getElementById('mcpSimSpeakText')?.value.trim() || 'テスト発話です';
+        const target = document.getElementById('mcpSimSpeakTarget')?.value || '';
+        args = { text, target };
+      } else if (tool === 'set_dnd') {
+        const enabled = document.getElementById('mcpSimDndEnabled')?.checked !== false;
+        const reason = document.getElementById('mcpSimDndReason')?.value || 'MCPテスト';
+        args = { enabled, reason };
+      }
+
+      try {
+        const res = await fetch('/api/mcp/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tool, arguments: args })
+        });
+        const data = await res.json();
+        if (preSimResult) {
+          preSimResult.textContent = JSON.stringify(data, null, 2);
+        }
+        showToast(`MCP ツール [${tool}] を実行しました`, 'success');
+        updateMcpStatus();
+      } catch (err) {
+        if (preSimResult) preSimResult.textContent = 'エラー: ' + err.message;
+        showToast('MCP実行エラー: ' + err.message, 'error');
+      } finally {
+        btnExecuteSim.disabled = false;
+        btnExecuteSim.textContent = origText;
+      }
+    });
+
+    // スピーカー一覧の反映
+    window.renderMcpSpeakerOptions = () => {
+      if (!selSimTarget) return;
+      const cur = selSimTarget.value;
+      const devs = state.devices || [];
+      const opts = ['<option value="">デフォルトスピーカー</option>', '<option value="ALL">全スピーカー一斉 (ALL)</option>'];
+      devs.forEach(d => {
+        opts.push(`<option value="${escapeHtml(d.name || d.ip)}">${escapeHtml(getDeviceDisplayName(d.name || d.ip))}</option>`);
+      });
+      selSimTarget.innerHTML = opts.join('\n');
+      selSimTarget.value = cur;
+    };
+
+    updateMcpConfigSnippets();
+    updateMcpStatus();
+    window.renderMcpSpeakerOptions();
+  }
+
 
   // ================= 9. AI 連携設定 (Google Gemini / OpenAI) =================
   async function loadAiModels(provider = 'gemini', forceRefresh = false, keyOverride = null) {

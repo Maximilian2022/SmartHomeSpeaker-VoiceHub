@@ -1,7 +1,7 @@
 services:
   voice-hub:
     build: .
-    container_name: google-home-speaker
+    container_name: SmartSpeaker-VoiceHub
     restart: unless-stopped
     network_mode: "host"
     env_file:
@@ -18,7 +18,7 @@ services:
 
   cloudflared:
     image: cloudflare/cloudflared:latest
-    container_name: cloudflared-google-home
+    container_name: cloudflared-SmartSpeaker-VoiceHub
     restart: unless-stopped
     network_mode: "host"
     command: tunnel --no-autoupdate run

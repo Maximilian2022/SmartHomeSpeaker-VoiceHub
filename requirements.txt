@@ -10,3 +10,6 @@ aiohttp>=3.10.0
 icalendar>=5.0.13
 recurring-ical-events>=3.3.0
 python-multipart>=0.0.12
+paho-mqtt>=2.1.0
+aiomqtt>=2.5.0
+

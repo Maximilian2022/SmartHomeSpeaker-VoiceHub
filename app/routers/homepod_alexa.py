@@ -22,12 +22,12 @@ async def homepod_scan():
 
 @router.get("/api/alexa/status")
 async def alexa_status():
-    host_ip = settings.wireless_ip or "127.0.0.1"
+    host_ip = settings.effective_wireless_ip
     return alexa_service.get_auth_status(host_ip)
 
 @router.post("/api/alexa/auth/start")
 async def alexa_auth_start():
-    host_ip = settings.wireless_ip or "127.0.0.1"
+    host_ip = settings.effective_wireless_ip
     try:
         result = await alexa_service.start_proxy_auth(host_ip, port=8081)
         return result

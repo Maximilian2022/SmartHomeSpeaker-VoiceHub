@@ -12,16 +12,22 @@ START_TIME = time.time()
 
 @router.get("/api/status")
 async def get_system_status() -> Dict[str, Any]:
+    def_ip = device_manager.get_default_device_ip()
+    def_dev = device_manager.find_device(def_ip) if def_ip else None
+    def_name = def_dev.get("name") if def_dev else ""
+
+    import sys
     return {
-        "serverIp": settings.wireless_ip or "127.0.0.1",
+        "serverIp": settings.effective_wireless_ip,
         "port": settings.server_port,
-        "defaultDeviceIp": device_manager.get_default_device_ip(),
+        "defaultDeviceIp": def_ip,
+        "defaultDeviceName": def_name,
         "tunnelDomain": settings.tunnel_domain or None,
         "cacheStats": tts_service.get_cache_stats(),
         "alexaEnabled": alexa_service.is_enabled(),
         "alexaConfigured": alexa_service.is_enabled(),
         "homepodCount": len(homepod_service.devices_cache),
-        "pythonVersion": "3.12",
+        "pythonVersion": sys.version.split()[0],
         "uptime": int(time.time() - START_TIME),
         "hasWebhookToken": bool(settings.webhook_token),
         "webhookToken": settings.webhook_token or None
