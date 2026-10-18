@@ -772,25 +772,17 @@ Docker コンテナ運用時、以下のディレクトリ構造でデータが�
 │   └── voice/                  # [Named Volume: smart_speaker_cache]
 │       └── speech_<MD5>.mp3    # 生成された Edge TTS 音声キャッシュファイル
 │
-├── src/                        # バックエンド実装 (現行 Node.js)
-│   ├── server.js               # Express サーバー、ルーティング、境界セキュリティ
-│   ├── tts.js                  # Edge TTS、チャイム結合、LRU キャッシュ管理
-│   ├── devices.js              # デバイス管理、Castv2、mDNS ディスカバリー
-│   ├── onvif.js                # ONVIF マネージャー (WS-Discovery, WS-Security, go2rtc 制御)
-│   ├── dlna.js                 # DLNA マネージャー (SSDP, AVTransport, RenderingControl)
-│   ├── settings.js             # 設定マネージャー、永続化
-│   ├── dnd.js                  # おやすみ・会議モード (DND) 判定エンジン
-│   ├── calendar.js             # Google カレンダー同期、直前リマインド、予定まとめ
-│   ├── disaster.js             # P2P地震情報 WebSocket、気象庁API監視、天気予報
-│   ├── ai.js                   # Gemini / OpenAI / Ollama 連携要約エンジン
-│   ├── alexa.js                # Amazon Alexa 制御ブリッジ (alexa_remote_control)
-│   ├── homepod.js              # Apple HomePod 制御ブリッジ (pyatv)
-│   ├── scheduler.js            # 定期アナウンス実行スケジューラー
-│   └── queue.js                # Webhook 永続化非同期キュー
+├── app/                        # バックエンド実装 (Python 3.14 + FastAPI)
+│   ├── main.py                 # FastAPI エントリーポイント、Lifespan、ミドルウェア
+│   ├── config.py               # 環境変数・パス設定
+│   ├── core/                   # セキュリティ、ロギング、基盤モジュール
+│   ├── routers/                # REST API / SSE / MQTT / MCP ルーター群
+│   └── services/               # TTS、Cast、Alexa、HomePod、ONVIF/DLNA、DND、MQTT、MCP等のサービス群
 │
 └── bin/
     ├── alexa_remote_control.sh # Alexa 制御シェルスクリプト
-    └── homepod_scan.py         # pyatv スキャン・AirPlay2 ストリーミング実行スクリプト
+    ├── homepod_scan.py         # pyatv スキャン・AirPlay2 ストリーミング実行スクリプト
+    └── homepod_stream.py       # HomePod 配信ヘルパースクリプト
 ```
 
 ---

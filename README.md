@@ -40,7 +40,7 @@ Webブラウザからの直感的な即時発言、定期スケジュール放�
 ## 🚀 起動方法
 
 ### 1. 必要要件
-- Node.js 18 以上 (または Docker / Docker Compose)
+- Python 3.12 以上 (または Docker / Docker Compose)
 - スピーカー端末と同じローカルネットワーク (LAN)
 
 ### 2. 環境設定
@@ -56,10 +56,10 @@ cp .my.env.sample .my.env
 
 ```bash
 # 依存ライブラリのインストール
-npm install
+pip install -r requirements.txt
 
 # サーバー起動 (デフォルト: ポート 8080)
-npm start
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 起動後、ブラウザで `http://localhost:8080` を開きます。
@@ -86,7 +86,7 @@ Portainer の Web GUI からリポジトリを指定してワンクリックで�
    - `DEFAULT_SPEAKER_IP`: メインの Google Home の IP アドレス
    - `WEBHOOK_TOKEN`: 外部アクセス時のセキュリティトークン
    - `TUNNEL_TOKEN`: Cloudflare Tunnel を利用する場合のトークン
-7. **「Deploy the stack」** をクリックします。自動的に Node 26 環境がビルドされ、名前付きボリューム (`smart_speaker_data`, `smart_speaker_cache`) と共に起動します。
+7. **「Deploy the stack」** をクリックします。自動的に Python 3.14 環境がビルドされ、名前付きボリューム (`smart_speaker_data`, `smart_speaker_cache`) と共に起動します。
 
 ---
 
@@ -215,8 +215,9 @@ Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、あるいは PC 上の
 本ソフトウェアの開発にあたり、以下の素晴らしいオープンソースプロジェクトの知見・ライブラリを活用・参考にしています。各開発者・コミュニティの皆様に感謝いたします。
 
 - **[google-home-voicetext](https://github.com/sikkimtemi/google-home-voicetext-docker)** (Taro TAKAHASHI) - オリジナルの Google Home 音声通知着想
-- **[node-edge-tts](https://github.com/SchneeHertz/node-edge-tts)** - Microsoft Edge 音声合成クライアント
-- **[castv2-client](https://github.com/thibauts/node-castv2-client)** - Google Cast (Chromecast) 通信プロトコル実装
-- **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** / **[alexa-cookie2](https://github.com/Apollon77/alexa-cookie)** - Amazon Echo 制御および認証連携
+- **[edge-tts](https://github.com/rany2/edge-tts)** - Python Microsoft Edge 音声合成クライアント
+- **[PyChromecast](https://github.com/home-assistant-libs/pychromecast)** - Google Cast 通信プロトコル実装 (Home Assistant)
+- **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** - Amazon Echo 制御シェルスクリプト
 - **[pyatv](https://github.com/postlund/pyatv)** - Apple HomePod AirPlay2 ストリーミング
 - **[go2rtc](https://github.com/AlexxIT/go2rtc)** - ONVIF Profile T 双方向音声バックチャンネルストリーミング
+- **[aiomqtt](https://github.com/sbtinstruments/aiomqtt)** - 非同期 MQTT クライアント (Node-RED / n8n / Home Assistant 連携)

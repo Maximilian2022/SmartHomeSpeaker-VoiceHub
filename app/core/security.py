@@ -25,11 +25,11 @@ def is_tunnel_request(request: Request) -> bool:
 
 def check_tunnel_access(request: Request):
     """
-    Cloudflare Tunnel からのアクセス時、Webhook エンドポイント (/api/say, /api/webhook) 以外は 403 で遮断
+    Cloudflare Tunnel からのアクセス時、Webhook (/api/say, /api/webhook) および MCP (/mcp*) 以外は 403 で遮断
     """
     if is_tunnel_request(request):
         path = request.url.path
-        if not (path == "/api/say" or path == "/api/webhook"):
+        if not (path == "/api/say" or path == "/api/webhook" or path.startswith("/mcp")):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: Web GUI and management APIs are restricted to internal LAN."

@@ -2,12 +2,14 @@ import asyncio
 import json
 import uuid
 import time
+import hmac
 from typing import Dict, Any, List, Optional
 from app.services.speech_service import speech_service
 from app.services.devices_service import device_manager
 from app.services.dnd_service import dnd_service
 from app.services.calendar_service import calendar_service
 from app.services.settings_service import settings_manager
+from app.core.security import is_private_ip
 from app.core.logger import get_logger
 
 log = get_logger("MCP")
@@ -130,12 +132,17 @@ class MCPService:
             del self.sessions[session_id]
             log.info(f"[MCP] Session removed: {session_id}")
 
-    def verify_auth(self, token_candidate: Optional[str]) -> bool:
-        """Webhook トークンとの照合"""
+    def verify_auth(self, token_candidate: Optional[str], client_ip: Optional[str] = None) -> bool:
+        """Webhook トークンとの照合 (宅内プライベートIPからのアクセスは未指定時免除、外部は必須)"""
         configured_token = settings_manager.get().get("webhookToken", "").strip()
         if not configured_token:
             return True
-        return token_candidate == configured_token
+        if token_candidate:
+            return hmac.compare_digest(token_candidate, configured_token)
+        # トークン未指定の場合: プライベートIP（宅内LAN）からのアクセスであれば免除
+        if client_ip and is_private_ip(client_ip):
+            return True
+        return False
 
     def get_status(self) -> Dict[str, Any]:
         return {
@@ -303,13 +310,16 @@ class MCPService:
 
         # 1. initialize
         if method == "initialize":
+            client_version = params.get("protocolVersion", "2024-11-05")
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": client_version,
                     "capabilities": {
-                        "tools": {"listChanged": False}
+                        "tools": {"listChanged": False},
+                        "resources": {"listChanged": False},
+                        "prompts": {"listChanged": False}
                     },
                     "serverInfo": {
                         "name": "smart-speaker-voice-hub",
@@ -352,6 +362,44 @@ class MCPService:
                 "jsonrpc": "2.0",
                 "id": req_id,
                 "result": res
+            }
+
+        # 6. resources/list
+        if method == "resources/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "resources": []
+                }
+            }
+
+        # 7. resources/templates/list
+        if method == "resources/templates/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "resourceTemplates": []
+                }
+            }
+
+        # 8. prompts/list
+        if method == "prompts/list":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {
+                    "prompts": []
+                }
+            }
+
+        # 9. logging/setLevel
+        if method == "logging/setLevel":
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "result": {}
             }
 
         # 未知のメソッド

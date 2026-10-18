@@ -1,10 +1,36 @@
-node_modules
+# Git & VCS
 .git
+.gitignore
+
+# Environment & Secrets
 .my.env
 .my.env.*
 *.env
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+env/
+
+# Scratch & Agent Internals
+scratch/
+.agents/
+
+# Logs & Temporary Files
 *.log
+logs/*.log
 *.bak
 *.patch
 test_*.mp3
 public/voice/*.mp3
+
+# Legacy Node.js
+node_modules/
+package-lock.json
+

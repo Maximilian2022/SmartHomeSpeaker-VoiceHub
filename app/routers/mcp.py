@@ -1,10 +1,10 @@
 import asyncio
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Union
 from fastapi import APIRouter, Request, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
-from app.services.mcp_service import mcp_service
+from app.services.mcp_service import mcp_service, MCPSession
 from app.core.logger import get_logger
 
 router = APIRouter()
@@ -25,20 +25,68 @@ def get_token_from_request(request: Request) -> Optional[str]:
         return auth[7:].strip()
     return None
 
-@router.get("/mcp/sse")
-async def mcp_sse(request: Request):
-    """MCP SSE (Server-Sent Events) トランスポート接続エンドポイント"""
-    token = get_token_from_request(request)
-    if not mcp_service.verify_auth(token):
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP token")
+def resolve_or_create_session(request: Request, explicit_id: Optional[str] = None) -> MCPSession:
+    """リクエストまたは引数からセッションを特定、無ければ自動生成"""
+    sid = explicit_id or request.query_params.get("sessionId") or request.headers.get("mcp-session-id") or request.headers.get("x-session-id")
+    if sid:
+        session = mcp_service.get_session(sid)
+        if session:
+            return session
 
     client_ip = request.client.host if request.client else "unknown"
-    user_agent = request.headers.get("user-agent", "Unknown AI Client")
-    session = mcp_service.create_session(client_ip, user_agent)
+    user_agent = request.headers.get("user-agent", "Unknown MCP Client")
+    return mcp_service.create_session(client_ip, user_agent)
 
+async def handle_jsonrpc_post(request: Request, explicit_id: Optional[str] = None) -> Response:
+    """Streamable HTTP および messages エンドポイント共通の JSON-RPC POST ハンドラ"""
+    token = get_token_from_request(request)
+    client_ip = request.client.host if request.client else "unknown"
+    if not mcp_service.verify_auth(token, client_ip):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP token")
+
+    session = resolve_or_create_session(request, explicit_id)
+
+    try:
+        body = await request.json()
+    except Exception as e:
+        log.warning(f"[MCP] Invalid JSON body from {client_ip}: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    # バッチ処理 (JSON-RPC 2.0 list) or 単一処理
+    if isinstance(body, list):
+        results = []
+        for item in body:
+            res = await mcp_service.handle_jsonrpc(item, session)
+            if res is not None:
+                results.append(res)
+        response_data = results if results else None
+    elif isinstance(body, dict):
+        response_data = await mcp_service.handle_jsonrpc(body, session)
+    else:
+        raise HTTPException(status_code=400, detail="Payload must be a JSON object or array")
+
+    resp_headers = {
+        "Mcp-Session-Id": session.session_id,
+        "Access-Control-Expose-Headers": "Mcp-Session-Id"
+    }
+
+    if response_data is None:
+        # 通知 (Notification) の場合は 202 Accepted
+        return Response(status_code=202, headers=resp_headers)
+
+    # SSE クライアントが存在する場合、キューにも送信して同期
+    try:
+        await session.queue.put(json.dumps(response_data, ensure_ascii=False))
+    except Exception:
+        pass
+
+    return JSONResponse(status_code=200, content=response_data, headers=resp_headers)
+
+def create_sse_response(request: Request, session: MCPSession, token: Optional[str]) -> StreamingResponse:
+    """SSE ストリーミングレスポンスを生成"""
     async def event_generator():
         try:
-            # 1. 初期 endpoint イベントを発行
+            # 1. 初期 endpoint イベントを発行 (相対パスおよび token 伝播)
             endpoint_url = f"/mcp/messages?sessionId={session.session_id}"
             if token:
                 endpoint_url += f"&token={token}"
@@ -47,11 +95,9 @@ async def mcp_sse(request: Request):
             # 2. メッセージキュー監視 & keep-alive
             while True:
                 try:
-                    # 15秒タイムアウトでキュー待機
                     msg_text = await asyncio.wait_for(session.queue.get(), timeout=15.0)
                     yield f"event: message\ndata: {msg_text}\n\n"
                 except asyncio.TimeoutError:
-                    # クライアント切断防止のための keep-alive コメント
                     yield ": keep-alive\n\n"
                 except asyncio.CancelledError:
                     break
@@ -64,36 +110,68 @@ async def mcp_sse(request: Request):
         headers={
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
+            "X-Accel-Buffering": "no",
+            "Mcp-Session-Id": session.session_id,
+            "Access-Control-Expose-Headers": "Mcp-Session-Id"
         }
     )
 
-@router.post("/mcp/messages")
-async def mcp_messages(request: Request, sessionId: str = Query(...)):
-    """MCP JSON-RPC メッセージ処理エンドポイント"""
+# --- SSE トランスポート GET エンドポイント ---
+
+@router.get("/mcp/sse")
+async def mcp_sse_get(request: Request):
+    """Classic MCP SSE トランスポート接続 (GET)"""
     token = get_token_from_request(request)
-    if not mcp_service.verify_auth(token):
+    client_ip = request.client.host if request.client else "unknown"
+    if not mcp_service.verify_auth(token, client_ip):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP token")
 
-    session = mcp_service.get_session(sessionId)
-    if not session:
-        raise HTTPException(status_code=404, detail=f"MCP Session '{sessionId}' not found or expired")
+    session = resolve_or_create_session(request)
+    return create_sse_response(request, session, token)
 
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+@router.get("/mcp")
+async def mcp_root_get(request: Request):
+    """/mcp へのアクセス: SSE ヘッダーがあれば SSE 接続、それ以外はステータス JSON"""
+    accept = request.headers.get("accept", "").lower()
+    if "text/event-stream" in accept:
+        token = get_token_from_request(request)
+        client_ip = request.client.host if request.client else "unknown"
+        if not mcp_service.verify_auth(token, client_ip):
+            raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP token")
+        session = resolve_or_create_session(request)
+        return create_sse_response(request, session, token)
+    return mcp_service.get_status()
 
-    # JSON-RPC を処理
-    response_rpc = await mcp_service.handle_jsonrpc(body, session)
+# --- Streamable HTTP / JSON-RPC POST エンドポイント ---
 
-    if response_rpc:
-        # SSE キューに送信
-        await session.queue.put(json.dumps(response_rpc, ensure_ascii=False))
-        # HTTP レスポンスとしても直接返却 (クライアントの互換性を最大化)
-        return JSONResponse(status_code=200, content=response_rpc)
-    else:
-        return Response(status_code=202)
+@router.post("/mcp/sse")
+async def mcp_sse_post(request: Request):
+    """Streamable HTTP トランスポート: POST /mcp/sse (Gemini CLI / Antigravity / Cursor 対応)"""
+    return await handle_jsonrpc_post(request)
+
+@router.post("/mcp")
+async def mcp_root_post(request: Request):
+    """Streamable HTTP トランスポート: POST /mcp"""
+    return await handle_jsonrpc_post(request)
+
+@router.post("/mcp/messages")
+async def mcp_messages_post(request: Request, sessionId: Optional[str] = Query(None)):
+    """MCP JSON-RPC メッセージ処理: POST /mcp/messages (SSE セッション向け POST)"""
+    return await handle_jsonrpc_post(request, explicit_id=sessionId)
+
+# --- セッション終了 DELETE エンドポイント ---
+
+@router.delete("/mcp/sse")
+@router.delete("/mcp")
+@router.delete("/mcp/messages")
+async def mcp_delete(request: Request, sessionId: Optional[str] = Query(None)):
+    """MCP セッション終了"""
+    sid = sessionId or request.headers.get("mcp-session-id") or request.headers.get("x-session-id")
+    if sid:
+        mcp_service.remove_session(sid)
+    return Response(status_code=204)
+
+# --- Web GUI 管理用エンドポイント ---
 
 @router.get("/api/mcp/status")
 async def get_mcp_status():
@@ -109,3 +187,4 @@ async def test_mcp_tool(req: McpTestRequest):
     """Web GUI からの MCP ツール直接シミュレーション"""
     res = await mcp_service.execute_tool(req.tool, req.arguments, client_name="WebGUI Simulator", client_ip="127.0.0.1")
     return res
+
