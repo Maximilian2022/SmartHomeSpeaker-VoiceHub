@@ -8,6 +8,7 @@ services:
       - path: ./.my.env
         required: false
     volumes:
+      - ./entrypoint.sh:/app/entrypoint.sh
       - ./app:/app/app
       - ./public:/app/public
       - voice_data:/app/data

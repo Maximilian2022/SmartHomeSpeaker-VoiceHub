@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import ipaddress
+import secrets
 from typing import Optional
 from fastapi import Request, HTTPException, status
 from app.config import settings
@@ -76,9 +77,8 @@ def validate_webhook_token(request: Request, body_token: Optional[str] = None):
         detail="Unauthorized: Invalid or missing Webhook token."
     )
 
-def generate_session_token(password: str) -> str:
-    salt = "voicehub_secure_session_salt"
-    token = hashlib.sha256(f"{password}_{salt}".encode()).hexdigest()
+def generate_session_token(password: str = "") -> str:
+    token = secrets.token_hex(32)
     ACTIVE_SESSIONS.add(token)
     return token
 

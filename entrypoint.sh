@@ -2,12 +2,19 @@
 set -e
 
 echo "[VoiceHub Entrypoint] Starting go2rtc background daemon..."
-# go2rtc 設定ファイルがあれば使用、なければデフォルト起動
-if [ -f "/app/data/go2rtc.yaml" ]; then
-    /usr/local/bin/go2rtc -c /app/data/go2rtc.yaml &
-else
-    /usr/local/bin/go2rtc &
+# go2rtc 設定ファイルがあれば使用、なければ安全なデフォルト設定を生成して起動 (LANへの無認証API露出防止)
+if [ ! -f "/app/data/go2rtc.yaml" ]; then
+    mkdir -p /app/data
+    cat <<'EOF' > /app/data/go2rtc.yaml
+api:
+  listen: "127.0.0.1:1984"
+rtsp:
+  listen: ":8554"
+webrtc:
+  listen: ":8555"
+EOF
 fi
+/usr/local/bin/go2rtc -c /app/data/go2rtc.yaml &
 
 # go2rtc の起動待ち (最大5秒)
 for i in {1..10}; do

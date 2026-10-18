@@ -19,10 +19,13 @@ class SayRequest(BaseModel):
     text: str
     devices: Optional[Union[str, List[str]]] = None
     targets: Optional[Union[str, List[str]]] = None
+    target: Optional[Union[str, List[str]]] = None
     voice: Optional[str] = None
     rate: Optional[str] = None
+    speed: Optional[str] = None
     pitch: Optional[str] = None
     volumeLevel: Optional[Union[float, int, str]] = None
+    volume: Optional[Union[float, int, str]] = None
     chime: Optional[str] = None
     async_mode: Optional[bool] = Field(default=None, alias="async")
     wait: Optional[bool] = None
@@ -135,7 +138,9 @@ async def api_say_post(
     check_tunnel_access(request)
     validate_webhook_token(request, req.token)
 
-    targets = req.targets or req.devices
+    targets = req.targets or req.devices or req.target
+    volume_level = req.volumeLevel if req.volumeLevel is not None else req.volume
+    rate = req.rate or req.speed
     raw_client = req.client or req.from_user or req.sender
     client_ip, client_name, source, source_label = resolve_client_metadata(request, raw_client, req.source, req.sourceLabel)
     is_urgent = bool(req.urgent or req.bypassDnd)
@@ -148,9 +153,9 @@ async def api_say_post(
             time_spec=time_spec,
             targets=targets,
             voice=req.voice,
-            rate=req.rate,
+            rate=rate,
             pitch=req.pitch,
-            volume_level=req.volumeLevel,
+            volume_level=volume_level,
             chime=req.chime,
             client_name=client_name,
             client_ip=client_ip,
@@ -171,9 +176,9 @@ async def api_say_post(
             text=req.text,
             targets=targets,
             voice=req.voice,
-            rate=req.rate,
+            rate=rate,
             pitch=req.pitch,
-            volume_level=req.volumeLevel,
+            volume_level=volume_level,
             chime=req.chime,
             client_name=client_name,
             client_ip=client_ip,
@@ -194,9 +199,9 @@ async def api_say_post(
             text=req.text,
             targets=targets,
             voice=req.voice,
-            rate=req.rate,
+            rate=rate,
             pitch=req.pitch,
-            volume_level=req.volumeLevel,
+            volume_level=volume_level,
             chime=req.chime,
             client_name=client_name,
             client_ip=client_ip,
@@ -234,10 +239,13 @@ async def api_say_get(
     request: Request,
     devices: Optional[str] = None,
     targets: Optional[str] = None,
+    target: Optional[str] = None,
     voice: Optional[str] = None,
     rate: Optional[str] = None,
+    speed: Optional[str] = None,
     pitch: Optional[str] = None,
     volumeLevel: Optional[str] = None,
+    volume: Optional[str] = None,
     chime: Optional[str] = None,
     urgent: bool = False,
     time: Optional[str] = None,
@@ -247,7 +255,9 @@ async def api_say_get(
     check_tunnel_access(request)
     validate_webhook_token(request)
 
-    target_val = targets or devices
+    target_val = targets or devices or target
+    vol_val = volumeLevel if volumeLevel is not None else volume
+    rate_val = rate or speed
     client_ip, client_name, source, source_label = resolve_client_metadata(request, None, None, None)
 
     # 発声時刻指定オプション（過去: 即時発声 / 未来: 予約発声）
@@ -258,9 +268,9 @@ async def api_say_get(
             time_spec=time_spec,
             targets=target_val,
             voice=voice,
-            rate=rate,
+            rate=rate_val,
             pitch=pitch,
-            volume_level=volumeLevel,
+            volume_level=vol_val,
             chime=chime,
             client_name=client_name,
             client_ip=client_ip,
@@ -273,9 +283,9 @@ async def api_say_get(
         text=text,
         targets=target_val,
         voice=voice,
-        rate=rate,
+        rate=rate_val,
         pitch=pitch,
-        volume_level=volumeLevel,
+        volume_level=vol_val,
         chime=chime,
         client_name=client_name,
         client_ip=client_ip,

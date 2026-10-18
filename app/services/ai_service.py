@@ -19,6 +19,19 @@ class AiService:
             return "****"
         return f"{trimmed[:4]}...{trimmed[-4:]}"
 
+    def is_available(self) -> bool:
+        """AI機能が有効であり、選択プロバイダーのAPIキーが設定されているか判定"""
+        ai_conf = settings_manager.get().get("ai", {})
+        if not ai_conf.get("enabled", True):
+            return False
+        provider = ai_conf.get("provider", "gemini")
+        if provider == "openai":
+            key = ai_conf.get("openaiApiKey") or settings.openai_api_key
+            return bool(key and key.strip())
+        else:
+            key = ai_conf.get("geminiApiKey") or settings.effective_gemini_key
+            return bool(key and key.strip())
+
     def get_status(self) -> Dict[str, Any]:
         ai_conf = settings_manager.get().get("ai", {})
         dnd_conf = settings_manager.get().get("dnd", {})
@@ -26,7 +39,7 @@ class AiService:
         openai_key = ai_conf.get("openaiApiKey") or settings.openai_api_key
 
         model = ai_conf.get("geminiModel", "gemini-2.5-flash")
-        if any(p in model for p in ["3.8", "3.5", "argon"]):
+        if any(p in model for p in ["1.5", "1.0", "2.0"]):
             model = "gemini-2.5-flash"
 
         return {
@@ -99,6 +112,75 @@ class AiService:
         # AI 呼び出しが失敗した場合の自動フォールバック文章
         log.warning("[AiService] AI要約が空または失敗したため、テキスト連結フォールバックを適用します")
         return f"保留されていた通知が{len(messages)}件あります。" + "。".join(messages[:3])
+
+    async def summarize_calendar_events(
+        self,
+        events: List[Dict[str, Any]],
+        weather_info: Optional[Dict[str, Any]] = None,
+        custom_prompt: Optional[str] = None
+    ) -> str:
+        """朝の予定と天気予報を統合し、スマートスピーカー読み上げ用の明るく簡潔なサマリーを生成"""
+        ai_conf = settings_manager.get().get("ai", {})
+        provider = ai_conf.get("provider", "gemini")
+        gemini_key = ai_conf.get("geminiApiKey") or settings.effective_gemini_key
+        openai_key = ai_conf.get("openaiApiKey") or settings.openai_api_key
+
+        # 予定情報のテキスト化
+        event_lines = []
+        for ev in events:
+            if isinstance(ev, dict):
+                title = ev.get("summary") or ev.get("title") or "予定"
+                if ev.get("isAllDay"):
+                    event_lines.append(f"- 終日: {title}")
+                else:
+                    st = ev.get("start")
+                    time_str = f"{st.hour}:{st.minute:02d}" if hasattr(st, "hour") else (str(st) if st else "時刻未定")
+                    event_lines.append(f"- {time_str}〜: {title}")
+            elif isinstance(ev, str):
+                event_lines.append(f"- {ev}")
+
+        events_text = "\n".join(event_lines) if event_lines else "本日の登録予定はありません。"
+
+        weather_text = ""
+        if isinstance(weather_info, dict):
+            weather_text = f"天気: {weather_info.get('weather', '')} (降水確率 {weather_info.get('pop', '')}"
+            if weather_info.get("tempMax"):
+                weather_text += f", 最高気温 {weather_info.get('tempMax')}"
+            weather_text += ")"
+            if weather_info.get("advice"):
+                weather_text += f"、アドバイス: {weather_info.get('advice')}"
+        elif isinstance(weather_info, str):
+            weather_text = weather_info
+
+        prompt = (
+            "あなたはスマートホームの親切な音声アシスタントです。\n"
+            "朝、スマートスピーカーから家族へ読み上げる「本日の天気と予定のまとめ」を作成してください。\n"
+            "【要件】\n"
+            "- 自然で親しみやすく明るい日本語で、2〜4文（150字程度）で簡潔に話してください。\n"
+            "- 「おはようございます」から始め、天気の要点、予定のハイライト、最後に励ましの一言を添えてください。\n"
+            "- 箇条書きやマークダウン記号（*や#）、カッコなどは読み上げに邪魔になるため一切使わず、プレーンテキストのみで出力してください。\n"
+        )
+        if custom_prompt:
+            prompt += f"追加指示: {custom_prompt}\n"
+        if weather_text:
+            prompt += f"\n【本日の気象情報】\n{weather_text}\n"
+        prompt += f"\n【本日の予定】\n{events_text}\n"
+
+        summary = ""
+        if provider == "gemini" and gemini_key:
+            model = ai_conf.get("geminiModel", "gemini-2.5-flash")
+            summary = await self._call_gemini(gemini_key, model, prompt)
+        elif provider == "openai" and openai_key:
+            model = ai_conf.get("openaiModel", "gpt-4o-mini")
+            summary = await self._call_openai(openai_key, model, prompt)
+
+        if summary:
+            # 余分な改行や記号を除去
+            cleaned = summary.replace("*", "").replace("#", "").replace("\n", " ").strip()
+            return cleaned
+
+        log.warning("[AiService] カレンダーAI要約が失敗したためフォールバックします")
+        return ""
 
     async def _call_gemini(self, api_key: str, model: str, prompt: str) -> str:
         text, _ = await self._call_gemini_with_err(api_key, model, prompt)

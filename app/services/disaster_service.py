@@ -67,6 +67,41 @@ SCALE_MAP = {
     45: "震度5弱", 50: "震度5強", 55: "震度6弱", 60: "震度6強", 70: "震度7"
 }
 
+JMA_WARNING_CODES: Dict[str, Dict[str, str]] = {
+    # 特別警報 (special)
+    "32": {"name": "暴風雪特別警報", "level": "special"},
+    "33": {"name": "大雨特別警報", "level": "special"},
+    "35": {"name": "暴風特別警報", "level": "special"},
+    "36": {"name": "大雪特別警報", "level": "special"},
+    "37": {"name": "波浪特別警報", "level": "special"},
+    "38": {"name": "高潮特別警報", "level": "special"},
+    # 警報 (warning)
+    "02": {"name": "暴風雪警報", "level": "warning"},
+    "03": {"name": "大雨警報", "level": "warning"},
+    "04": {"name": "洪水警報", "level": "warning"},
+    "05": {"name": "暴風警報", "level": "warning"},
+    "06": {"name": "大雪警報", "level": "warning"},
+    "07": {"name": "波浪警報", "level": "warning"},
+    "08": {"name": "高潮警報", "level": "warning"},
+    # 注意報 (advisory)
+    "10": {"name": "大雨注意報", "level": "advisory"},
+    "12": {"name": "大雪注意報", "level": "advisory"},
+    "13": {"name": "風雪注意報", "level": "advisory"},
+    "14": {"name": "雷注意報", "level": "advisory"},
+    "15": {"name": "強風注意報", "level": "advisory"},
+    "16": {"name": "波浪注意報", "level": "advisory"},
+    "17": {"name": "融雪注意報", "level": "advisory"},
+    "18": {"name": "洪水注意報", "level": "advisory"},
+    "19": {"name": "高潮注意報", "level": "advisory"},
+    "20": {"name": "濃霧注意報", "level": "advisory"},
+    "21": {"name": "乾燥注意報", "level": "advisory"},
+    "22": {"name": "なだれ注意報", "level": "advisory"},
+    "23": {"name": "低温注意報", "level": "advisory"},
+    "24": {"name": "霜注意報", "level": "advisory"},
+    "25": {"name": "着氷注意報", "level": "advisory"},
+    "26": {"name": "着雪注意報", "level": "advisory"}
+}
+
 class DisasterService:
     def __init__(self):
         self._ws_task: Optional[asyncio.Task] = None
@@ -382,11 +417,23 @@ class DisasterService:
             if not target_area or "warnings" not in target_area:
                 return
 
+            # 設定レベルに応じたフィルタリング
+            configured_level = settings.get("weatherWarning", {}).get("level", "warning")
+            if configured_level == "special":
+                allowed_levels = {"special"}
+            elif configured_level == "advisory":
+                allowed_levels = {"special", "warning", "advisory"}
+            else: # デフォルト: "warning" (警報以上)
+                allowed_levels = {"special", "warning"}
+
             current_warnings = set()
             for w in target_area["warnings"]:
                 st = w.get("status", "")
                 if st in ("発表", "継続"):
-                    current_warnings.add(w.get("name", ""))
+                    code = str(w.get("code", "")).zfill(2)
+                    warn_info = JMA_WARNING_CODES.get(code)
+                    if warn_info and warn_info.get("level") in allowed_levels:
+                        current_warnings.add(warn_info["name"])
 
             # 差分判定
             new_warnings = current_warnings - self._last_known_warnings
@@ -394,12 +441,12 @@ class DisasterService:
             self._last_known_warnings = current_warnings
 
             if new_warnings:
-                names_str = "、".join(new_warnings)
+                names_str = "、".join(sorted(new_warnings))
                 text = f"気象警報です。{city_name}に{names_str}が発表されました。"
                 log.warning(f"New weather warning announced: {text}")
                 await self.speak(text=text, urgent=bool(settings.get("weatherWarning", {}).get("urgent", False)))
             elif cleared_warnings and settings.get("weatherWarning", {}).get("notifyClear", True):
-                names_str = "、".join(cleared_warnings)
+                names_str = "、".join(sorted(cleared_warnings))
                 text = f"気象警報の解除です。{city_name}の{names_str}は解除されました。"
                 log.info(f"Weather warning cleared: {text}")
                 await self.speak(text=text, urgent=False)

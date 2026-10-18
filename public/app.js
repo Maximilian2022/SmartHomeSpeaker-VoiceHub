@@ -1417,7 +1417,7 @@ document.addEventListener('DOMContentLoaded', () => {
               if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
               if (typeof updateMcpStatus === 'function') updateMcpStatus();
             } else if (subtabId === 'subtab-settings-webhook') {
-              if (typeof updateWebhookSnippets === 'function') updateWebhookSnippets();
+              if (typeof updateBuilderCode === 'function') updateBuilderCode();
             } else if (subtabId === 'subtab-settings-tts') {
               if (typeof loadTtsProvidersSettings === 'function') loadTtsProvidersSettings();
             }
@@ -3978,7 +3978,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // DNDタブからAI設定タブへのクイックリンク
     document.getElementById('btnGoToAiTabFromDnd')?.addEventListener('click', () => {
       document.getElementById('btnTabSettings')?.click();
-      document.getElementById('btnSubtabSettingsAi')?.click();
+      document.getElementById('btnSubtabSettingsIntegrations')?.click();
+      const aiCard = document.getElementById('geminiConfigCard') || document.getElementById('aiStatusBanner');
+      if (aiCard) {
+        setTimeout(() => {
+          aiCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
     });
 
     // 定時サイレント追加インラインフォーム開閉

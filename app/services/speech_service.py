@@ -16,28 +16,9 @@ from app.config import settings
 from app.services.calendar_service import calendar_service
 from app.core.logger import get_logger
 from app.services.history_service import history_manager
+from app.core.deduplication import deduplicator
 
 log = get_logger("Speech")
-
-class Deduplicator:
-    def __init__(self):
-        self._cache: Dict[str, float] = {}
-
-    def is_duplicate(self, text: str, client_key: str = "API", cooldown_seconds: int = 30) -> bool:
-        if cooldown_seconds <= 0:
-            return False
-        now = time.time()
-        key = f"{client_key}:::{text.strip()}"
-        last_time = self._cache.get(key)
-        if last_time and (now - last_time) < cooldown_seconds:
-            return True
-        self._cache[key] = now
-        if len(self._cache) > 1000:
-            expire_threshold = now - 3600
-            self._cache = {k: v for k, v in self._cache.items() if v >= expire_threshold}
-        return False
-
-deduplicator = Deduplicator()
 
 class SpeechService:
     def __init__(self):

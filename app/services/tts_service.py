@@ -570,18 +570,34 @@ class TtsService:
             return f"http://127.0.0.1:8080/voice/{output_filename}"
         return f"http://127.0.0.1:8080/voice/{filename}"
 
-    def _cleanup_lru_cache(self):
+    def _cleanup_lru_cache(self, force: bool = False):
+        now = time.time()
+        # 10分以内かつ強制でない場合はスキップ（ディスクI/O間引き）
+        if not force and hasattr(self, "_last_cleanup_time") and (now - self._last_cleanup_time < 600):
+            return
+
+        self._last_cleanup_time = now
         try:
-            files = list(self.voice_dir.glob("*.mp3"))
-            total_size = sum(f.stat().st_size for f in files)
+            file_stats = []
+            for f in self.voice_dir.glob("*.mp3"):
+                try:
+                    st = f.stat()
+                    file_stats.append((f, st.st_size, st.st_atime))
+                except OSError:
+                    continue
+
+            total_size = sum(s[1] for s in file_stats)
             if total_size > self.max_cache_bytes:
-                files.sort(key=lambda f: f.stat().st_atime)
-                for f in files:
+                # アクセス日時昇順（古い順）
+                file_stats.sort(key=lambda x: x[2])
+                for f, size, _ in file_stats:
                     if total_size <= self.max_cache_bytes * 0.7:
                         break
-                    size = f.stat().st_size
-                    f.unlink(missing_ok=True)
-                    total_size -= size
+                    try:
+                        f.unlink(missing_ok=True)
+                        total_size -= size
+                    except OSError:
+                        pass
         except Exception as e:
             log.error(f"[TtsService] Cache cleanup error: {e}")
 

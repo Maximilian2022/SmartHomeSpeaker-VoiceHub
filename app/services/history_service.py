@@ -31,7 +31,9 @@ class HistoryManager:
     def save_history(self):
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            HISTORY_FILE.write_text(json.dumps(self.history, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp_file = HISTORY_FILE.with_suffix(".tmp")
+            temp_file.write_text(json.dumps(self.history, ensure_ascii=False), encoding="utf-8")
+            temp_file.replace(HISTORY_FILE)
         except Exception as e:
             log.error(f"Failed to save history to {HISTORY_FILE}: {e}")
 
