@@ -1,3 +1,4 @@
+import os
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -37,11 +38,15 @@ from app.services.mqtt_service import mqtt_service
 
 # システムロギングの初期化 (Uvicorn / stdout キャプチャ統合)
 init_system_logging()
+sys_log = get_logger("System")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 起動時処理
-    print("[VoiceHub] Starting Python FastAPI Voice Hub Engine...")
+    # 起動時処理 (明示的なシステム起動/再起動バナーログ)
+    sys_log.info("================================================================================")
+    sys_log.info("🚀 [VoiceHub] システム起動 / 再起動 (VoiceHub Engine Started)")
+    sys_log.info(f"   PID: {os.getpid()} | 環境: Python FastAPI | ポート: 8080")
+    sys_log.info("================================================================================")
     
     # スケジューラー定期実行タスク開始
     await scheduler_service.start()
@@ -84,9 +89,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # 終了時処理
-    print("[VoiceHub] Shutting down...")
+    # 終了時処理 (明示的なシステム終了/シャットダウンバナーログ)
+    sys_log.info("🛑 [VoiceHub] システム終了 / シャットダウン処理開始 (Shutting down...)")
     await mqtt_service.stop()
+    sys_log.info("✅ [VoiceHub] シャットダウン完了")
 
 
 app = FastAPI(
