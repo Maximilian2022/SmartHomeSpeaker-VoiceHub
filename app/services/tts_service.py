@@ -124,16 +124,24 @@ class TtsService:
 
             p.provider_id = e_id
             p.display_name = e_name
+            p.engine_type = e_type
+            p.is_gpu = bool(eng.get("isGpu", False))
+            p.latency_ms = eng.get("latencyMs")
             self.providers[e_id] = p
             self.voice_engine_providers.append(p)
 
-            # 下位互換エイリアス
-            if e_id == "voicevox_default" or (e_type == "voicevox" and "voicevox" not in self.providers):
-                self.providers["voicevox"] = p
-            if e_id == "sharevox_default" or (e_type == "sharevox" and "sharevox" not in self.providers):
-                self.providers["sharevox"] = p
-            if e_id == "coeiroink_default" or (e_type == "coeiroink" and "coeiroink" not in self.providers):
-                self.providers["coeiroink"] = p
+        # 同一種別（voicevox / sharevox / coeiroink）の複数登録時における GPU / 高速機優先選定
+        for etype in ["voicevox", "sharevox", "coeiroink"]:
+            matching = [p for p in self.voice_engine_providers if getattr(p, "engine_type", "") == etype and p.enabled]
+            if matching:
+                # GPU優先 (is_gpu: True > False), レイテンシが小さい順 (Noneは最後)
+                sorted_matching = sorted(
+                    matching,
+                    key=lambda ep: (not getattr(ep, "is_gpu", False), getattr(ep, "latency_ms", 9999) if getattr(ep, "latency_ms") is not None else 9999)
+                )
+                self.providers[etype] = sorted_matching[0]
+            elif f"{etype}_default" in self.providers:
+                self.providers[etype] = self.providers[f"{etype}_default"]
 
         # バックグラウンドで有効なローカルモデルの事前初期化をトリガー（イベントループ稼働時のみ）
         try:
@@ -228,8 +236,12 @@ class TtsService:
             candidates.append((self.gcp_provider, self.gcp_provider.default_voice_id))
             seen_pids.add(self.gcp_provider.provider_id)
 
-        # 3. 有効なローカル音声エンジン群
-        for p in self.voice_engine_providers:
+        # 3. 有効なローカル音声エンジン群 (GPU搭載機・高速応答機を最優先にソート)
+        sorted_engines = sorted(
+            self.voice_engine_providers,
+            key=lambda ep: (not getattr(ep, "is_gpu", False), getattr(ep, "latency_ms", 9999) if getattr(ep, "latency_ms") is not None else 9999)
+        )
+        for p in sorted_engines:
             if p.enabled and p.provider_id not in seen_pids:
                 candidates.append((p, p.default_voice_id))
                 seen_pids.add(p.provider_id)

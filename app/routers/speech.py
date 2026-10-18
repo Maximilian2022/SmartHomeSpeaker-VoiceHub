@@ -1,3 +1,6 @@
+import time
+import asyncio
+import httpx
 from typing import Optional, List, Union, Dict, Any
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
@@ -5,6 +8,7 @@ from fastapi.responses import FileResponse
 from app.services.speech_service import speech_service
 from app.services.tts_service import tts_service
 from app.core.security import validate_webhook_token, check_tunnel_access, is_tunnel_request
+from app.core.logger import logger
 
 router = APIRouter()
 
@@ -251,6 +255,51 @@ class TtsProviderTestRequest(BaseModel):
     timeoutSeconds: Optional[float] = None
     preload: Optional[bool] = None
 
+async def detect_local_engine_hardware(base_url: str, provider_obj, test_voice_id: str, timeout: float = 4.0) -> Dict[str, Any]:
+    """VOICEVOX / SHAREVOX / COEIROINK 等のハードウェア環境 (GPU/CPU) およびレイテンシ (ms) を計測"""
+    supported_devices = {}
+    is_gpu = False
+    device_label = "🐢 CPU 処理"
+
+    # 1. /supported_devices の照会 (VOICEVOX / SHAREVOX 互換)
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            res = await client.get(f"{base_url.rstrip('/')}/supported_devices")
+            if res.status_code == 200:
+                supported_devices = res.json()
+                if supported_devices.get("cuda"):
+                    is_gpu = True
+                    device_label = "🚀 GPU (NVIDIA CUDA)"
+                elif supported_devices.get("dml"):
+                    is_gpu = True
+                    device_label = "🚀 GPU (DirectML)"
+    except Exception:
+        pass
+
+    # 2. 実測ベンチマーク (「テスト」短文の音声合成レスポンス時間)
+    latency_ms = None
+    try:
+        t0 = time.perf_counter()
+        audio = await asyncio.wait_for(
+            provider_obj.synthesize("テスト", test_voice_id),
+            timeout=timeout
+        )
+        t1 = time.perf_counter()
+        if audio and len(audio) > 0:
+            latency_ms = int((t1 - t0) * 1000)
+            if not is_gpu and latency_ms < 350:
+                is_gpu = True
+                device_label = "🚀 GPU (実測高速判定)"
+    except Exception as e:
+        logger.debug(f"[HardwareDetect] ベンチマーク試行失敗: {e}")
+
+    return {
+        "isGpu": is_gpu,
+        "deviceLabel": device_label,
+        "latencyMs": latency_ms,
+        "supportedDevices": supported_devices
+    }
+
 @router.post("/api/tts/providers/test")
 async def api_tts_providers_test(req: TtsProviderTestRequest, request: Request):
     from app.services.tts import (
@@ -280,10 +329,16 @@ async def api_tts_providers_test(req: TtsProviderTestRequest, request: Request):
                 return {"success": False, "isAvailable": False, "message": f"VOICEVOX サーバー ({url}) に接続できませんでした。URLまたはサーバー稼働状態を確認してください。"}
             voices = await p.get_voices()
             init_ok = await p.initialize_speaker("voicevox:2")
+            hw = await detect_local_engine_hardware(url, p, "voicevox:2", timeout=timeout)
+            lat_str = f" - 応答: {hw['latencyMs']}ms" if hw['latencyMs'] is not None else ""
             return {
                 "success": True,
                 "isAvailable": True,
-                "message": f"VOICEVOX 接続成功！{len(voices)} 件の話者・スタイルを検出しました（四国めたん事前初期化: {'完了' if init_ok else 'スキップ'}）。",
+                "isGpu": hw["isGpu"],
+                "deviceLabel": hw["deviceLabel"],
+                "latencyMs": hw["latencyMs"],
+                "supportedDevices": hw["supportedDevices"],
+                "message": f"VOICEVOX 接続成功！【{hw['deviceLabel']}{lat_str}】{len(voices)} 件の話者を検出（四国めたん事前初期化: {'完了' if init_ok else 'スキップ'}）。",
                 "voicesCount": len(voices),
                 "voices": voices
             }
@@ -296,10 +351,16 @@ async def api_tts_providers_test(req: TtsProviderTestRequest, request: Request):
                 return {"success": False, "isAvailable": False, "message": f"SHAREVOX サーバー ({url}) に接続できませんでした。URLを確認してください。"}
             voices = await p.get_voices()
             init_ok = await p.initialize_speaker("sharevox:21")
+            hw = await detect_local_engine_hardware(url, p, "sharevox:21", timeout=timeout)
+            lat_str = f" - 応答: {hw['latencyMs']}ms" if hw['latencyMs'] is not None else ""
             return {
                 "success": True,
                 "isAvailable": True,
-                "message": f"SHAREVOX 接続成功！{len(voices)} 件の話者を検出しました（らごぱすブラック事前初期化: {'完了' if init_ok else 'スキップ'}）。",
+                "isGpu": hw["isGpu"],
+                "deviceLabel": hw["deviceLabel"],
+                "latencyMs": hw["latencyMs"],
+                "supportedDevices": hw["supportedDevices"],
+                "message": f"SHAREVOX 接続成功！【{hw['deviceLabel']}{lat_str}】{len(voices)} 件の話者を検出（らごぱすブラック事前初期化: {'完了' if init_ok else 'スキップ'}）。",
                 "voicesCount": len(voices),
                 "voices": voices
             }
@@ -311,10 +372,17 @@ async def api_tts_providers_test(req: TtsProviderTestRequest, request: Request):
             if not await p.is_available():
                 return {"success": False, "isAvailable": False, "message": f"COEIROINK サーバー ({url}) に接続できませんでした。URLを確認してください。"}
             voices = await p.get_voices()
+            test_voice = voices[0]["id"] if voices else "coeiroink:0"
+            hw = await detect_local_engine_hardware(url, p, test_voice, timeout=timeout)
+            lat_str = f" - 応答: {hw['latencyMs']}ms" if hw['latencyMs'] is not None else ""
             return {
                 "success": True,
                 "isAvailable": True,
-                "message": f"COEIROINK 接続成功！{len(voices)} 件の話者・スタイルを検出しました。",
+                "isGpu": hw["isGpu"],
+                "deviceLabel": hw["deviceLabel"],
+                "latencyMs": hw["latencyMs"],
+                "supportedDevices": hw["supportedDevices"],
+                "message": f"COEIROINK 接続成功！【{hw['deviceLabel']}{lat_str}】{len(voices)} 件の話者・スタイルを検出しました。",
                 "voicesCount": len(voices),
                 "voices": voices
             }

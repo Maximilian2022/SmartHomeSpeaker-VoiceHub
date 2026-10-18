@@ -179,8 +179,24 @@ app.include_router(mcp.router)
 
 
 
-# 静的ファイルの配信
-app.mount("/voice", StaticFiles(directory=str(VOICE_DIR)), name="voice")
+# 音声キャッシュファイルの配信 (Google Cast 等の 304 Not Modified 再生停止バグを完全に防止)
+@app.api_route("/voice/{filename}", methods=["GET", "HEAD"])
+async def serve_voice_file(filename: str):
+    safe_filename = Path(filename).name
+    filepath = VOICE_DIR / safe_filename
+    if not filepath.exists() or not filepath.is_file():
+        raise HTTPException(status_code=404, detail="Voice file not found")
+    return FileResponse(
+        path=str(filepath),
+        media_type="audio/mp3",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Accept-Ranges": "bytes"
+        }
+    )
+
 app.mount("/sound", StaticFiles(directory=str(SOUND_DIR)), name="sound")
 
 @app.get("/")

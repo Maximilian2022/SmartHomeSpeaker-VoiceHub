@@ -167,8 +167,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     await loadInitialData();
 
+    // F5/リロード時のタブ状態復元
+    restoreActiveTabs();
+
     // DND ステータスを定期ポーリング (15秒ごと)
     setInterval(loadDndStatus, 15000);
+  }
+
+  function restoreActiveTabs() {
+    try {
+      const savedMainTab = localStorage.getItem('voicehub_active_main_tab');
+      if (savedMainTab && savedMainTab !== 'tab-speak') {
+        const mainTabBtn = document.querySelector(`.tab-btn[data-tab="${savedMainTab}"]`);
+        if (mainTabBtn) {
+          mainTabBtn.click();
+        }
+      }
+
+      const savedSettingsSubtab = localStorage.getItem('voicehub_active_settings_subtab');
+      if (savedSettingsSubtab) {
+        const subtabBtn = document.querySelector(`.sub-tab-btn[data-subtab="${savedSettingsSubtab}"]`);
+        if (subtabBtn) {
+          subtabBtn.click();
+        }
+      }
+
+      const savedScheduleSubtab = localStorage.getItem('voicehub_active_schedule_subtab');
+      if (savedScheduleSubtab) {
+        const subtabBtn = document.querySelector(`.sub-tab-btn[data-subtab="${savedScheduleSubtab}"]`);
+        if (subtabBtn) {
+          subtabBtn.click();
+        }
+      }
+    } catch (e) {
+      console.warn('[Tabs] 復元エラー:', e);
+    }
   }
 
   async function loadInitialData() {
@@ -1238,6 +1271,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const targetId = btn.getAttribute('data-tab');
         document.getElementById(targetId)?.classList.add('active');
 
+        // タブ状態の永続化 (F5/リロード時の復元用)
+        try {
+          localStorage.setItem('voicehub_active_main_tab', targetId);
+        } catch (e) {
+          // ignore
+        }
+
         // 発言履歴タブを開いた時は最新の履歴を再取得
         if (targetId === 'tab-history') {
           loadHistory();
@@ -1263,6 +1303,18 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           if (subtabId) {
             document.getElementById(subtabId)?.classList.add('active');
+
+            // サブタブ状態の永続化 (F5/リロード時の復元用)
+            try {
+              if (container && container.id === 'tab-settings') {
+                localStorage.setItem('voicehub_active_settings_subtab', subtabId);
+              } else if (container && container.id === 'tab-schedule') {
+                localStorage.setItem('voicehub_active_schedule_subtab', subtabId);
+              }
+            } catch (e) {
+              // ignore
+            }
+
             if (subtabId === 'subtab-settings-disaster') {
               loadDisasterSettings();
             } else if (subtabId === 'subtab-settings-mqtt') {
@@ -1273,8 +1325,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (subtabId === 'subtab-settings-tts') {
               if (typeof loadTtsProvidersSettings === 'function') loadTtsProvidersSettings();
             }
-
-
           }
         });
       });
@@ -6622,13 +6672,21 @@ document.addEventListener('DOMContentLoaded', () => {
       const typeLabel = eng.type === 'voicevox' ? 'VOICEVOX 互換' : (eng.type === 'sharevox' ? 'SHAREVOX 互換' : 'COEIROINK v2 互換');
       const isEnabled = !!eng.enabled;
 
+      let hwBadge = '';
+      if (eng.isGpu) {
+        hwBadge = `<span class="badge badge-hw-gpu" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.75rem;">🚀 GPU (${escapeHtml(eng.deviceLabel || 'CUDA')}) ${eng.latencyMs != null ? eng.latencyMs + 'ms' : ''}</span>`;
+      } else if (eng.deviceLabel || eng.latencyMs != null) {
+        hwBadge = `<span class="badge badge-hw-cpu" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); font-size: 0.75rem;">🐢 CPU ${eng.latencyMs != null ? eng.latencyMs + 'ms' : ''}</span>`;
+      }
+
       html += `
         <div class="card glass-card engine-card" data-eng-card="${escapeHtml(eng.id)}" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 14px 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
               <span style="font-size: 1.2rem;">${icon}</span>
               <strong style="font-size: 1rem; color: #fff;">${escapeHtml(eng.name || '名称未設定')}</strong>
               <span class="badge" style="background: rgba(255,255,255,0.08); font-size: 0.75rem;">${typeLabel}</span>
+              <span class="eng-hw-badge-slot">${hwBadge}</span>
             </div>
             <div style="display: flex; align-items: center; gap: 12px;">
               <label class="switch" title="このエンジンを有効化">
@@ -6798,9 +6856,29 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (res.ok && data.success && data.isAvailable) {
+        // state 側の該当エンジン情報にハードウェア判定とレイテンシを記録
+        const target = (state.voiceEngines || []).find(e => e.id === engineId);
+        if (target) {
+          target.isGpu = !!data.isGpu;
+          target.deviceLabel = data.deviceLabel || (data.isGpu ? 'CUDA' : 'CPU');
+          target.latencyMs = data.latencyMs;
+        }
+
+        // カードヘッダーのバッジをリアルタイム更新
+        const badgeSlot = card.querySelector('.eng-hw-badge-slot');
+        if (badgeSlot) {
+          if (data.isGpu) {
+            badgeSlot.innerHTML = `<span class="badge badge-hw-gpu" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.75rem;">🚀 GPU (${escapeHtml(data.deviceLabel || 'CUDA')}) ${data.latencyMs != null ? data.latencyMs + 'ms' : ''}</span>`;
+          } else {
+            badgeSlot.innerHTML = `<span class="badge badge-hw-cpu" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); font-size: 0.75rem;">🐢 CPU ${data.latencyMs != null ? data.latencyMs + 'ms' : ''}</span>`;
+          }
+        }
+
         showToast(`[${name}] ${data.message || '接続に成功しました'}`, 'success');
         if (statusEl) {
-          statusEl.textContent = `✅ 接続成功 (${data.voicesCount || 0}話者・スタイル認識)`;
+          const hwDesc = data.isGpu ? `🚀 GPU (${data.deviceLabel || 'CUDA'})` : `🐢 CPU`;
+          const latencyDesc = data.latencyMs != null ? ` / 合成 ${data.latencyMs}ms` : '';
+          statusEl.textContent = `✅ 接続成功 (${data.voicesCount || 0}話者) [${hwDesc}${latencyDesc}]`;
           statusEl.style.color = 'var(--success)';
         }
       } else {
