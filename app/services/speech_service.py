@@ -240,6 +240,16 @@ class SpeechService:
             if cast_group:
                 unique_targets = [d for d in unique_targets if d.get("type") != "google" or d == cast_group]
 
+        # Alexa ネイティブグループ集約 (Amazon Rate Limit 防止 & 全室同期発声)
+        has_alexa_all = any(t.upper() in ("ALL", "*", "AL:ALL", "ALEXA:ALL") for t in target_list)
+        alexa_devs = [d for d in unique_targets if d.get("type") == "alexa"]
+        if (has_alexa_all or len(alexa_devs) >= 4) and len(alexa_devs) > 1:
+            # 「全部」「全部の部屋」「全室」「everywhere」等のグループがあれば1つに集約
+            alexa_group = next((d for d in alexa_devs if d.get("isGroup")), None)
+            if alexa_group:
+                log.info(f"[Speech] Alexa native group detected: '{alexa_group.get('name')}' -> Consolidating {len(alexa_devs)} individual Alexa targets into group")
+                unique_targets = [d for d in unique_targets if d.get("type") != "alexa" or d == alexa_group]
+
         if not unique_targets:
             return {"status": "error", "message": "No valid target devices found"}
 

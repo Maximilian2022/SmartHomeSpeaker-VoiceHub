@@ -41,6 +41,8 @@ class OnvifService:
         self.cached_scan_results: List[Dict[str, Any]] = []
         self.is_scanning = False
         self.go2rtc_api_url = settings.go2rtc_api_url
+        # カメラ複数台同時再生時の go2rtc / ネットワーク飽和防止用セマフォ
+        self._semaphore = asyncio.Semaphore(3)
 
     def _build_ws_security_header(self, username: str, password: str) -> str:
         created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -322,10 +324,39 @@ class OnvifService:
         push_url = f"{self.go2rtc_api_url}/api/streams"
 
         log.info(f"Starting audio playback on {camera.get('name', raw_ip)} ({raw_ip}) URL: {resolved_url}")
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(push_url, params=params)
-            if resp.status_code != 200:
-                raise RuntimeError(f"go2rtc 再生リクエスト失敗 (HTTP {resp.status_code}): {resp.text}")
+
+        async with self._semaphore:
+            # タイムアウトを15秒に拡大 & can't find consumer 時の自動リトライ (最大2回)
+            last_err = None
+            for attempt in range(2):
+                try:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        resp = await client.post(push_url, params=params)
+                        if resp.status_code == 200:
+                            last_err = None
+                            break
+                        err_text = resp.text
+                        if "consumer" in err_text and attempt == 0:
+                            log.warning(f"go2rtc consumer not ready yet for {stream_name}, retrying stream register and waiting 0.8s...")
+                            await self._ensure_go2rtc_stream(stream_name, rtsp_url, onvif_src_url)
+                            await asyncio.sleep(0.8)
+                            continue
+                        raise RuntimeError(f"go2rtc 再生リクエスト失敗 (HTTP {resp.status_code}): {err_text}")
+                except httpx.ReadTimeout:
+                    if attempt == 0:
+                        log.warning(f"go2rtc ReadTimeout on {stream_name}, retrying once with 0.8s delay...")
+                        await asyncio.sleep(0.8)
+                        continue
+                    raise RuntimeError(f"go2rtc 接続タイムアウト (カメラ側応答遅延): {stream_name}")
+                except Exception as e:
+                    last_err = e
+                    if attempt == 0:
+                        await asyncio.sleep(0.8)
+                        continue
+                    raise
+
+            if last_err:
+                raise last_err
 
         # 再生完了待機後にセッション安全切断
         play_sec = max(3.0, duration + 1.5)

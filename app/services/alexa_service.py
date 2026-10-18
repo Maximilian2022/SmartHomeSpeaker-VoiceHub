@@ -24,6 +24,8 @@ class AlexaService:
         self.proxy_url: Optional[str] = None
         self.proxy_error: Optional[str] = None
         self.devices_cache: List[Dict[str, Any]] = []
+        # Amazon Alexa レートリミット (Rate exceeded) 防止用セマフォ (最大2並列)
+        self._semaphore = asyncio.Semaphore(2)
 
     def is_configured(self) -> bool:
         if self.credentials_path.exists():
@@ -111,7 +113,7 @@ class AlexaService:
         self.devices_cache = []
         log.info("Logged out.")
 
-    async def _run_command(self, args: List[str]) -> str:
+    async def _run_command(self, args: List[str], retry_on_rate_limit: bool = True) -> str:
         if not self.is_configured():
             log.warning("Alexa is not configured, command ignored.")
             return ""
@@ -131,31 +133,44 @@ class AlexaService:
             env["REFRESH_TOKEN"] = token
 
         cmd_str = f"bash {self.script_path} {' '.join(args)}"
-        log.info(f"Executing: {cmd_str}")
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "bash", str(self.script_path), *args,
-                env=env,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
-            out_str = stdout.decode(errors="ignore").strip()
-            err_str = stderr.decode(errors="ignore").strip()
+        async with self._semaphore:
+            log.info(f"Executing: {cmd_str}")
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "bash", str(self.script_path), *args,
+                    env=env,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=35.0)
+                out_str = stdout.decode(errors="ignore").strip()
+                err_str = stderr.decode(errors="ignore").strip()
 
-            if proc.returncode != 0:
-                log.error(f"Command failed (code {proc.returncode}): {err_str or out_str}")
-                raise RuntimeError(err_str or out_str or "Alexa script execution failed")
+                # レート制限 (Rate exceeded) 検知時のリトライ
+                combined_output = f"{out_str} {err_str}".lower()
+                if "rate exceed" in combined_output:
+                    if retry_on_rate_limit:
+                        log.warning(f"Amazon Alexa Rate Limit detected for '{cmd_str}', waiting 1.2s and retrying...")
+                        await asyncio.sleep(1.2)
+                        return await self._run_command(args, retry_on_rate_limit=False)
+                    else:
+                        raise RuntimeError(f"Alexa API Rate Limit exceeded: {out_str or err_str}")
 
-            log.info(f"Command succeeded: {out_str[:120]}")
-            return out_str
-        except asyncio.TimeoutError:
-            log.error(f"Command timed out after 30s: {cmd_str}")
-            raise TimeoutError("Alexa command timed out")
-        except Exception as e:
-            log.error(f"Execution error on {cmd_str}: {e}")
-            raise
+                if proc.returncode != 0:
+                    log.error(f"Command failed (code {proc.returncode}): {err_str or out_str}")
+                    raise RuntimeError(err_str or out_str or "Alexa script execution failed")
+
+                # 次のリクエストとの間に最低限のインターバル (レート制限・クッキー破損防止)
+                await asyncio.sleep(0.15)
+                log.info(f"Command succeeded: {out_str[:120]}")
+                return out_str
+            except asyncio.TimeoutError:
+                log.error(f"Command timed out after 35s: {cmd_str}")
+                raise TimeoutError("Alexa command timed out")
+            except Exception as e:
+                log.error(f"Execution error on {cmd_str}: {e}")
+                raise
 
     async def speak(self, device_name: str, text: str) -> bool:
         clean_name = device_name.replace("alexa:", "").strip()
@@ -163,7 +178,7 @@ class AlexaService:
         log.info(f"Speak request to target='{clean_name}' (raw='{device_name}'): '{text[:30]}'")
 
         try:
-            clean_text = text.replace("'", "")
+            clean_text = text.replace("'", "").replace('"', '')
             await self._run_command(["-d", clean_name, "-e", f"speak:{clean_text}"])
             log.info(f"✅ Successfully spoke to Alexa device: {clean_name}")
             return True
@@ -176,23 +191,25 @@ class AlexaService:
             log.info("Alexa not configured, skipping device listing.")
             return []
         try:
-            out = await self._run_command(["-a"])
+            out = await self._run_command(["-a"], retry_on_rate_limit=False)
             devices = []
             for line in out.splitlines():
                 line = line.strip()
                 if not line or line.startswith(("#", "Available", "the following")):
                     continue
                 dev_name = line.strip('"')
+                is_grp = dev_name.lower() in ("全部", "全部の部屋", "all", "everywhere", "全室") or "グループ" in dev_name
                 devices.append({
                     "id": f"alexa_{dev_name.replace(' ', '_')}",
                     "name": f"Alexa ({dev_name})",
                     "rawName": dev_name,
                     "ip": f"alexa:{dev_name}",
-                    "model": "Amazon Echo",
-                    "type": "alexa"
+                    "model": "Amazon Echo Group" if is_grp else "Amazon Echo",
+                    "type": "alexa",
+                    "isGroup": is_grp
                 })
             self.devices_cache = devices
-            log.info(f"Discovered {len(devices)} Alexa device(s).")
+            log.info(f"Discovered {len(devices)} Alexa device(s) (including groups).")
             return devices
         except Exception as e:
             log.error(f"Failed to list Alexa devices: {e}")

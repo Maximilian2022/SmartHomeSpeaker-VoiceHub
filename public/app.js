@@ -152,8 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMqttSettings();
     setupMcpSettings();
     setupTtsProvidersSettings();
-
-
+    setupSystemLogsTab();
 
     // 認証ステータスの確認 (ADMIN_PASSWORD 設定時)
     const auth = await checkAuthStatus();
@@ -177,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function restoreActiveTabs() {
     try {
       const savedMainTab = localStorage.getItem('voicehub_active_main_tab');
-      if (savedMainTab && savedMainTab !== 'tab-speak') {
+      if (savedMainTab && savedMainTab !== 'tab-say') {
         const mainTabBtn = document.querySelector(`.tab-btn[data-tab="${savedMainTab}"]`);
         if (mainTabBtn) {
           mainTabBtn.click();
@@ -1610,7 +1609,14 @@ document.addEventListener('DOMContentLoaded', () => {
           loadDndHistory();
         } else {
           const successCount = data.results?.filter(r => r.status === 'success').length || 0;
-          showToast(`${selectedSpeakers.length} 台のスピーカーへ送信完了 (${successCount} 台成功)！`, 'success');
+          const totalRequested = selectedSpeakers.length;
+          if (successCount === 0) {
+            showToast(`${totalRequested} 台のスピーカーへ送信しましたが、0台成功でした。システムログを確認してください`, 'error');
+          } else if (successCount < totalRequested) {
+            showToast(`一部のスピーカーへ送信完了 (${successCount} / ${totalRequested} 台成功)`, 'warning');
+          } else {
+            showToast(`${totalRequested} 台すべてのスピーカーへ送信完了 (${successCount} 台成功)！`, 'success');
+          }
         }
 
         // 最新の発言履歴を取得同期
@@ -7626,14 +7632,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }, logsState.pollIntervalMs);
 
     updateAutoScrollUI();
-  }
-
-  // 起動初期化
-  async function init() {
-    setupEventListeners();
-    setupTtsProvidersSettings();
-    setupSystemLogsTab();
-    await loadInitialData();
   }
 
   // 起動実行
