@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from app.config import VOICE_DIR, SOUND_DIR
-from app.core.logger import logger
+from app.core.logger import get_logger
 from app.services.settings_service import settings_manager
+
+log = get_logger("TTS")
 from app.services.tts import (
     BaseTtsProvider,
     EdgeTtsProvider,
@@ -73,7 +75,8 @@ class TtsService:
             api_key=gcp.get("apiKey", ""),
             enabled=bool(gcp.get("enabled", False)),
             timeout_seconds=float(gcp.get("timeoutSeconds", 5.0)),
-            default_voice_id=gcp.get("defaultVoiceId", "gcp:ja-JP-Neural2-B")
+            default_voice_id=gcp.get("defaultVoiceId", "gcp:ja-JP-Neural2-B"),
+            fallback_on_quota_near_limit=bool(gcp.get("fallbackOnQuotaNearLimit", True))
         )
 
         # 3. 動的ローカル音声エンジン群 (voice_engines) の反映
@@ -158,7 +161,7 @@ class TtsService:
                     await p.initialize_speaker(p.default_voice_id)
                     await p.get_voices()
                 except Exception as e:
-                    logger.warning(f"[TtsService] {p.display_name} 事前初期化スキップ: {e}")
+                    log.warning(f"[TtsService] {p.display_name} 事前初期化スキップ: {e}")
 
     def resolve_provider(self, voice_id: Optional[str]) -> Tuple[BaseTtsProvider, str]:
         """voice_id から適切なプロバイダーと正規化ボイスIDを特定。
@@ -206,11 +209,18 @@ class TtsService:
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         all_voices: List[Dict[str, Any]] = []
+        seen_voice_keys = set()
         for r in results:
             if isinstance(r, list):
-                all_voices.extend(r)
+                for v in r:
+                    vid = v.get("id")
+                    vkey = f"{v.get('provider')}:{v.get('name')}"
+                    if vid and vid not in seen_voice_keys and vkey not in seen_voice_keys:
+                        seen_voice_keys.add(vid)
+                        seen_voice_keys.add(vkey)
+                        all_voices.append(v)
             elif isinstance(r, Exception):
-                logger.error(f"[TtsService] 話者取得タスク例外: {r}")
+                log.error(f"[TtsService] 話者取得タスク例外: {r}")
 
         return all_voices
 
@@ -233,8 +243,12 @@ class TtsService:
 
         # 2. GCP Cloud TTS
         if self.gcp_provider.enabled and bool(self.gcp_provider.api_key.strip()) and self.gcp_provider.provider_id not in seen_pids:
-            candidates.append((self.gcp_provider, self.gcp_provider.default_voice_id))
-            seen_pids.add(self.gcp_provider.provider_id)
+            # 無料枠9割到達時の課金防止フォールバック判定
+            if self.gcp_provider.fallback_on_quota_near_limit and self.gcp_provider.is_quota_near_limit("neural", threshold=0.9):
+                log.warning("[TtsService] GCP Cloud TTS の当月無料枠が9割に達しているため、課金防止安全ガードによりフォールバック候補から除外します")
+            else:
+                candidates.append((self.gcp_provider, self.gcp_provider.default_voice_id))
+                seen_pids.add(self.gcp_provider.provider_id)
 
         # 3. 有効なローカル音声エンジン群 (GPU搭載機・高速応答機を最優先にソート)
         sorted_engines = sorted(
@@ -269,6 +283,8 @@ class TtsService:
                 "defaultVoiceId": p.default_voice_id,
                 "config": sub_conf
             }
+            if pid == "gcp":
+                providers_info[pid]["fallbackOnQuotaNearLimit"] = getattr(p, "fallback_on_quota_near_limit", True)
 
         return {
             "success": True,
@@ -339,11 +355,15 @@ class TtsService:
                 p for p in self.providers.values()
                 if p.enabled and (not azure_active or p.provider_id != "edge")
             ]
+            # GCP 9割到達ガード（並行最速レースからも除外）
+            if self.gcp_provider.fallback_on_quota_near_limit and self.gcp_provider.is_quota_near_limit("neural", threshold=0.9):
+                active_providers = [p for p in active_providers if p.provider_id != "gcp"]
+
             # ユニーク化
             active_providers = list({id(p): p for p in active_providers}.values())
 
             if len(active_providers) > 1:
-                logger.info(f"[TtsService] 緊急速報最速並行生成 (Fastest Wins) 開始: 対象プロバイダー {len(active_providers)}件")
+                log.info(f"[TtsService] 緊急速報最速並行生成 (Fastest Wins) 開始: 対象プロバイダー {len(active_providers)}件")
                 tasks = []
                 provider_map = {}
                 for p in active_providers:
@@ -359,22 +379,32 @@ class TtsService:
                             audio_bytes = completed_task.result()
                             if audio_bytes and len(audio_bytes) > 0:
                                 p, v_id = provider_map[completed_task]
-                                logger.info(f"[TtsService] ★ 最速生成完了プロバイダー: {p.display_name} ({v_id})")
+                                log.info(f"[TtsService] ★ 最速生成完了プロバイダー: {p.display_name} ({v_id})")
                                 for pt in pending:
                                     pt.cancel()
                                 return audio_bytes, v_id, False
                         except Exception as e:
                             p, v_id = provider_map[completed_task]
-                            logger.warning(f"[TtsService] 最速並行生成タスク失敗 ({p.display_name}): {e}")
+                            log.warning(f"[TtsService] 最速並行生成タスク失敗 ({p.display_name}): {e}")
                     tasks = list(pending)
 
-                logger.warning("[TtsService] 最速並行生成タスクがすべて失敗したため、段階的フォールバックを開始します")
+                log.warning("[TtsService] 最速並行生成タスクがすべて失敗したため、段階的フォールバックを開始します")
 
         # 2. 一次プロバイダー特定と合成試行
         provider, resolved_voice = self.resolve_provider(voice)
         primary_failed = False
 
-        if provider.enabled or provider.provider_id == "edge":
+        # GCP の無料枠9割到達チェック（課金防止安全ガード）
+        if provider.provider_id == "gcp" and self.gcp_provider.fallback_on_quota_near_limit:
+            raw_voice = self.gcp_provider.extract_raw_voice_id(resolved_voice)
+            m_type = "standard" if "Standard" in raw_voice else "neural"
+            if self.gcp_provider.is_quota_near_limit(m_type, threshold=0.9):
+                log.warning(
+                    f"[TtsService] GCP Cloud TTS ({m_type}) の当月無料枠が9割に達しているため、課金防止安全ガードによりスキップし段階的フォールバックへ移行します"
+                )
+                primary_failed = True
+
+        if not primary_failed and (provider.enabled or provider.provider_id == "edge"):
             try:
                 audio = await asyncio.wait_for(
                     provider.synthesize(text, resolved_voice, rate, pitch),
@@ -384,44 +414,45 @@ class TtsService:
                     return audio, resolved_voice, False
                 primary_failed = True
             except asyncio.TimeoutError:
-                logger.warning(f"[TtsService] 一次プロバイダー {provider.display_name} がタイムアウト ({provider.timeout_seconds}s) しました")
+                log.warning(f"[TtsService] 一次プロバイダー {provider.display_name} がタイムアウト ({provider.timeout_seconds}s) しました")
                 primary_failed = True
             except Exception as e:
-                logger.warning(f"[TtsService] 一次プロバイダー {provider.display_name} 合成エラー: {e}")
+                log.warning(f"[TtsService] 一次プロバイダー {provider.display_name} 合成エラー: {e}")
                 primary_failed = True
         else:
-            logger.info(f"[TtsService] 一次プロバイダー {provider.display_name} は無効化されています")
+            if not primary_failed:
+                log.info(f"[TtsService] 一次プロバイダー {provider.display_name} は無効化されています")
             primary_failed = True
 
         # 3. 段階的フォールバック（Cascading Fallback）
         fallback_candidates = self.get_fallback_candidates(exclude_provider_id=provider.provider_id)
-        logger.info(f"[TtsService] 段階的フォールバックチェーン開始 (候補 {len(fallback_candidates)} 件)")
+        log.info(f"[TtsService] 段階的フォールバックチェーン開始 (候補 {len(fallback_candidates)} 件)")
 
         for fb_provider, fb_voice in fallback_candidates:
             try:
-                logger.info(f"[TtsService] 🔄 フォールバック試行中: {fb_provider.display_name} ({fb_voice})")
+                log.info(f"[TtsService] 🔄 フォールバック試行中: {fb_provider.display_name} ({fb_voice})")
                 fb_audio = await asyncio.wait_for(
                     fb_provider.synthesize(text, fb_voice, rate, pitch),
                     timeout=fb_provider.timeout_seconds
                 )
                 if fb_audio and len(fb_audio) > 0:
-                    logger.info(f"[TtsService] ✅ フォールバック成功: {fb_provider.display_name}")
+                    log.info(f"[TtsService] ✅ フォールバック成功: {fb_provider.display_name}")
                     return fb_audio, fb_voice, True
             except Exception as fb_err:
-                logger.warning(f"[TtsService] ⚠️ フォールバック失敗 ({fb_provider.display_name}): {fb_err}")
+                log.warning(f"[TtsService] ⚠️ フォールバック失敗 ({fb_provider.display_name}): {fb_err}")
 
         # 4. すべてのフォールバックが失敗した場合、最後の命綱として Edge-TTS を強制試行
         if provider.provider_id != "edge":
             try:
-                logger.warning("[TtsService] 全エンジン障害。最後の命綱として Edge-TTS を強制試行します")
+                log.warning("[TtsService] 全エンジン障害。最後の命綱として Edge-TTS を強制試行します")
                 edge_audio = await self.edge_provider.synthesize(
                     text, self.edge_provider.default_voice_id, rate, pitch
                 )
                 if edge_audio and len(edge_audio) > 0:
-                    logger.info("[TtsService] 🛡️ 最後の命綱 Edge-TTS での音声合成に成功しました")
+                    log.info("[TtsService] 🛡️ 最後の命綱 Edge-TTS での音声合成に成功しました")
                     return edge_audio, self.edge_provider.default_voice_id, True
             except Exception as edge_err:
-                logger.error(f"[TtsService] 最終フォールバック Edge-TTS も失敗しました: {edge_err}")
+                log.error(f"[TtsService] 最終フォールバック Edge-TTS も失敗しました: {edge_err}")
 
         raise RuntimeError("すべての音声エンジン（最終命綱 Edge-TTS 含む）での合成に失敗しました")
 
@@ -445,6 +476,7 @@ class TtsService:
         # キャッシュヒットチェック
         if final_path.exists() and final_path.stat().st_size > 0:
             duration = await self.get_audio_duration(final_path)
+            log.info(f"[TTS] 音声キャッシュ HIT: key={key[:8]}..., voice={voice}, dur={duration:.1f}s, text='{text[:25]}...'")
             return {
                 "filename": filename,
                 "filepath": str(final_path),
@@ -453,6 +485,8 @@ class TtsService:
                 "voice": voice,
                 "fallback": False
             }
+
+        log.info(f"[TTS] 音声キャッシュ MISS: 新規合成開始 (文字数={len(text)}, voice={voice}, chime={chime}, urgent={urgent}) -> '{text[:30]}...'")
 
         # 1. 音声バイナリの合成（フォールバックまたは最速並行生成）
         raw_bytes, actual_voice, was_fallback = await self._synthesize_raw(
@@ -493,6 +527,7 @@ class TtsService:
             shutil.move(str(raw_path), str(final_path))
 
         duration = await self.get_audio_duration(final_path)
+        log.info(f"[TTS] 音声合成・チャイム結合完了: file={filename}, dur={duration:.1f}s, voice={actual_voice}, fallback={was_fallback}")
         self._cleanup_lru_cache()
 
         return {
@@ -548,6 +583,6 @@ class TtsService:
                     f.unlink(missing_ok=True)
                     total_size -= size
         except Exception as e:
-            logger.error(f"[TtsService] Cache cleanup error: {e}")
+            log.error(f"[TtsService] Cache cleanup error: {e}")
 
 tts_service = TtsService()

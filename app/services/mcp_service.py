@@ -5,6 +5,7 @@ import time
 import hmac
 from typing import Dict, Any, List, Optional
 from app.services.speech_service import speech_service
+from app.services.scheduled_speech_service import scheduled_speech_service
 from app.services.devices_service import device_manager
 from app.services.dnd_service import dnd_service
 from app.services.calendar_service import calendar_service
@@ -18,7 +19,7 @@ log = get_logger("MCP")
 MCP_TOOLS = [
     {
         "name": "speak",
-        "description": "自宅のスマートスピーカー（Google Cast, Alexa, HomePod, DLNA, ONVIF）から音声を読み上げます。個別スピーカーや全室一斉（ALL）の指定が可能です。",
+        "description": "自宅のスマートスピーカー（Google Cast, Alexa, HomePod, DLNA, ONVIF）から音声を読み上げます。個別スピーカーや全室一斉（ALL）の指定、未来日時の予約発声が可能です。",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -29,6 +30,10 @@ MCP_TOOLS = [
                 "target": {
                     "type": "string",
                     "description": "発声先スピーカー名、IPアドレス、またはマクロ（例: 'リビング', '寝室', '書斎', 'ALL', 'GH:ALL', 'AL:ALL', 'HP:ALL', 'DLNA:ALL'）。省略時はデフォルトスピーカー。"
+                },
+                "at": {
+                    "type": "string",
+                    "description": "発声希望日時 (ISO 8601形式 '2026-10-19T08:30:00'、時刻 '08:30'、または相対指定 '+10m', '+1h' など)。過去・現在なら即時発声、未来なら予約発声します。"
                 },
                 "volume": {
                     "type": "number",
@@ -44,6 +49,28 @@ MCP_TOOLS = [
                 }
             },
             "required": ["text"]
+        }
+    },
+    {
+        "name": "list_scheduled_speeches",
+        "description": "現在予約されている日時指定発声タスクの一覧を取得します。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "cancel_scheduled_speech",
+        "description": "予約されている日時指定発声タスクをキャンセルします。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "キャンセルする予約タスクの ID (例: 'speech_xxx')"
+                }
+            },
+            "required": ["task_id"]
         }
     },
     {
@@ -169,6 +196,37 @@ class MCPService:
                 volume = args.get("volume")
                 voice = args.get("voice")
                 urgent = bool(args.get("urgent", False))
+                time_spec = args.get("at") or args.get("time") or args.get("scheduled_at")
+
+                if time_spec:
+                    res = await scheduled_speech_service.schedule_or_speak(
+                        text=text,
+                        time_spec=time_spec,
+                        targets=[target] if target else [],
+                        voice=voice,
+                        volume_level=volume,
+                        client_name=f"MCP ({client_name})",
+                        client_ip=client_ip,
+                        source="mcp",
+                        source_label="MCP (Claude/Cursor)",
+                        urgent=urgent
+                    )
+                    if res.get("status") == "scheduled":
+                        return {
+                            "isError": False,
+                            "content": [{
+                                "type": "text",
+                                "text": f"発声予約を受け付けました。\n予定時刻: {res.get('scheduled_at')}\nタスクID: {res.get('task_id')}\nメッセージ: {text}\n対象: {target or 'デフォルト'}"
+                            }]
+                        }
+                    else:
+                        return {
+                            "isError": False,
+                            "content": [{
+                                "type": "text",
+                                "text": f"指定時刻（過去）のため即時発話しました。\n対象: {target or 'デフォルト'}\nメッセージ: {text}\nステータス: {res.get('status', 'ok')}"
+                            }]
+                        }
 
                 res = await speech_service.speak(
                     text=text,
@@ -188,6 +246,25 @@ class MCPService:
                         "text": f"発話リクエストを正常に処理しました。\n対象: {target or 'デフォルト'}\nメッセージ: {text}\nステータス: {res.get('status', 'ok')}"
                     }]
                 }
+
+            elif name == "list_scheduled_speeches":
+                tasks = scheduled_speech_service.get_pending_tasks()
+                if not tasks:
+                    return {"isError": False, "content": [{"type": "text", "text": "現在待機中の予約発声タスクはありません。"}]}
+                lines = [f"■ 予約中の発声タスク ({len(tasks)}件):"]
+                for t in tasks:
+                    lines.append(f"- [{t.get('id')}] 予定: {t.get('scheduled_at')} (残り約{t.get('remaining_seconds', 0)}秒) | 宛先: {', '.join(t.get('targets', []))} | 文言: {t.get('text')}")
+                return {"isError": False, "content": [{"type": "text", "text": "\n".join(lines)}]}
+
+            elif name == "cancel_scheduled_speech":
+                task_id = args.get("task_id", "").strip()
+                if not task_id:
+                    return {"isError": True, "content": [{"type": "text", "text": "エラー: task_id が指定されていません"}]}
+                success = await scheduled_speech_service.cancel_task(task_id)
+                if success:
+                    return {"isError": False, "content": [{"type": "text", "text": f"予約タスク '{task_id}' を正常にキャンセルしました。"}]}
+                else:
+                    return {"isError": True, "content": [{"type": "text", "text": f"エラー: タスク '{task_id}' は見つからないか、既に実行/キャンセル済みです。"}]}
 
             elif name == "list_speakers":
                 devs = await device_manager.get_devices()

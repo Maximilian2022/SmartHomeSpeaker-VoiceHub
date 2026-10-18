@@ -4,7 +4,9 @@ import urllib.parse
 from typing import List, Dict, Any, Optional
 import httpx
 from app.services.tts.base import BaseTtsProvider
-from app.core.logger import logger
+from app.core.logger import get_logger
+
+log = get_logger("TTS.VoiceEngine")
 
 class VoicevoxFamilyProvider(BaseTtsProvider):
     """VOICEVOX / SHAREVOX / COEIROINK 共通エンジンプロバイダー"""
@@ -74,25 +76,25 @@ class VoicevoxFamilyProvider(BaseTtsProvider):
                         params={"speaker": speaker_int}
                     )
                     if check_res.status_code == 200 and check_res.text.strip().lower() == "true":
-                        logger.info(f"[{self.display_name}] モデルは既に初期化済みです: speaker={speaker_int}")
+                        log.info(f"[{self.display_name}] モデルは既に初期化済みです: speaker={speaker_int}")
                         return True
                 except Exception:
                     pass
 
                 # 2. 未初期化の場合のみ初期化リクエストを送信
-                logger.info(f"[{self.display_name}] モデル事前初期化 (initialize_speaker: {speaker_int}) を開始...")
+                log.info(f"[{self.display_name}] モデル事前初期化 (initialize_speaker: {speaker_int}) を開始...")
                 res = await client.post(
                     f"{self.base_url}/initialize_speaker",
                     params={"speaker": speaker_int}
                 )
                 if res.status_code in [200, 204]:
-                    logger.info(f"[{self.display_name}] モデル事前初期化完了: speaker={speaker_int}")
+                    log.info(f"[{self.display_name}] モデル事前初期化完了: speaker={speaker_int}")
                     return True
                 else:
-                    logger.warning(f"[{self.display_name}] モデル初期化応答: {res.status_code}")
+                    log.warning(f"[{self.display_name}] モデル初期化応答: {res.status_code}")
                     return False
         except Exception as e:
-            logger.warning(f"[{self.display_name}] モデル事前初期化スキップまたは失敗: {e}")
+            log.warning(f"[{self.display_name}] モデル事前初期化スキップまたは失敗: {e}")
             return False
 
     async def get_voices(self) -> List[Dict[str, Any]]:
@@ -106,7 +108,7 @@ class VoicevoxFamilyProvider(BaseTtsProvider):
             async with httpx.AsyncClient(timeout=max(self.timeout_seconds, 15.0)) as client:
                 res = await client.get(f"{self.base_url}/speakers")
                 if res.status_code != 200:
-                    logger.error(f"[{self.display_name}] /speakers 取得失敗: {res.status_code}")
+                    log.error(f"[{self.display_name}] /speakers 取得失敗: {res.status_code}")
                     return []
                 speakers_data = res.json()
 
@@ -118,19 +120,21 @@ class VoicevoxFamilyProvider(BaseTtsProvider):
                     style_id = style.get("id")
                     style_name = style.get("name", "ノーマル")
                     voice_label = f"{name} ({style_name})"
+                    eng_type = getattr(self, "engine_type", "voicevox")
+                    generic_label = getattr(self, "generic_name", eng_type.upper())
                     voices.append({
-                        "id": self.format_voice_id(str(style_id)),
+                        "id": f"{eng_type}:{style_id}",
                         "name": voice_label,
                         "gender": "Unknown",
-                        "provider": self.provider_id,
-                        "providerName": self.display_name,
+                        "provider": eng_type,
+                        "providerName": generic_label,
                         "style": style_name
                     })
 
             self._cached_voices = voices
             return voices
         except Exception as e:
-            logger.error(f"[{self.display_name}] 話者一覧取得エラー: {type(e).__name__}: {e}")
+            log.error(f"[{self.display_name}] 話者一覧取得エラー: {type(e).__name__}: {e}")
             return []
 
     async def _wav_to_mp3(self, wav_bytes: bytes) -> bytes:
@@ -208,6 +212,7 @@ class VoicevoxFamilyProvider(BaseTtsProvider):
 
         # 3. WAV -> MP3 変換
         mp3_bytes = await self._wav_to_mp3(wav_bytes)
+        log.info(f"[{self.display_name}] 音声合成成功 (speaker={speaker_int}, {len(text)}文字, wav={len(wav_bytes)}B -> mp3={len(mp3_bytes)}B)")
         return mp3_bytes
 
 
@@ -293,7 +298,7 @@ class CoeiroinkProvider(VoicevoxFamilyProvider):
             async with httpx.AsyncClient(timeout=max(self.timeout_seconds, 15.0)) as client:
                 res = await client.get(f"{self.base_url}/v1/speakers")
                 if res.status_code != 200:
-                    logger.error(f"[{self.display_name}] /v1/speakers 取得失敗: {res.status_code}")
+                    log.error(f"[{self.display_name}] /v1/speakers 取得失敗: {res.status_code}")
                     return []
                 speakers_data = res.json()
 
@@ -320,18 +325,18 @@ class CoeiroinkProvider(VoicevoxFamilyProvider):
                     # 識別子フォーマット: coeiroink:{style_id} または coeiroink:{uuid}:{style_id}
                     voice_key = f"{speaker_uuid}:{style_id}" if speaker_uuid else str(style_id)
                     voices.append({
-                        "id": self.format_voice_id(voice_key),
+                        "id": f"coeiroink:{voice_key}",
                         "name": voice_label,
                         "gender": "Unknown",
-                        "provider": self.provider_id,
-                        "providerName": self.display_name,
+                        "provider": "coeiroink",
+                        "providerName": "COEIROINK",
                         "style": style_name
                     })
 
             self._cached_voices = voices
             return voices
         except Exception as e:
-            logger.error(f"[{self.display_name}] 話者一覧取得エラー: {type(e).__name__}: {e}")
+            log.error(f"[{self.display_name}] 話者一覧取得エラー: {type(e).__name__}: {e}")
             return []
 
     async def synthesize(

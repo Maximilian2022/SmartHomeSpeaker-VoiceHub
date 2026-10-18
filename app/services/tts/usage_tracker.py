@@ -4,7 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 from app.config import DATA_DIR
-from app.core.logger import logger
+from app.core.logger import get_logger
+
+log = get_logger("TTS.Usage")
 
 USAGE_FILE = DATA_DIR / "tts_usage.json"
 
@@ -34,7 +36,7 @@ class TtsUsageTracker:
                 # 月跨ぎチェック
                 if data.get("current_month") != current_month:
                     old_month = data.get("current_month", "unknown")
-                    logger.info(f"[TtsUsageTracker] 月初リセット実行: {old_month} -> {current_month}")
+                    log.info(f"[TtsUsageTracker] 月初リセット実行: {old_month} -> {current_month}")
                     if "history" not in data:
                         data["history"] = {}
                     data["history"][old_month] = {
@@ -49,7 +51,7 @@ class TtsUsageTracker:
                     self._save(data)
                 return data
             except Exception as e:
-                logger.error(f"[TtsUsageTracker] 使用量ファイル読込エラー: {e}")
+                log.error(f"[TtsUsageTracker] 使用量ファイル読込エラー: {e}")
 
         # 初期データ構造
         initial_data = {
@@ -70,7 +72,7 @@ class TtsUsageTracker:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             temp_path.replace(self.file_path)
         except Exception as e:
-            logger.error(f"[TtsUsageTracker] 使用量ファイル保存エラー: {e}")
+            log.error(f"[TtsUsageTracker] 使用量ファイル保存エラー: {e}")
 
     def record_usage(self, provider: str, char_count: int, model_type: str = "neural"):
         """文字数の消費を記録"""
@@ -88,7 +90,7 @@ class TtsUsageTracker:
             self.data[key] = char_count
 
         self._save(self.data)
-        logger.info(f"[TtsUsageTracker] {provider} ({model_type}) 文字数消費記録: +{char_count} (当月累計: {self.data.get(key)})")
+        log.info(f"[TtsUsageTracker] {provider} ({model_type}) 文字数消費記録: +{char_count} (当月累計: {self.data.get(key)})")
 
     def get_stats(self) -> Dict[str, Any]:
         """WebUI 表示用の使用状況統計を取得"""
@@ -126,5 +128,17 @@ class TtsUsageTracker:
                 }
             }
         }
+
+    def is_quota_near_limit(self, provider: str = "gcp", model_type: str = "neural", threshold_ratio: float = 0.9) -> bool:
+        """指定プロバイダー・モデル種別の使用量が無料枠の指定割合（デフォルト9割）を超えているか判定"""
+        current_month = self._get_current_month()
+        if self.data.get("current_month") != current_month:
+            self.data = self._load()
+
+        key = f"{provider}_{model_type}_characters"
+        used = self.data.get(key, 0)
+        limit_key = f"{provider}_{model_type}"
+        limit = FREE_TIER_LIMITS.get(limit_key, 1_000_000)
+        return used >= (limit * threshold_ratio)
 
 tts_usage_tracker = TtsUsageTracker()

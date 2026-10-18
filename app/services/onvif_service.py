@@ -13,6 +13,9 @@ from app.config import settings
 from app.services.settings_service import settings_manager
 from app.services.tts_service import tts_service
 from app.services.dlna_service import dlna_service
+from app.core.logger import get_logger
+
+log = get_logger("ONVIF")
 
 WS_DISCOVERY_PROBE = """<?xml version="1.0" encoding="utf-8"?>
 <Envelope xmlns:tds="http://www.onvif.org/ver10/device/wsdl" 
@@ -318,7 +321,7 @@ class OnvifService:
         params = {"dst": stream_name, "src": src_param}
         push_url = f"{self.go2rtc_api_url}/api/streams"
 
-        print(f"[ONVIF Play] Starting audio playback on {camera.get('name', raw_ip)} ({raw_ip}) URL: {resolved_url}")
+        log.info(f"Starting audio playback on {camera.get('name', raw_ip)} ({raw_ip}) URL: {resolved_url}")
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(push_url, params=params)
             if resp.status_code != 200:
@@ -335,9 +338,9 @@ class OnvifService:
         try:
             async with httpx.AsyncClient(timeout=4.0) as client:
                 await client.post(f"{self.go2rtc_api_url}/api/streams", params={"dst": stream_name, "src": ""})
-                print(f"[ONVIF Play] Stream session cleared for {stream_name}")
+                log.info(f"Stream session cleared for {stream_name}")
         except Exception as e:
-            print(f"[ONVIF Play Cleanup Error] {e}")
+            log.warning(f"ONVIF stream cleanup warning for {stream_name}: {e}")
 
     async def _ensure_go2rtc_stream(self, stream_name: str, rtsp_url: str, onvif_url: str):
         try:
@@ -346,6 +349,6 @@ class OnvifService:
                 put_url = f"{self.go2rtc_api_url}/api/streams"
                 await client.put(put_url, params={"name": stream_name, "src": [rtsp_url, onvif_url]})
         except Exception as e:
-            print(f"[go2rtc Stream Register Warning] {e}")
+            log.warning(f"go2rtc Stream Register Warning for {stream_name}: {e}")
 
 onvif_service = OnvifService()

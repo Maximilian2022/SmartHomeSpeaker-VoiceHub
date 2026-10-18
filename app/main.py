@@ -11,6 +11,7 @@ from app.services.disaster_service import disaster_service
 from app.services.calendar_service import calendar_service
 from app.services.speech_service import speech_service
 from app.services.scheduler_service import scheduler_service
+from app.services.scheduled_speech_service import scheduled_speech_service
 
 # Routers
 from app.routers import (
@@ -28,9 +29,14 @@ from app.routers import (
     status,
     schedules,
     mqtt,
-    mcp
+    mcp,
+    logs
 )
+from app.core.logger import init_system_logging, get_logger
 from app.services.mqtt_service import mqtt_service
+
+# システムロギングの初期化 (Uvicorn / stdout キャプチャ統合)
+init_system_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,6 +45,8 @@ async def lifespan(app: FastAPI):
     
     # スケジューラー定期実行タスク開始
     await scheduler_service.start()
+    # 予約発声ワーカータスク開始 (日時指定発声)
+    await scheduled_speech_service.start()
 
     # 防災速報コールバックの設定
     async def on_disaster_speech(text: str, targets=None, urgent: bool = True, volume_level: int = None):
@@ -112,8 +120,8 @@ async def logging_and_security_middleware(request: Request, call_next):
     check_admin_auth(request)
 
     path = request.url.path
-    # 頻繁なステータスポーリング (/api/dnd/status 等) は DEBUG レベル相当にする
-    is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/favicon.ico")
+    # 頻繁なステータスポーリング (/api/dnd/status, /api/logs 等) は DEBUG レベル相当にする (ログ肥大化防止)
+    is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/api/logs", "/favicon.ico")
 
     try:
         response = await call_next(request)
@@ -176,6 +184,7 @@ app.include_router(status.router)
 app.include_router(schedules.router)
 app.include_router(mqtt.router)
 app.include_router(mcp.router)
+app.include_router(logs.router)
 
 
 

@@ -3,7 +3,9 @@ from typing import List, Dict, Any, Optional
 import httpx
 from app.services.tts.base import BaseTtsProvider
 from app.services.tts.usage_tracker import tts_usage_tracker
-from app.core.logger import logger
+from app.core.logger import get_logger
+
+log = get_logger("TTS.Azure")
 
 DEFAULT_AZURE_VOICES = [
     {"id": "ja-JP-NanamiNeural", "name": "七海 (Nanami) - 女性・標準", "gender": "Female"},
@@ -148,10 +150,17 @@ class AzureTtsProvider(BaseTtsProvider):
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             res = await client.post(url, headers=headers, content=ssml.encode("utf-8"))
             if res.status_code != 200:
+                if res.status_code == 429:
+                    log.warning(f"[Azure Speech] HTTP 429 クォータ超過 (月間無料枠上限到達)。フォールバックが必要です: {res.text}")
+                elif res.status_code == 401:
+                    log.error(f"[Azure Speech] HTTP 401 認証失敗。API Key またはリージョンを確認してください: {res.text}")
+                else:
+                    log.warning(f"[Azure Speech] HTTP {res.status_code} 音声合成エラー: {res.text}")
                 raise RuntimeError(f"[AzureTtsProvider] Azure Speech エラー: {res.status_code} - {res.text}")
             audio_bytes = res.content
 
         # 文字数の消費を記録 (Azure Neural)
         tts_usage_tracker.record_usage("azure", len(text), "neural")
+        log.info(f"[Azure Speech] 音声合成成功 (voice={raw_voice_name}, {len(text)}文字, size={len(audio_bytes)}B)")
 
         return audio_bytes

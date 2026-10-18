@@ -421,8 +421,84 @@ document.addEventListener('DOMContentLoaded', () => {
       state.schedules = data.schedules || [];
 
       renderScheduleTable();
+      await loadScheduledSpeeches();
     } catch (err) {
       showToast('スケジュールの取得に失敗しました', 'error');
+    }
+  }
+
+  // 予約中の日時指定発声タスク一覧の取得
+  async function loadScheduledSpeeches() {
+    const tbody = document.getElementById('scheduledSpeechesTableBody');
+    const badge = document.getElementById('badgeScheduledSpeechesCount');
+    if (!tbody) return;
+
+    try {
+      const res = await fetch('/api/scheduled-speeches');
+      if (!res.ok) throw new Error('予約発声一覧の取得失敗');
+      const data = await res.json();
+      const pending = data.pending || [];
+
+      if (badge) {
+        badge.textContent = `待機中: ${pending.length}件`;
+        badge.style.background = pending.length > 0 ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)';
+        badge.style.color = pending.length > 0 ? '#38bdf8' : 'var(--text-muted)';
+      }
+
+      if (pending.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-sub" style="padding: 16px;">現在待機中の予約発声タスクはありません</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = pending.map(t => {
+        const id = escapeHtml(t.id);
+        const schedAt = escapeHtml(t.scheduled_at?.replace('T', ' ').substring(0, 19) || '');
+        const remainSec = t.remaining_seconds != null ? t.remaining_seconds : 0;
+        let remainStr = `${remainSec}秒後`;
+        if (remainSec >= 3600) {
+          remainStr = `${(remainSec / 3600).toFixed(1)}時間後`;
+        } else if (remainSec >= 60) {
+          remainStr = `${Math.round(remainSec / 60)}分後`;
+        }
+        const targets = Array.isArray(t.targets) ? t.targets.map(getDeviceDisplayName).join(', ') : getDeviceDisplayName(t.targets);
+        const text = escapeHtml(t.text || '');
+        const source = escapeHtml(t.source_label || t.client_name || 'Webhook');
+
+        return `
+          <tr>
+            <td style="font-family: monospace; font-weight: 600; color: #38bdf8;">⏰ ${schedAt}</td>
+            <td><span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">⏳ ${remainStr}</span></td>
+            <td>${escapeHtml(targets)}</td>
+            <td style="word-break: break-all; max-width: 280px;">${text}</td>
+            <td><span style="font-size: 0.75rem; color: var(--text-muted);">${source}</span></td>
+            <td style="text-align: center;">
+              <button type="button" class="btn btn-danger btn-sm btn-cancel-scheduled" data-id="${id}" style="padding: 2px 8px; font-size: 0.75rem;">
+                🗑️ 取消
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // 取消ボタンのイベント登録
+      tbody.querySelectorAll('.btn-cancel-scheduled').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const taskId = btn.getAttribute('data-id');
+          if (!confirm(`予約発声タスク [${taskId}] をキャンセルしますか？`)) return;
+          try {
+            btn.disabled = true;
+            const delRes = await fetch(`/api/scheduled-speeches/${taskId}`, { method: 'DELETE' });
+            if (!delRes.ok) throw new Error('キャンセル失敗');
+            showToast('予約発声をキャンセルしました', 'info');
+            await loadScheduledSpeeches();
+          } catch (e) {
+            showToast(`キャンセルエラー: ${e.message}`, 'error');
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (err) {
+      console.warn('予約発声の取得に失敗:', err.message);
     }
   }
 
@@ -744,7 +820,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const isAzureActive = !!state.ttsProvidersStatus?.isAzureActive;
 
     state.voices.forEach(v => {
-      const p = v.provider || 'edge';
+      let p = (v.provider || 'edge').toLowerCase();
+      // もし provider が engine_xxx 等の場合でも、種別 (voicevox/sharevox/coeiroink) に正規化マッピング
+      if (p.includes('voicevox') || (v.id && v.id.startsWith('voicevox:'))) {
+        p = 'voicevox';
+      } else if (p.includes('sharevox') || (v.id && v.id.startsWith('sharevox:'))) {
+        p = 'sharevox';
+      } else if (p.includes('coeiroink') || (v.id && v.id.startsWith('coeiroink:'))) {
+        p = 'coeiroink';
+      }
+
       // Azure有効時は通常選択からEdge-TTSを除外
       if (isAzureActive && p === 'edge') return;
       if (!groups[p]) groups[p] = [];
@@ -755,7 +840,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const allProviders = [...providerOrder, ...Object.keys(groups).filter(k => !providerOrder.includes(k))];
     allProviders.forEach(p => {
       if (groups[p] && groups[p].length > 0) {
-        const label = providerLabels[p] || groups[p][0].providerName || p;
+        // 登録名ではなく、種別標準名（VOICEVOX / SHAREVOX / COEIROINK 等）を表示
+        const label = providerLabels[p] || p.toUpperCase();
         optionsHtml += `<optgroup label="${escapeHtml(label)}">`;
         groups[p].forEach(v => {
           const isSelected = (isAzureActive && v.id === 'azure:ja-JP-NanamiNeural') || (!isAzureActive && v.id === 'ja-JP-NanamiNeural') ? 'selected' : '';
@@ -1278,13 +1364,19 @@ document.addEventListener('DOMContentLoaded', () => {
           // ignore
         }
 
-        // 発言履歴タブを開いた時は最新の履歴を再取得
         if (targetId === 'tab-history') {
           loadHistory();
+        } else if (targetId === 'tab-schedule-calendar') {
+          loadSchedules();
+          loadScheduledSpeeches();
         } else if (targetId === 'tab-settings') {
           loadSettings();
           loadDndStatus();
           loadDisasterSettings();
+        } else if (targetId === 'tab-logs') {
+          if (typeof loadSystemLogs === 'function') {
+            loadSystemLogs(true);
+          }
         }
       });
     });
@@ -1485,6 +1577,13 @@ document.addEventListener('DOMContentLoaded', () => {
           payload.volumeLevel = volVal / 100;
         }
 
+        // 発声時刻指定 (予約発声)
+        const timeInput = document.getElementById('sayScheduledTimeInput');
+        const schedTime = timeInput?.value?.trim();
+        if (schedTime) {
+          payload.at = schedTime;
+        }
+
         const res = await fetch('/api/say', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1497,7 +1596,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const data = await res.json();
-        if (data.dndSuppressed) {
+        if (data.status === 'scheduled') {
+          const schedFmt = (data.scheduled_at || '').replace('T', ' ').substring(0, 16);
+          showToast(`⏰ 発声予約を受け付けました (${schedFmt} 予定 / 残り約${data.delay_seconds || 0}秒)`, 'success');
+          if (timeInput) {
+            timeInput.value = '';
+            const badgeActive = document.getElementById('badgeSayScheduleActive');
+            if (badgeActive) badgeActive.style.display = 'none';
+          }
+          await loadScheduledSpeeches();
+        } else if (data.dndSuppressed) {
           showToast('【DND発動中】おやすみ・会議モード中のため発話を抑制しました', 'info');
           loadDndHistory();
         } else {
@@ -1513,9 +1621,78 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(`発声エラー: ${err.message}`, 'error');
       } finally {
         el.btnSpeakDirect.disabled = false;
-        el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> スピーカーで発言`;
+        updateSpeakButtonLabel();
       }
     });
+
+    // 発声予約（日時指定・タイマー）のコントロール設定
+    function updateSpeakButtonLabel() {
+      const timeInput = document.getElementById('sayScheduledTimeInput');
+      const badgeActive = document.getElementById('badgeSayScheduleActive');
+      if (!timeInput || !el.btnSpeakDirect) return;
+
+      const val = timeInput.value;
+      if (val) {
+        const targetDate = new Date(val);
+        const now = new Date();
+        if (targetDate > now) {
+          const hh = String(targetDate.getHours()).padStart(2, '0');
+          const mm = String(targetDate.getMinutes()).padStart(2, '0');
+          if (badgeActive) badgeActive.style.display = 'inline-block';
+          el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ⏰ ${hh}:${mm} に予約発声する`;
+          el.btnSpeakDirect.classList.add('btn-info');
+          return;
+        }
+      }
+      if (badgeActive) badgeActive.style.display = 'none';
+      el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> スピーカーで発言`;
+      el.btnSpeakDirect.classList.remove('btn-info');
+    }
+
+    const timeInputEl = document.getElementById('sayScheduledTimeInput');
+    if (timeInputEl) {
+      timeInputEl.addEventListener('change', updateSpeakButtonLabel);
+      timeInputEl.addEventListener('input', updateSpeakButtonLabel);
+    }
+
+    const btnClearTime = document.getElementById('btnSayScheduleClear');
+    if (btnClearTime) {
+      btnClearTime.addEventListener('click', () => {
+        if (timeInputEl) timeInputEl.value = '';
+        updateSpeakButtonLabel();
+      });
+    }
+
+    // クイックタイマーボタン (+5分, +10分, +15分, +30分, +1時間)
+    document.querySelectorAll('.btn-say-timer').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mins = parseInt(btn.getAttribute('data-minutes') || '5', 10);
+        const target = new Date(Date.now() + mins * 60000);
+        const yyyy = target.getFullYear();
+        const MM = String(target.getMonth() + 1).padStart(2, '0');
+        const dd = String(target.getDate()).padStart(2, '0');
+        const hh = String(target.getHours()).padStart(2, '0');
+        const mm = String(target.getMinutes()).padStart(2, '0');
+        if (timeInputEl) {
+          timeInputEl.value = `${yyyy}-${MM}-${dd}T${hh}:${mm}`;
+          updateSpeakButtonLabel();
+        }
+        const details = document.getElementById('detailsSaySchedule');
+        if (details) details.open = true;
+      });
+    });
+
+    // 予約発声一覧の手動更新ボタン
+    const btnRefreshSched = document.getElementById('btnRefreshScheduledSpeeches');
+    if (btnRefreshSched) {
+      btnRefreshSched.addEventListener('click', async () => {
+        btnRefreshSched.disabled = true;
+        btnRefreshSched.textContent = '更新中...';
+        await loadScheduledSpeeches();
+        btnRefreshSched.disabled = false;
+        btnRefreshSched.textContent = '🔄 更新';
+      });
+    }
 
     // デバイス一覧内クイックテストボタン (イベント委譲)
     el.devicesGrid.addEventListener('click', async (e) => {
@@ -2238,6 +2415,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rate = document.getElementById('builderRate')?.value;
     const volumeLevel = document.getElementById('builderVolumeLevel')?.value;
     const chime = document.getElementById('builderChime')?.value;
+    const atVal = document.getElementById('builderAt')?.value.trim();
 
     const defaultDevName = state.devices[0]?.name || 'default';
     const payloadObj = {
@@ -2249,6 +2427,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rate) payloadObj.rate = rate;
     if (volumeLevel) payloadObj.volumeLevel = parseFloat(volumeLevel);
     if (chime) payloadObj.chime = chime;
+    if (atVal) payloadObj.at = atVal;
 
     const codeEl = document.getElementById('builderGeneratedCode');
     if (!codeEl) return;
@@ -2270,6 +2449,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (chime) params.set('chime', chime);
       if (voice) params.set('voice', voice);
       if (rate) params.set('rate', rate);
+      if (atVal) params.set('at', atVal);
       if (token) params.set('token', token);
       codeEl.textContent = `curl "${baseUrl}/api/say?${params.toString()}"`;
     } else if (builderSelectedTab === 'json-body') {
@@ -2339,6 +2519,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rateSelect = document.getElementById('builderRate');
     const volSelect = document.getElementById('builderVolumeLevel');
     const chimeSelect = document.getElementById('builderChime');
+    const atInput = document.getElementById('builderAt');
     const urlRadios = document.querySelectorAll('input[name="builderUrlType"]');
 
     if (textInput) textInput.addEventListener('input', updateBuilderCode);
@@ -2347,6 +2528,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rateSelect) rateSelect.addEventListener('change', updateBuilderCode);
     if (volSelect) volSelect.addEventListener('change', updateBuilderCode);
     if (chimeSelect) chimeSelect.addEventListener('change', updateBuilderCode);
+    if (atInput) atInput.addEventListener('input', updateBuilderCode);
     urlRadios.forEach(r => r.addEventListener('change', updateBuilderCode));
 
     // 短縮マクロボタン (ALL, GH:ALL, AL:ALL, HP:ALL)
@@ -6557,14 +6739,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const chk = getEl('settingGcpEnabled', 'ttsGcpEnabled');
         const key = getEl('settingGcpApiKey', 'ttsGcpKey');
         const to = getEl('settingGcpTimeout', 'ttsGcpTimeout');
+        const defV = getEl('settingGcpDefaultVoice', 'ttsGcpVoice');
+        const guard = getEl('settingGcpFallbackNearLimit', 'ttsGcpFallbackNearLimit');
         if (chk) chk.checked = !!(tp.gcp.enabled ?? gConf.enabled);
         if (key) key.value = gConf.apiKey || '';
         if (to) to.value = gConf.timeoutSeconds || 5;
+        if (defV && gConf.defaultVoiceId) defV.value = gConf.defaultVoiceId;
+        if (guard) guard.checked = tp.gcp.fallbackOnQuotaNearLimit ?? gConf.fallbackOnQuotaNearLimit ?? true;
       }
 
       // 3. 動的ローカル音声エンジン群 (voice_engines) の反映
       state.voiceEngines = data.voice_engines || tp.voice_engines || [];
       renderVoiceEnginesList();
+      setupVoiceEngineRegistrationForm();
 
       // 無料枠使用量プログレスバーの更新
       // GCP Neural2 (1,000,000文字)
@@ -6573,9 +6760,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const gcpNeuralPct = Math.min(100, Math.round((gcpNeuralUsed / gcpNeuralMax) * 100));
       const elGcpNeuralTxt = getEl('labelGcpUsageNeural', 'ttsGcpNeuralUsage');
       const elGcpNeuralBar = getEl('barGcpUsageNeural', 'ttsGcpNeuralBar');
+      const badgeGcpGuard = document.getElementById('badgeGcpQuotaGuard');
       if (elGcpNeuralTxt) elGcpNeuralTxt.textContent = `${gcpNeuralUsed.toLocaleString()} / ${gcpNeuralMax.toLocaleString()} 文字 (${gcpNeuralPct}%)`;
       if (elGcpNeuralBar) {
         elGcpNeuralBar.style.width = `${gcpNeuralPct}%`;
+        if (gcpNeuralPct >= 90) {
+          elGcpNeuralBar.style.background = '#f59e0b';
+        } else {
+          elGcpNeuralBar.style.background = '#3b82f6';
+        }
+      }
+      if (badgeGcpGuard) {
+        const isGuardOn = getEl('settingGcpFallbackNearLimit', 'ttsGcpFallbackNearLimit')?.checked ?? true;
+        badgeGcpGuard.style.display = (gcpNeuralPct >= 90 && isGuardOn) ? 'block' : 'none';
       }
 
       // Azure (500,000文字)
@@ -6640,10 +6837,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // ================= 動的ローカル音声エンジン管理 =================
+  // ================= 動的ローカル音声エンジン管理 (ONVIF同様 接続テスト後登録 & オンライン監視) =================
+  let tempTestedNewEngine = null;
+  let voiceEngineFormInitialized = false;
+
   function renderVoiceEnginesList() {
-    const container = document.getElementById('voiceEnginesList');
-    if (!container) return;
+    renderVoiceEnginesTable();
+  }
+
+  function renderVoiceEnginesTable() {
+    const tbody = document.getElementById('voiceEnginesTableBody');
+    if (!tbody) return;
 
     const engines = state.voiceEngines || [];
     const badgeTotal = document.getElementById('badgeVoiceEnginesTotal');
@@ -6652,194 +6856,287 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (engines.length === 0) {
-      container.innerHTML = `
-        <div style="text-align: center; padding: 24px; color: var(--text-muted); background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px dashed rgba(255,255,255,0.1);">
-          登録されているローカル音声エンジンがありません。「➕ 音声エンジンを追加」から VOICEVOX / SHAREVOX / COEIROINK を追加してください。
-        </div>
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="text-center" style="padding: 24px; color: var(--text-muted); background: rgba(255,255,255,0.01);">
+            登録されているローカル音声エンジンはありません。上のフォームから接続テストを行い登録してください。
+          </td>
+        </tr>
       `;
       return;
     }
 
-    const typeIcons = {
-      voicevox: '🟢',
-      sharevox: '🔵',
-      coeiroink: '🟣'
+    const typeMeta = {
+      voicevox: { icon: '🟢', label: 'VOICEVOX' },
+      sharevox: { icon: '🔵', label: 'SHAREVOX' },
+      coeiroink: { icon: '🟣', label: 'COEIROINK' }
     };
 
     let html = '';
     engines.forEach(eng => {
-      const icon = typeIcons[eng.type] || '🎙️';
-      const typeLabel = eng.type === 'voicevox' ? 'VOICEVOX 互換' : (eng.type === 'sharevox' ? 'SHAREVOX 互換' : 'COEIROINK v2 互換');
+      const meta = typeMeta[eng.type] || { icon: '🎙️', label: (eng.type || 'VOICEVOX').toUpperCase() };
       const isEnabled = !!eng.enabled;
 
-      let hwBadge = '';
-      if (eng.isGpu) {
-        hwBadge = `<span class="badge badge-hw-gpu" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.75rem;">🚀 GPU (${escapeHtml(eng.deviceLabel || 'CUDA')}) ${eng.latencyMs != null ? eng.latencyMs + 'ms' : ''}</span>`;
-      } else if (eng.deviceLabel || eng.latencyMs != null) {
-        hwBadge = `<span class="badge badge-hw-cpu" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); font-size: 0.75rem;">🐢 CPU ${eng.latencyMs != null ? eng.latencyMs + 'ms' : ''}</span>`;
+      // 稼働状態表示
+      let statusHtml = '';
+      if (eng.isOnline === true) {
+        if (eng.isGpu) {
+          statusHtml = `<span style="color: #34d399; font-weight: 500; font-size: 0.85rem;">🟢 稼働中</span><br><span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.7rem; margin-top: 2px;">🚀 GPU (${escapeHtml(eng.deviceLabel || 'CUDA')}) ${eng.latencyMs != null ? eng.latencyMs + 'ms' : ''}</span>`;
+        } else {
+          statusHtml = `<span style="color: #34d399; font-weight: 500; font-size: 0.85rem;">🟢 稼働中</span><br><span class="badge" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); font-size: 0.7rem; margin-top: 2px;">🐢 CPU ${eng.latencyMs != null ? eng.latencyMs + 'ms' : ''}</span>`;
+        }
+      } else if (eng.isOnline === false) {
+        statusHtml = `<span style="color: #f87171; font-weight: 500; font-size: 0.85rem;">🔴 停止中</span><br><span style="font-size: 0.7rem; color: var(--text-muted);">${escapeHtml(eng.lastError || '接続不可')}</span>`;
+      } else {
+        statusHtml = `<span style="color: var(--text-muted); font-size: 0.85rem;">⏳ 未確認</span>`;
       }
 
       html += `
-        <div class="card glass-card engine-card" data-eng-card="${escapeHtml(eng.id)}" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 14px 16px;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <span style="font-size: 1.2rem;">${icon}</span>
-              <strong style="font-size: 1rem; color: #fff;">${escapeHtml(eng.name || '名称未設定')}</strong>
-              <span class="badge" style="background: rgba(255,255,255,0.08); font-size: 0.75rem;">${typeLabel}</span>
-              <span class="eng-hw-badge-slot">${hwBadge}</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <label class="switch" title="このエンジンを有効化">
-                <input type="checkbox" class="eng-enable-toggle" data-eng-id="${escapeHtml(eng.id)}" ${isEnabled ? 'checked' : ''}>
-                <span class="slider round"></span>
-              </label>
-              <button type="button" class="btn btn-danger btn-sm btn-delete-eng" data-eng-id="${escapeHtml(eng.id)}" title="このエンジンを削除" style="padding: 4px 8px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171;">
-                🗑️ 削除
+        <tr data-eng-row="${escapeHtml(eng.id)}">
+          <td class="eng-status-cell">${statusHtml}</td>
+          <td>
+            <span style="font-size: 1rem; margin-right: 4px;">${meta.icon}</span>
+            <span class="badge" style="background: rgba(255,255,255,0.08); font-size: 0.75rem;">${meta.label}</span>
+          </td>
+          <td>
+            <strong style="color: #fff; font-size: 0.9rem;">${escapeHtml(eng.name || '名称未設定')}</strong>
+            ${eng.preload ? '<span title="起動時プリロード有効" style="font-size: 0.75rem; margin-left: 4px; color: var(--text-muted);">⚡</span>' : ''}
+          </td>
+          <td>
+            <code style="font-size: 0.82rem; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${escapeHtml(eng.baseUrl || '')}</code>
+          </td>
+          <td style="text-align: center;">
+            <label class="switch" title="このエンジンを有効化/無効化">
+              <input type="checkbox" class="eng-enable-toggle" data-eng-id="${escapeHtml(eng.id)}" ${isEnabled ? 'checked' : ''}>
+              <span class="slider round"></span>
+            </label>
+          </td>
+          <td style="text-align: right;">
+            <div style="display: flex; gap: 6px; justify-content: flex-end;">
+              <button type="button" class="btn btn-secondary btn-sm btn-retest-eng" data-eng-id="${escapeHtml(eng.id)}" title="死活と応答速度を再テスト" style="padding: 4px 8px; font-size: 0.78rem;">
+                🔌 再テスト
+              </button>
+              <button type="button" class="btn btn-danger btn-sm btn-delete-eng" data-eng-id="${escapeHtml(eng.id)}" title="このエンジンを削除" style="padding: 4px 8px; font-size: 0.78rem; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171;">
+                🗑️
               </button>
             </div>
-          </div>
-
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
-            <div class="form-group" style="margin: 0;">
-              <label class="form-label" style="font-size: 0.8rem;">表示名</label>
-              <input type="text" class="form-input eng-name" data-eng-id="${escapeHtml(eng.id)}" value="${escapeHtml(eng.name || '')}" placeholder="例: VOICEVOX (メインPC)">
-            </div>
-            <div class="form-group" style="margin: 0;">
-              <label class="form-label" style="font-size: 0.8rem;">エンジン種別</label>
-              <select class="form-select eng-type" data-eng-id="${escapeHtml(eng.id)}">
-                <option value="voicevox" ${eng.type === 'voicevox' ? 'selected' : ''}>VOICEVOX 互換</option>
-                <option value="sharevox" ${eng.type === 'sharevox' ? 'selected' : ''}>SHAREVOX 互換</option>
-                <option value="coeiroink" ${eng.type === 'coeiroink' ? 'selected' : ''}>COEIROINK v2 互換</option>
-              </select>
-            </div>
-            <div class="form-group" style="margin: 0;">
-              <label class="form-label" style="font-size: 0.8rem;">接続先 URL (LAN IP / Docker)</label>
-              <input type="text" class="form-input eng-url" data-eng-id="${escapeHtml(eng.id)}" value="${escapeHtml(eng.baseUrl || '')}" placeholder="http://192.168.11.xxx:50021">
-            </div>
-            <div class="form-group" style="margin: 0;">
-              <label class="form-label" style="font-size: 0.8rem;">タイムアウト (秒)</label>
-              <input type="number" class="form-input eng-timeout" data-eng-id="${escapeHtml(eng.id)}" min="1" max="30" value="${eng.timeoutSeconds || 5}">
-            </div>
-          </div>
-
-          <div style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px;">
-            <div class="form-group" style="margin: 0;">
-              <label class="form-label" style="font-size: 0.8rem;">推奨ボイスID (初期値・テスト用)</label>
-              <input type="text" class="form-input eng-voice" data-eng-id="${escapeHtml(eng.id)}" value="${escapeHtml(eng.defaultVoiceId || '')}" placeholder="例: voicevox:2 または coeiroink:140">
-            </div>
-            <div style="margin-top: 4px;">
-              <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer; color: var(--text-muted);">
-                <input type="checkbox" class="eng-preload" data-eng-id="${escapeHtml(eng.id)}" ${eng.preload !== false ? 'checked' : ''}>
-                <span>起動時に推奨ボイスを事前初期化 (コールドスタート時の初回発声遅延を防止)</span>
-              </label>
-            </div>
-          </div>
-
-          <div style="display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.06);">
-            <button type="button" class="btn btn-secondary btn-sm btn-test-eng" data-eng-id="${escapeHtml(eng.id)}">
-              🔌 接続テスト & 認識確認
-            </button>
-            <span class="status-test-eng" data-eng-id="${escapeHtml(eng.id)}" style="font-size: 0.82rem; color: var(--text-muted);"></span>
-          </div>
-        </div>
+          </td>
+        </tr>
       `;
     });
 
-    container.innerHTML = html;
+    tbody.innerHTML = html;
 
-    // イベントバインド
-    container.querySelectorAll('.eng-enable-toggle').forEach(el => {
-      el.addEventListener('change', function() {
-        const id = this.getAttribute('data-eng-id');
-        const found = (state.voiceEngines || []).find(e => e.id === id);
-        if (found) found.enabled = this.checked;
-      });
-    });
-
-    container.querySelectorAll('.eng-name').forEach(el => {
-      el.addEventListener('input', function() {
-        const id = this.getAttribute('data-eng-id');
-        const found = (state.voiceEngines || []).find(e => e.id === id);
-        if (found) found.name = this.value;
-      });
-    });
-
-    container.querySelectorAll('.eng-type').forEach(el => {
-      el.addEventListener('change', function() {
+    // イベントバインド: 有効化トグル
+    tbody.querySelectorAll('.eng-enable-toggle').forEach(el => {
+      el.addEventListener('change', async function() {
         const id = this.getAttribute('data-eng-id');
         const found = (state.voiceEngines || []).find(e => e.id === id);
         if (found) {
-          found.type = this.value;
-          renderVoiceEnginesList();
+          found.enabled = this.checked;
+          await saveTtsProvidersSettings(true);
+          showToast(`「${found.name}」を${found.enabled ? '有効化' : '無効化'}しました`, 'info');
+          if (typeof loadVoices === 'function') {
+            await loadVoices();
+          }
         }
       });
     });
 
-    container.querySelectorAll('.btn-delete-eng').forEach(el => {
+    // イベントバインド: 再テスト
+    tbody.querySelectorAll('.btn-retest-eng').forEach(el => {
       el.addEventListener('click', function() {
+        const id = this.getAttribute('data-eng-id');
+        testSingleVoiceEngine(id);
+      });
+    });
+
+    // イベントバインド: 削除
+    tbody.querySelectorAll('.btn-delete-eng').forEach(el => {
+      el.addEventListener('click', async function() {
         const id = this.getAttribute('data-eng-id');
         const target = (state.voiceEngines || []).find(e => e.id === id);
         const name = target ? target.name : 'このエンジン';
-        if (confirm(`「${name}」を削除してもよろしいですか？`)) {
+        if (confirm(`「${name}」を登録から削除してもよろしいですか？`)) {
           state.voiceEngines = (state.voiceEngines || []).filter(e => e.id !== id);
-          renderVoiceEnginesList();
-          showToast(`「${name}」を削除しました（保存ボタンで確定）`, 'info');
+          renderVoiceEnginesTable();
+          await saveTtsProvidersSettings(true);
+          showToast(`「${name}」を削除しました`, 'info');
+          if (typeof loadVoices === 'function') {
+            await loadVoices();
+          }
         }
       });
     });
-
-    container.querySelectorAll('.btn-test-eng').forEach(el => {
-      el.addEventListener('click', function() {
-        const id = this.getAttribute('data-eng-id');
-        testSpecificVoiceEngine(id);
-      });
-    });
   }
 
-  function addNewVoiceEngine() {
-    const engines = state.voiceEngines || [];
-    const newIdx = engines.length + 1;
-    const newId = 'engine_' + Date.now();
-    const newEngine = {
-      id: newId,
-      name: `ローカル音声エンジン ${newIdx}`,
-      type: 'voicevox',
-      enabled: false,
-      baseUrl: 'http://192.168.11.xxx:50021',
-      timeoutSeconds: 5.0,
-      defaultVoiceId: `${newId}:2`,
-      preload: true
+  function setupVoiceEngineRegistrationForm() {
+    if (voiceEngineFormInitialized) return;
+    voiceEngineFormInitialized = true;
+
+    const inpType = document.getElementById('newEngType');
+    const inpName = document.getElementById('newEngName');
+    const inpUrl = document.getElementById('newEngUrl');
+    const inpTimeout = document.getElementById('newEngTimeout');
+    const btnTest = document.getElementById('btnTestNewEng');
+    const btnRegister = document.getElementById('btnRegisterNewEng');
+    const feedback = document.getElementById('newEngTestFeedback');
+    const btnCheckAll = document.getElementById('btnCheckAllVoiceEngines');
+
+    const resetRegistrationState = () => {
+      tempTestedNewEngine = null;
+      if (btnRegister) btnRegister.disabled = true;
+      if (feedback) {
+        feedback.style.display = 'none';
+        feedback.innerHTML = '';
+      }
     };
-    engines.push(newEngine);
-    state.voiceEngines = engines;
-    renderVoiceEnginesList();
 
-    const card = document.querySelector(`[data-eng-card="${newId}"]`);
-    if (card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (inpType) inpType.addEventListener('change', resetRegistrationState);
+    if (inpName) inpName.addEventListener('input', resetRegistrationState);
+    if (inpUrl) inpUrl.addEventListener('input', resetRegistrationState);
+    if (inpTimeout) inpTimeout.addEventListener('input', resetRegistrationState);
+
+    // 接続テスト
+    if (btnTest) {
+      btnTest.addEventListener('click', async () => {
+        const type = inpType?.value || 'voicevox';
+        const name = inpName?.value?.trim();
+        const url = inpUrl?.value?.trim();
+        const timeout = parseFloat(inpTimeout?.value) || 5.0;
+
+        if (!name) {
+          showToast('管理用表示名を入力してください（例: メインGPU機）', 'warning');
+          inpName?.focus();
+          return;
+        }
+        if (!url) {
+          showToast('接続先 URL を入力してください（例: http://192.168.11.xxx:50021）', 'warning');
+          inpUrl?.focus();
+          return;
+        }
+
+        btnTest.disabled = true;
+        const origText = btnTest.textContent;
+        btnTest.textContent = '⏳ テスト中...';
+        if (feedback) {
+          feedback.style.display = 'block';
+          feedback.style.color = 'var(--text-muted)';
+          feedback.innerHTML = '接続先へ問い合わせ中...';
+        }
+
+        try {
+          const res = await fetch('/api/tts/providers/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: 'test',
+              type: type,
+              engineType: type,
+              baseUrl: url,
+              timeoutSeconds: timeout
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.success && data.isAvailable) {
+            tempTestedNewEngine = {
+              id: 'engine_' + Date.now(),
+              name: name,
+              type: type,
+              enabled: true,
+              baseUrl: url,
+              timeoutSeconds: timeout,
+              defaultVoiceId: `${type}:2`,
+              preload: true,
+              isOnline: true,
+              isGpu: !!data.isGpu,
+              deviceLabel: data.deviceLabel || (data.isGpu ? 'CUDA' : 'CPU'),
+              latencyMs: data.latencyMs,
+              lastError: null
+            };
+
+            const hwDesc = data.isGpu ? `🚀 GPU (${data.deviceLabel || 'CUDA'})` : `🐢 CPU`;
+            const latencyDesc = data.latencyMs != null ? ` / 合成 ${data.latencyMs}ms` : '';
+            if (feedback) {
+              feedback.style.display = 'block';
+              feedback.style.color = '#34d399';
+              feedback.innerHTML = `✅ 接続テストに成功しました！ (${data.voicesCount || 0}話者認識) [${hwDesc}${latencyDesc}]<br>「＋ 登録する」ボタンを押して登録を完了してください。`;
+            }
+            if (btnRegister) {
+              btnRegister.disabled = false;
+            }
+            showToast('接続テストに成功しました！', 'success');
+          } else {
+            tempTestedNewEngine = null;
+            if (btnRegister) btnRegister.disabled = true;
+            if (feedback) {
+              feedback.style.display = 'block';
+              feedback.style.color = '#f87171';
+              feedback.innerHTML = `❌ 接続テスト失敗: ${escapeHtml(data.message || '接続できませんでした')}`;
+            }
+            showToast(data.message || '接続テストに失敗しました', 'error');
+          }
+        } catch (err) {
+          tempTestedNewEngine = null;
+          if (btnRegister) btnRegister.disabled = true;
+          if (feedback) {
+            feedback.style.display = 'block';
+            feedback.style.color = '#f87171';
+            feedback.innerHTML = `❌ 通信エラー: ${escapeHtml(err.message)}`;
+          }
+          showToast('通信エラー: ' + err.message, 'error');
+        } finally {
+          btnTest.disabled = false;
+          btnTest.textContent = origText;
+        }
+      });
     }
-    showToast('音声エンジンの設定枠を追加しました。接続先URLを入力して保存してください。', 'info');
+
+    // 登録ボタン
+    if (btnRegister) {
+      btnRegister.addEventListener('click', async () => {
+        if (!tempTestedNewEngine) {
+          showToast('先に「🔌 接続テスト」を実行してください', 'warning');
+          return;
+        }
+
+        const engineToRegister = { ...tempTestedNewEngine };
+        const engines = state.voiceEngines || [];
+        engines.push(engineToRegister);
+        state.voiceEngines = engines;
+
+        // フォームリセット
+        if (inpName) inpName.value = '';
+        if (inpUrl) inpUrl.value = '';
+        resetRegistrationState();
+
+        renderVoiceEnginesTable();
+        await saveTtsProvidersSettings(true);
+        showToast(`音声エンジン「${engineToRegister.name}」を登録しました`, 'success');
+
+        if (typeof loadVoices === 'function') {
+          await loadVoices();
+        }
+      });
+    }
+
+    // 全台の死活再確認
+    if (btnCheckAll) {
+      btnCheckAll.addEventListener('click', checkAllVoiceEnginesStatus);
+    }
   }
 
-  async function testSpecificVoiceEngine(engineId) {
-    const card = document.querySelector(`[data-eng-card="${engineId}"]`);
-    if (!card) return;
+  async function testSingleVoiceEngine(engineId) {
+    const row = document.querySelector(`[data-eng-row="${engineId}"]`);
+    const statusCell = row?.querySelector('.eng-status-cell');
+    const btnRetest = row?.querySelector('.btn-retest-eng');
 
-    const btn = card.querySelector('.btn-test-eng');
-    const statusEl = card.querySelector('.status-test-eng');
-    const name = card.querySelector('.eng-name')?.value?.trim() || engineId;
-    const type = card.querySelector('.eng-type')?.value?.trim() || 'voicevox';
-    const url = card.querySelector('.eng-url')?.value?.trim() || '';
-    const timeout = parseFloat(card.querySelector('.eng-timeout')?.value) || 5.0;
+    const eng = (state.voiceEngines || []).find(e => e.id === engineId);
+    if (!eng) return;
 
-    const origText = btn ? btn.textContent : '';
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = '⏳ テスト中...';
-    }
-    if (statusEl) {
-      statusEl.textContent = '接続テスト中...';
-      statusEl.style.color = 'var(--text-muted)';
+    if (btnRetest) btnRetest.disabled = true;
+    if (statusCell) {
+      statusCell.innerHTML = `<span style="color: var(--text-muted); font-size: 0.85rem;">⏳ 確認中...</span>`;
     }
 
     try {
@@ -6847,62 +7144,96 @@ document.addEventListener('DOMContentLoaded', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: engineId,
-          type: type,
-          engineType: type,
-          baseUrl: url,
-          timeoutSeconds: timeout
+          provider: eng.id,
+          type: eng.type,
+          engineType: eng.type,
+          baseUrl: eng.baseUrl,
+          timeoutSeconds: eng.timeoutSeconds || 5.0
         })
       });
       const data = await res.json();
       if (res.ok && data.success && data.isAvailable) {
-        // state 側の該当エンジン情報にハードウェア判定とレイテンシを記録
-        const target = (state.voiceEngines || []).find(e => e.id === engineId);
-        if (target) {
-          target.isGpu = !!data.isGpu;
-          target.deviceLabel = data.deviceLabel || (data.isGpu ? 'CUDA' : 'CPU');
-          target.latencyMs = data.latencyMs;
-        }
-
-        // カードヘッダーのバッジをリアルタイム更新
-        const badgeSlot = card.querySelector('.eng-hw-badge-slot');
-        if (badgeSlot) {
-          if (data.isGpu) {
-            badgeSlot.innerHTML = `<span class="badge badge-hw-gpu" style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.75rem;">🚀 GPU (${escapeHtml(data.deviceLabel || 'CUDA')}) ${data.latencyMs != null ? data.latencyMs + 'ms' : ''}</span>`;
-          } else {
-            badgeSlot.innerHTML = `<span class="badge badge-hw-cpu" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); font-size: 0.75rem;">🐢 CPU ${data.latencyMs != null ? data.latencyMs + 'ms' : ''}</span>`;
-          }
-        }
-
-        showToast(`[${name}] ${data.message || '接続に成功しました'}`, 'success');
-        if (statusEl) {
-          const hwDesc = data.isGpu ? `🚀 GPU (${data.deviceLabel || 'CUDA'})` : `🐢 CPU`;
-          const latencyDesc = data.latencyMs != null ? ` / 合成 ${data.latencyMs}ms` : '';
-          statusEl.textContent = `✅ 接続成功 (${data.voicesCount || 0}話者) [${hwDesc}${latencyDesc}]`;
-          statusEl.style.color = 'var(--success)';
-        }
+        eng.isOnline = true;
+        eng.isGpu = !!data.isGpu;
+        eng.deviceLabel = data.deviceLabel || (data.isGpu ? 'CUDA' : 'CPU');
+        eng.latencyMs = data.latencyMs;
+        eng.lastError = null;
+        showToast(`[${eng.name}] 稼働中 (応答: ${data.latencyMs != null ? data.latencyMs + 'ms' : 'OK'})`, 'success');
       } else {
-        showToast(`[${name}] ${data.message || '接続テストに失敗しました'}`, 'error');
-        if (statusEl) {
-          statusEl.textContent = `❌ ${data.message || '接続失敗'}`;
-          statusEl.style.color = 'var(--danger)';
-        }
+        eng.isOnline = false;
+        eng.lastError = data.message || '接続不可';
+        showToast(`[${eng.name}] 接続失敗: ${eng.lastError}`, 'warning');
       }
     } catch (err) {
-      showToast(`[${name}] 接続エラー: ${err.message}`, 'error');
-      if (statusEl) {
-        statusEl.textContent = `❌ 通信エラー: ${err.message}`;
-        statusEl.style.color = 'var(--danger)';
-      }
+      eng.isOnline = false;
+      eng.lastError = err.message;
+      showToast(`[${eng.name}] 通信エラー: ${err.message}`, 'error');
     } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = origText;
+      if (btnRetest) btnRetest.disabled = false;
+      renderVoiceEnginesTable();
+    }
+  }
+
+  async function checkAllVoiceEnginesStatus() {
+    const engines = state.voiceEngines || [];
+    if (engines.length === 0) {
+      showToast('登録されている音声エンジンがありません', 'info');
+      return;
+    }
+
+    const btnCheckAll = document.getElementById('btnCheckAllVoiceEngines');
+    const origText = btnCheckAll ? btnCheckAll.innerHTML : '';
+    if (btnCheckAll) {
+      btnCheckAll.disabled = true;
+      btnCheckAll.innerHTML = '<span>⏳ 全台確認中...</span>';
+    }
+
+    try {
+      showToast('全台の死活監視を開始します...', 'info');
+      await Promise.all(engines.map(async (eng) => {
+        try {
+          const res = await fetch('/api/tts/providers/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: eng.id,
+              type: eng.type,
+              engineType: eng.type,
+              baseUrl: eng.baseUrl,
+              timeoutSeconds: eng.timeoutSeconds || 5.0
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.success && data.isAvailable) {
+            eng.isOnline = true;
+            eng.isGpu = !!data.isGpu;
+            eng.deviceLabel = data.deviceLabel || (data.isGpu ? 'CUDA' : 'CPU');
+            eng.latencyMs = data.latencyMs;
+            eng.lastError = null;
+          } else {
+            eng.isOnline = false;
+            eng.lastError = data.message || '接続不可';
+          }
+        } catch (err) {
+          eng.isOnline = false;
+          eng.lastError = err.message;
+        }
+      }));
+
+      renderVoiceEnginesTable();
+      const onlineCount = engines.filter(e => e.isOnline).length;
+      showToast(`全台の死活確認が完了しました (稼働中: ${onlineCount} / ${engines.length})`, 'success');
+    } catch (err) {
+      showToast('死活確認エラー: ' + err.message, 'error');
+    } finally {
+      if (btnCheckAll) {
+        btnCheckAll.disabled = false;
+        btnCheckAll.innerHTML = origText;
       }
     }
   }
 
-  async function saveTtsProvidersSettings() {
+  async function saveTtsProvidersSettings(silent = false) {
     const getEl = (...ids) => {
       for (const id of ids) {
         const el = document.getElementById(id);
@@ -6913,27 +7244,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btn = getEl('btnSaveTtsSettings', 'btnSaveTtsProviders');
     const origText = btn ? btn.textContent : '';
-    if (btn) {
+    if (btn && !silent) {
       btn.disabled = true;
       btn.textContent = '⏳ 保存中...';
     }
-
-    // 動的ローカル音声エンジンの最新値を DOM から抽出
-    const updatedEngines = (state.voiceEngines || []).map(eng => {
-      const card = document.querySelector(`[data-eng-card="${eng.id}"]`);
-      if (!card) return eng;
-      return {
-        id: eng.id,
-        name: card.querySelector('.eng-name')?.value?.trim() || eng.name,
-        type: card.querySelector('.eng-type')?.value?.trim() || eng.type,
-        enabled: card.querySelector('.eng-enable-toggle')?.checked ?? eng.enabled,
-        baseUrl: card.querySelector('.eng-url')?.value?.trim() || eng.baseUrl,
-        timeoutSeconds: parseFloat(card.querySelector('.eng-timeout')?.value) || eng.timeoutSeconds || 5.0,
-        defaultVoiceId: card.querySelector('.eng-voice')?.value?.trim() || eng.defaultVoiceId,
-        preload: card.querySelector('.eng-preload')?.checked ?? eng.preload ?? true
-      };
-    });
-    state.voiceEngines = updatedEngines;
 
     const payload = {
       urgentFastest: getEl('settingTtsUrgentFastest', 'ttsUrgentFastest')?.checked ?? true,
@@ -6946,9 +7260,11 @@ document.addEventListener('DOMContentLoaded', () => {
       gcp: {
         enabled: getEl('settingGcpEnabled', 'ttsGcpEnabled')?.checked ?? false,
         apiKey: getEl('settingGcpApiKey', 'ttsGcpKey')?.value?.trim() || '',
-        timeoutSeconds: parseFloat(getEl('settingGcpTimeout', 'ttsGcpTimeout')?.value) || 5.0
+        timeoutSeconds: parseFloat(getEl('settingGcpTimeout', 'ttsGcpTimeout')?.value) || 5.0,
+        defaultVoiceId: getEl('settingGcpDefaultVoice', 'ttsGcpVoice')?.value || 'gcp:ja-JP-Neural2-B',
+        fallbackOnQuotaNearLimit: getEl('settingGcpFallbackNearLimit', 'ttsGcpFallbackNearLimit')?.checked ?? true
       },
-      voice_engines: updatedEngines
+      voice_engines: state.voiceEngines || []
     };
 
     try {
@@ -6959,7 +7275,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast('外部音声エンジン (TTS) 設定を保存しました', 'success');
+        if (!silent) {
+          showToast('外部音声エンジン (TTS) 設定を保存しました', 'success');
+        }
         if (typeof loadVoices === 'function') {
           await loadVoices();
         }
@@ -6968,9 +7286,12 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data.detail || data.error || '保存に失敗しました');
       }
     } catch (err) {
-      showToast('設定保存エラー: ' + err.message, 'error');
+      if (!silent) {
+        showToast('設定保存エラー: ' + err.message, 'error');
+      }
+      console.error('saveTtsProvidersSettings error:', err);
     } finally {
-      if (btn) {
+      if (btn && !silent) {
         btn.disabled = false;
         btn.textContent = origText || '💾 音声エンジン設定を保存';
       }
@@ -7053,11 +7374,266 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setupTtsProvidersSettings() {
     const bindClick = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
-    bindClick('btnSaveTtsSettings', saveTtsProvidersSettings);
-    bindClick('btnSaveTtsProviders', saveTtsProvidersSettings);
-    bindClick('btnAddVoiceEngine', addNewVoiceEngine);
+    bindClick('btnSaveTtsSettings', () => saveTtsProvidersSettings(false));
+    bindClick('btnSaveTtsProviders', () => saveTtsProvidersSettings(false));
     bindClick('btnTestGcp', () => testTtsProvider('gcp', 'btnTestGcp', ['statusGcpTest', 'ttsGcpStatus']));
     bindClick('btnTestAzure', () => testTtsProvider('azure', 'btnTestAzure', ['statusAzureTest', 'ttsAzureStatus']));
+    setupVoiceEngineRegistrationForm();
+  }
+
+  /* ==========================================================================
+     システムログ・コンソール監視タブ制御ロジック
+     ========================================================================== */
+  const logsState = {
+    autoRefresh: true,
+    autoScroll: true,
+    pollIntervalMs: 3000,
+    timerId: null,
+    searchDebounceTimer: null,
+    isLoading: false,
+    filterLevel: 'ALL',
+    filterModule: 'ALL',
+    searchKeyword: '',
+  };
+
+  async function loadSystemLogs(forceScroll = false) {
+    if (logsState.isLoading) return;
+    const terminal = document.getElementById('logsTerminal');
+    if (!terminal) return;
+
+    logsState.isLoading = true;
+    try {
+      const params = new URLSearchParams({
+        limit: '500',
+        level: logsState.filterLevel || 'ALL',
+        module: logsState.filterModule || 'ALL',
+      });
+      if (logsState.searchKeyword) {
+        params.append('search', logsState.searchKeyword.trim());
+      }
+
+      const res = await fetch(`/api/logs?${params.toString()}`);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+
+      // ステータスバッジ更新
+      const elCount = document.getElementById('lblLogsCount');
+      const elSize = document.getElementById('lblLogsSize');
+      const elArchiveSize = document.getElementById('lblLogsArchiveSize');
+      const elArchiveGens = document.getElementById('lblLogsArchiveGens');
+      if (elCount) {
+        const totalNum = data.seamless_total || data.total_lines || 0;
+        elCount.textContent = totalNum.toLocaleString();
+      }
+      if (elSize) elSize.textContent = `${Math.round((data.file_size || 0) / 1024)} KB`;
+      if (elArchiveSize) elArchiveSize.textContent = `${((data.archive_size || 0) / (1024 * 1024)).toFixed(1)} MB`;
+      if (elArchiveGens) elArchiveGens.textContent = data.archive_generations || 0;
+
+      // ログ行のレンダリング
+      const lines = data.lines || [];
+      if (lines.length === 0) {
+        terminal.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 40px 0;">表示条件に一致するログはありません。</div>';
+      } else {
+        const keyword = (logsState.searchKeyword || '').trim().toLowerCase();
+        const html = lines.map(line => {
+          const raw = String(line.raw || '');
+          const lvl = String(line.level || 'INFO').toUpperCase();
+          const mod = String(line.module || 'SYSTEM');
+          const ts = String(line.timestamp || '');
+          const num = line.line_num || '';
+
+          // モジュールクラスのサニタイズ
+          const modClean = mod.replace(/[^a-zA-Z0-9]/g, '');
+          const isErr = lvl === 'ERROR' || raw.toUpperCase().includes('TRACEBACK');
+
+          // キーワードハイライト処理
+          let msgHtml = escapeHtml(line.message || raw);
+          if (keyword) {
+            const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            msgHtml = msgHtml.replace(regex, '<span class="log-match-highlight">$1</span>');
+          }
+
+          return `<div class="log-line-item ${isErr ? 'has-error' : ''}"><span class="log-line-num">${num}</span>${ts ? `<span class="log-timestamp">[${escapeHtml(ts)}]</span>` : ''}<span class="log-badge-level level-${escapeHtml(lvl)}">${escapeHtml(lvl)}</span><span class="log-badge-module mod-${escapeHtml(modClean)}">[${escapeHtml(mod)}]</span><span class="log-message-content ${isErr ? 'has-error' : ''}">${msgHtml}</span></div>`;
+        }).join('');
+
+        terminal.innerHTML = html;
+      }
+
+      // 自動スクロール処理
+      if (logsState.autoScroll || forceScroll) {
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    } catch (err) {
+      console.warn('[Logs] ログ取得エラー:', err);
+    } finally {
+      logsState.isLoading = false;
+    }
+  }
+
+  function setupSystemLogsTab() {
+    const terminal = document.getElementById('logsTerminal');
+    const switchAutoRefresh = document.getElementById('switchLogsAutoRefresh');
+    const btnAutoScroll = document.getElementById('btnLogsAutoScroll');
+    const lblAutoScrollText = document.getElementById('lblLogsAutoScrollText');
+    const btnRefresh = document.getElementById('btnLogsRefresh');
+    const btnDownloadCurrent = document.getElementById('btnLogsDownloadCurrent');
+    const btnDownloadArchive = document.getElementById('btnLogsDownloadArchive');
+    const btnClear = document.getElementById('btnLogsClear');
+    const btnJumpBottom = document.getElementById('btnLogsJumpBottom');
+    const selectLevel = document.getElementById('selectLogsLevel');
+    const selectModule = document.getElementById('selectLogsModule');
+    const inputSearch = document.getElementById('inputLogsSearch');
+
+    // 1. 自動更新スイッチ
+    if (switchAutoRefresh) {
+      switchAutoRefresh.addEventListener('change', (e) => {
+        logsState.autoRefresh = e.target.checked;
+        const dot = document.getElementById('logsLiveDot');
+        if (dot) {
+          dot.style.display = logsState.autoRefresh ? 'inline-block' : 'none';
+        }
+      });
+    }
+
+    // 2. 末尾自動スクロールトグル
+    const updateAutoScrollUI = () => {
+      if (lblAutoScrollText) {
+        lblAutoScrollText.textContent = logsState.autoScroll ? '⬇️ 自動スクロール: ON' : '⬇️ 自動スクロール: OFF';
+      }
+      if (btnAutoScroll) {
+        if (logsState.autoScroll) {
+          btnAutoScroll.classList.add('btn-primary');
+          btnAutoScroll.classList.remove('btn-secondary');
+        } else {
+          btnAutoScroll.classList.remove('btn-primary');
+          btnAutoScroll.classList.add('btn-secondary');
+        }
+      }
+      if (btnJumpBottom) {
+        btnJumpBottom.style.display = logsState.autoScroll ? 'none' : 'block';
+      }
+    };
+
+    if (btnAutoScroll) {
+      btnAutoScroll.addEventListener('click', () => {
+        logsState.autoScroll = !logsState.autoScroll;
+        updateAutoScrollUI();
+        if (logsState.autoScroll && terminal) {
+          terminal.scrollTop = terminal.scrollHeight;
+        }
+      });
+    }
+
+    // ターミナルの手動スクロール監視 (上にスクロールしたら自動スクロール一時解除)
+    if (terminal) {
+      terminal.addEventListener('scroll', () => {
+        const isNearBottom = terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight < 40;
+        if (isNearBottom) {
+          if (!logsState.autoScroll) {
+            logsState.autoScroll = true;
+            updateAutoScrollUI();
+          }
+        } else {
+          if (logsState.autoScroll) {
+            logsState.autoScroll = false;
+            updateAutoScrollUI();
+          }
+        }
+      });
+    }
+
+    if (btnJumpBottom) {
+      btnJumpBottom.addEventListener('click', () => {
+        logsState.autoScroll = true;
+        updateAutoScrollUI();
+        if (terminal) {
+          terminal.scrollTop = terminal.scrollHeight;
+        }
+      });
+    }
+
+    // 3. 手動更新ボタン
+    if (btnRefresh) {
+      btnRefresh.addEventListener('click', () => {
+        loadSystemLogs(true);
+      });
+    }
+
+    // 4. フィルタ変更イベント
+    if (selectLevel) {
+      selectLevel.addEventListener('change', (e) => {
+        logsState.filterLevel = e.target.value;
+        loadSystemLogs(true);
+      });
+    }
+
+    if (selectModule) {
+      selectModule.addEventListener('change', (e) => {
+        logsState.filterModule = e.target.value;
+        loadSystemLogs(true);
+      });
+    }
+
+    if (inputSearch) {
+      inputSearch.addEventListener('input', (e) => {
+        clearTimeout(logsState.searchDebounceTimer);
+        logsState.searchDebounceTimer = setTimeout(() => {
+          logsState.searchKeyword = e.target.value;
+          loadSystemLogs(true);
+        }, 300);
+      });
+    }
+
+    // 5. ダウンロードボタン
+    if (btnDownloadCurrent) {
+      btnDownloadCurrent.addEventListener('click', () => {
+        window.open('/api/logs/download?target=current', '_blank');
+      });
+    }
+
+    if (btnDownloadArchive) {
+      btnDownloadArchive.addEventListener('click', () => {
+        window.open('/api/logs/download?target=archive', '_blank');
+      });
+    }
+
+    // 6. ログクリアボタン
+    if (btnClear) {
+      btnClear.addEventListener('click', async () => {
+        if (!confirm('現在のコンテナログ (/logs/container.log) をアーカイブへ退避し、アクティブログをクリアしますか？')) {
+          return;
+        }
+        try {
+          const res = await fetch('/api/logs', { method: 'DELETE' });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          showToast('現在のログをアーカイブへ退避し、クリアしました', 'success');
+          loadSystemLogs(true);
+        } catch (err) {
+          showToast('ログクリア失敗: ' + err.message, 'error');
+        }
+      });
+    }
+
+    // 7. 定期ポーリングループ (3秒)
+    if (logsState.timerId) clearInterval(logsState.timerId);
+    logsState.timerId = setInterval(() => {
+      const logsPane = document.getElementById('tab-logs');
+      if (logsPane && logsPane.classList.contains('active') && logsState.autoRefresh) {
+        loadSystemLogs(false);
+      }
+    }, logsState.pollIntervalMs);
+
+    updateAutoScrollUI();
+  }
+
+  // 起動初期化
+  async function init() {
+    setupEventListeners();
+    setupTtsProvidersSettings();
+    setupSystemLogsTab();
+    await loadInitialData();
   }
 
   // 起動実行

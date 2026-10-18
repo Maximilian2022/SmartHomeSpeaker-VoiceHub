@@ -3,7 +3,9 @@ from typing import List, Dict, Any, Optional
 import httpx
 from app.services.tts.base import BaseTtsProvider
 from app.services.tts.usage_tracker import tts_usage_tracker
-from app.core.logger import logger
+from app.core.logger import get_logger
+
+log = get_logger("TTS.GCP")
 
 DEFAULT_GCP_VOICES = [
     {"id": "ja-JP-Neural2-B", "name": "Neural2-B (女性・標準)", "gender": "Female", "type": "neural"},
@@ -24,7 +26,8 @@ class GcpTtsProvider(BaseTtsProvider):
         api_key: str = "",
         enabled: bool = False,
         timeout_seconds: float = 5.0,
-        default_voice_id: str = "gcp:ja-JP-Neural2-B"
+        default_voice_id: str = "gcp:ja-JP-Neural2-B",
+        fallback_on_quota_near_limit: bool = True
     ):
         super().__init__(
             provider_id="gcp",
@@ -34,9 +37,17 @@ class GcpTtsProvider(BaseTtsProvider):
             default_voice_id=default_voice_id
         )
         self.api_key = api_key
+        self.fallback_on_quota_near_limit = fallback_on_quota_near_limit
         self._cached_voices: List[Dict[str, Any]] = []
 
-    def update_config(self, api_key: Optional[str] = None, enabled: Optional[bool] = None, timeout_seconds: Optional[float] = None, default_voice_id: Optional[str] = None):
+    def update_config(
+        self,
+        api_key: Optional[str] = None,
+        enabled: Optional[bool] = None,
+        timeout_seconds: Optional[float] = None,
+        default_voice_id: Optional[str] = None,
+        fallback_on_quota_near_limit: Optional[bool] = None
+    ):
         if api_key is not None:
             self.api_key = api_key
         if enabled is not None:
@@ -45,7 +56,13 @@ class GcpTtsProvider(BaseTtsProvider):
             self.timeout_seconds = timeout_seconds
         if default_voice_id is not None:
             self.default_voice_id = default_voice_id
+        if fallback_on_quota_near_limit is not None:
+            self.fallback_on_quota_near_limit = fallback_on_quota_near_limit
         self._cached_voices = []
+
+    def is_quota_near_limit(self, model_type: str = "neural", threshold: float = 0.9) -> bool:
+        """当月の無料枠使用量が9割（90%）に達しているか判定"""
+        return tts_usage_tracker.is_quota_near_limit("gcp", model_type, threshold)
 
     async def is_available(self) -> bool:
         if not self.enabled or not self.api_key:
@@ -166,6 +183,12 @@ class GcpTtsProvider(BaseTtsProvider):
                 json=payload
             )
             if res.status_code != 200:
+                if res.status_code == 403:
+                    log.error(f"[GCP Cloud TTS] HTTP 403 認証・権限エラー。API Key または Text-to-Speech API の有効化を確認してください: {res.text}")
+                elif res.status_code == 429:
+                    log.warning(f"[GCP Cloud TTS] HTTP 429 レートリミット/クォータ制限: {res.text}")
+                else:
+                    log.warning(f"[GCP Cloud TTS] HTTP {res.status_code} 合成エラー: {res.text}")
                 raise RuntimeError(f"[GcpTtsProvider] GCP Text-to-Speech エラー: {res.status_code} - {res.text}")
 
             res_data = res.json()
@@ -175,5 +198,6 @@ class GcpTtsProvider(BaseTtsProvider):
 
         # 文字数の消費を記録
         tts_usage_tracker.record_usage("gcp", len(text), model_type)
+        log.info(f"[GCP Cloud TTS] 音声合成成功 (voice={raw_voice_name}, model={model_type}, {len(text)}文字)")
 
         return base64.b64decode(audio_content_b64)

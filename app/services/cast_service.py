@@ -2,6 +2,9 @@ import asyncio
 import pychromecast
 from pychromecast.controllers.media import MediaController
 from typing import Dict, Any, Optional
+from app.core.logger import get_logger
+
+log = get_logger("Cast")
 
 class CastService:
     def __init__(self):
@@ -24,7 +27,7 @@ class CastService:
             self._cast_cache[key] = cast
             return cast
         except Exception as e:
-            print(f"[CastService] Connect failed to {host}:{port}: {e}")
+            log.warning(f"Connect failed to {host}:{port}: {e}")
             return None
 
     def _sync_play(self, host: str, port: int, media_url: str, volume_level: Optional[float] = None) -> bool:
@@ -39,10 +42,10 @@ class CastService:
             mc: MediaController = cast.media_controller
             mc.play_media(media_url, "audio/mp3")
             mc.block_until_active(timeout=4.0)
-            print(f"[CastService] Playback started on {host}:{port}: {media_url}")
+            log.info(f"Playback started on {host}:{port}: {media_url}")
             return True
         except Exception as e:
-            print(f"[CastService] Play failed on {host}:{port}: {e}")
+            log.error(f"Play failed on {host}:{port}: {e}")
             return False
 
     async def play_audio(

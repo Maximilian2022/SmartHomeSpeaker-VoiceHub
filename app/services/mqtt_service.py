@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional, List
 import aiomqtt
 from app.services.settings_service import settings_manager
 from app.services.speech_service import speech_service
+from app.services.scheduled_speech_service import scheduled_speech_service
 from app.services.dnd_service import dnd_service
 from app.core.logger import get_logger
 
@@ -381,10 +382,13 @@ class MQTTBrokerWorker:
                 pitch = data.get("pitch")
                 chime = data.get("chime")
                 urgent = bool(data.get("urgent", False))
+                time_spec = data.get("time") or data.get("at") or data.get("scheduled_at") or data.get("datetime")
             else:
                 text = str(data)
+                time_spec = None
         except (json.JSONDecodeError, TypeError):
             text = payload_str
+            time_spec = None
 
         text = text.strip()
         if not text:
@@ -393,24 +397,41 @@ class MQTTBrokerWorker:
         if not target:
             target = self.conf.get("defaultTarget") or ""
 
-        log.info(f"[MQTT Worker:{self.name} -> Speech] text='{text}', target='{target or 'DEFAULT'}', urgent={urgent}")
+        log.info(f"[MQTT Worker:{self.name} -> Speech] text='{text}', target='{target or 'DEFAULT'}', urgent={urgent}, time='{time_spec}'")
 
         try:
             broker_ip = self.conf.get("broker", "mqtt")
-            result = await speech_service.speak(
-                text=text,
-                targets=[target] if target else [],
-                voice=voice,
-                volume_level=volume,
-                speed=speed,
-                pitch=pitch,
-                chime=chime,
-                client_name=f"MQTT ({self.name}:{topic_str})",
-                client_ip=broker_ip,
-                source="mqtt",
-                source_label=f"MQTT ({self.name})",
-                urgent=urgent
-            )
+            if time_spec:
+                result = await scheduled_speech_service.schedule_or_speak(
+                    text=text,
+                    time_spec=time_spec,
+                    targets=[target] if target else [],
+                    voice=voice,
+                    volume_level=volume,
+                    rate=speed,
+                    pitch=pitch,
+                    chime=chime,
+                    client_name=f"MQTT ({self.name}:{topic_str})",
+                    client_ip=broker_ip,
+                    source="mqtt",
+                    source_label=f"MQTT ({self.name})",
+                    urgent=urgent
+                )
+            else:
+                result = await speech_service.speak(
+                    text=text,
+                    targets=[target] if target else [],
+                    voice=voice,
+                    volume_level=volume,
+                    rate=speed,
+                    pitch=pitch,
+                    chime=chime,
+                    client_name=f"MQTT ({self.name}:{topic_str})",
+                    client_ip=broker_ip,
+                    source="mqtt",
+                    source_label=f"MQTT ({self.name})",
+                    urgent=urgent
+                )
 
             # 完了イベントを発行 (接続中ワーカーへ)
             await self.publish_event("events/say", {

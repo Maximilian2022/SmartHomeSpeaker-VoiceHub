@@ -7,8 +7,11 @@ from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
 from app.services.speech_service import speech_service
 from app.services.tts_service import tts_service
+from app.services.scheduled_speech_service import scheduled_speech_service
 from app.core.security import validate_webhook_token, check_tunnel_access, is_tunnel_request
-from app.core.logger import logger
+from app.core.logger import get_logger
+
+log = get_logger("Speech")
 
 router = APIRouter()
 
@@ -31,6 +34,11 @@ class SayRequest(BaseModel):
     source: Optional[str] = None
     sourceLabel: Optional[str] = None
     token: Optional[str] = None
+    # 発声時刻指定オプション (過去: 即時発声 / 未来: 予約発声)
+    time: Optional[Any] = None
+    at: Optional[Any] = None
+    scheduled_at: Optional[Any] = Field(default=None, alias="scheduledAt")
+    datetime: Optional[Any] = None
 
 def extract_client_ip(request: Request) -> str:
     cf_ip = request.headers.get("cf-connecting-ip")
@@ -132,6 +140,25 @@ async def api_say_post(
     client_ip, client_name, source, source_label = resolve_client_metadata(request, raw_client, req.source, req.sourceLabel)
     is_urgent = bool(req.urgent or req.bypassDnd)
 
+    # 発声時刻指定オプション（過去: 即時発声 / 未来: 予約発声）
+    time_spec = req.time or req.at or req.scheduled_at or req.datetime
+    if time_spec:
+        return await scheduled_speech_service.schedule_or_speak(
+            text=req.text,
+            time_spec=time_spec,
+            targets=targets,
+            voice=req.voice,
+            rate=req.rate,
+            pitch=req.pitch,
+            volume_level=req.volumeLevel,
+            chime=req.chime,
+            client_name=client_name,
+            client_ip=client_ip,
+            source=source,
+            source_label=source_label,
+            urgent=is_urgent
+        )
+
     # 外部トンネル・外部Webhook経由、または明示的に async が指定されたときは即時応答
     is_tunnel = is_tunnel_request(request)
     is_explicit_sync = (req.wait is True)
@@ -212,13 +239,36 @@ async def api_say_get(
     pitch: Optional[str] = None,
     volumeLevel: Optional[str] = None,
     chime: Optional[str] = None,
-    urgent: bool = False
+    urgent: bool = False,
+    time: Optional[str] = None,
+    at: Optional[str] = None,
+    scheduled_at: Optional[str] = None,
 ):
     check_tunnel_access(request)
     validate_webhook_token(request)
 
     target_val = targets or devices
     client_ip, client_name, source, source_label = resolve_client_metadata(request, None, None, None)
+
+    # 発声時刻指定オプション（過去: 即時発声 / 未来: 予約発声）
+    time_spec = time or at or scheduled_at
+    if time_spec:
+        return await scheduled_speech_service.schedule_or_speak(
+            text=text,
+            time_spec=time_spec,
+            targets=target_val,
+            voice=voice,
+            rate=rate,
+            pitch=pitch,
+            volume_level=volumeLevel,
+            chime=chime,
+            client_name=client_name,
+            client_ip=client_ip,
+            source=source,
+            source_label=source_label,
+            urgent=urgent
+        )
+
     result = await speech_service.speak(
         text=text,
         targets=target_val,
@@ -234,6 +284,29 @@ async def api_say_get(
         urgent=urgent
     )
     return result
+
+@router.get("/api/scheduled-speeches")
+async def api_get_scheduled_speeches():
+    """現在待機中の予約発声タスクおよび履歴を取得"""
+    pending = scheduled_speech_service.get_pending_tasks()
+    all_tasks = scheduled_speech_service.get_all_tasks()
+    return {
+        "success": True,
+        "pending": pending,
+        "total_pending": len(pending),
+        "history": all_tasks[:50]
+    }
+
+@router.delete("/api/scheduled-speeches/{task_id}")
+async def api_cancel_scheduled_speech(task_id: str):
+    """待機中の予約発声タスクをキャンセル"""
+    success = await scheduled_speech_service.cancel_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found or already completed/cancelled")
+    return {
+        "success": True,
+        "message": f"Task '{task_id}' cancelled successfully"
+    }
 
 @router.get("/api/tts/voices")
 async def api_tts_voices():
@@ -291,7 +364,7 @@ async def detect_local_engine_hardware(base_url: str, provider_obj, test_voice_i
                 is_gpu = True
                 device_label = "🚀 GPU (実測高速判定)"
     except Exception as e:
-        logger.debug(f"[HardwareDetect] ベンチマーク試行失敗: {e}")
+        log.debug(f"[HardwareDetect] ベンチマーク試行失敗: {e}")
 
     return {
         "isGpu": is_gpu,

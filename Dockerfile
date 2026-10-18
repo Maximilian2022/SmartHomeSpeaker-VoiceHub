@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     ffmpeg \
     bash \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=Asia/Tokyo

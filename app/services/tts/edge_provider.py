@@ -3,7 +3,9 @@ import io
 from typing import List, Dict, Any
 import edge_tts
 from app.services.tts.base import BaseTtsProvider
-from app.core.logger import logger
+from app.core.logger import get_logger
+
+log = get_logger("TTS.Edge")
 
 EDGE_VOICES = [
     {"id": "ja-JP-NanamiNeural", "name": "七海 (Nanami) - 女性・標準", "gender": "Female"},
@@ -73,4 +75,6 @@ class EdgeTtsProvider(BaseTtsProvider):
         if not buffer:
             raise RuntimeError(f"Edge TTS returned empty audio for text: {text[:20]}")
 
-        return bytes(buffer)
+        audio_bytes = bytes(buffer)
+        log.info(f"[Edge-TTS] 音声合成成功 (voice={raw_id}, {len(text)}文字, size={len(audio_bytes)}B)")
+        return audio_bytes
