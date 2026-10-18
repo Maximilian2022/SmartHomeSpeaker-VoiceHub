@@ -151,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupOnvifSettings();
     setupMqttSettings();
     setupMcpSettings();
+    setupTtsProvidersSettings();
 
 
 
@@ -175,6 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await Promise.all([
       loadDevices(),
       loadVoices(),
+      loadTtsProvidersSettings(),
       loadSchedules(),
       loadHistory(),
       loadAlexaStatus(),
@@ -196,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('ステータス取得失敗');
       const data = await res.json();
       state.serverInfo = data;
+      state.serverStatus = data;
 
       if (el.serverStatusText) el.serverStatusText.textContent = `稼働中 (${data.serverIp}:${data.port})`;
       updateDefaultDeviceDisplay();
@@ -679,23 +682,71 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderVoiceSelects() {
-    let optionsHtml = '';
+    if (!state.voices || state.voices.length === 0) return;
+
+    // プロバイダーごとにグループ化
+    const groups = {};
+    const providerOrder = ['azure', 'gcp', 'voicevox', 'sharevox', 'coeiroink', 'edge'];
+    const providerLabels = {
+      azure: 'Azure Speech (公式推奨・SLAクラウド)',
+      gcp: 'Google Cloud TTS (高品位クラウド)',
+      voicevox: 'VOICEVOX',
+      sharevox: 'SHAREVOX',
+      coeiroink: 'COEIROINK',
+      edge: 'Edge-TTS (標準)'
+    };
+
+    const isAzureActive = !!state.ttsProvidersStatus?.isAzureActive;
+
     state.voices.forEach(v => {
-      const isSelected = v.id === 'ja-JP-NanamiNeural' ? 'selected' : '';
-      optionsHtml += `<option value="${v.id}" ${isSelected}>${v.name}</option>`;
+      const p = v.provider || 'edge';
+      // Azure有効時は通常選択からEdge-TTSを除外
+      if (isAzureActive && p === 'edge') return;
+      if (!groups[p]) groups[p] = [];
+      groups[p].push(v);
     });
 
-    el.sayVoiceSelect.innerHTML = optionsHtml;
-    el.schedVoice.innerHTML = optionsHtml;
+    let optionsHtml = '';
+    const allProviders = [...providerOrder, ...Object.keys(groups).filter(k => !providerOrder.includes(k))];
+    allProviders.forEach(p => {
+      if (groups[p] && groups[p].length > 0) {
+        const label = providerLabels[p] || groups[p][0].providerName || p;
+        optionsHtml += `<optgroup label="${escapeHtml(label)}">`;
+        groups[p].forEach(v => {
+          const isSelected = (isAzureActive && v.id === 'azure:ja-JP-NanamiNeural') || (!isAzureActive && v.id === 'ja-JP-NanamiNeural') ? 'selected' : '';
+          optionsHtml += `<option value="${escapeHtml(v.id)}" ${isSelected}>${escapeHtml(v.name)}</option>`;
+        });
+        optionsHtml += `</optgroup>`;
+      }
+    });
 
+    if (el.sayVoiceSelect) {
+      const cur = el.sayVoiceSelect.value;
+      el.sayVoiceSelect.innerHTML = optionsHtml;
+      if (cur) el.sayVoiceSelect.value = cur;
+    }
+    if (el.schedVoice) {
+      const cur = el.schedVoice.value;
+      el.schedVoice.innerHTML = optionsHtml;
+      if (cur) el.schedVoice.value = cur;
+    }
     const calVoice = document.getElementById('calVoice');
     if (calVoice) {
+      const cur = calVoice.value;
       calVoice.innerHTML = optionsHtml;
+      if (cur) calVoice.value = cur;
     }
-
     const bVoice = document.getElementById('builderVoice');
     if (bVoice) {
+      const cur = bVoice.value;
       bVoice.innerHTML = '<option value="">デフォルト (Nanami - 女性)</option>' + optionsHtml;
+      if (cur) bVoice.value = cur;
+    }
+    const modalCalVoice = document.getElementById('modalCalVoice');
+    if (modalCalVoice) {
+      const cur = modalCalVoice.value;
+      modalCalVoice.innerHTML = optionsHtml;
+      if (cur) modalCalVoice.value = cur;
     }
   }
 
@@ -1207,6 +1258,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (subtabId === 'subtab-settings-mcp') {
               if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
               if (typeof updateMcpStatus === 'function') updateMcpStatus();
+            } else if (subtabId === 'subtab-settings-tts') {
+              if (typeof loadTtsProvidersSettings === 'function') loadTtsProvidersSettings();
             }
 
 
@@ -5325,7 +5378,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mcpConnectionMode === 'local') {
       sseUrl = `${proto}//${host}/mcp/sse`;
     } else {
-      let tunnelDomain = state.serverStatus?.tunnelDomain;
+      let tunnelDomain = state.serverInfo?.tunnelDomain || state.serverStatus?.tunnelDomain || state.settings?.tunnelDomain;
       if (!tunnelDomain) {
         const isIp = /^[0-9.]+(:[0-9]+)?$/.test(host);
         tunnelDomain = isIp ? 'your-tunnel-domain.com' : host;
@@ -6360,6 +6413,525 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnTestQuake')?.addEventListener('click', () => triggerDisasterTest('quake', '震度速報テスト'));
     document.getElementById('btnTestWarning')?.addEventListener('click', () => triggerDisasterTest('warning', '気象警報テスト'));
     document.getElementById('btnTestWeatherSummary')?.addEventListener('click', () => triggerDisasterTest('weather', '朝の天気サマリーテスト'));
+  }
+
+  // ================= 8.8. 外部音声エンジン (TTS) 設定 =================
+  async function loadTtsProvidersSettings() {
+    try {
+      const res = await fetch('/api/tts/providers');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || data.success === false) return;
+
+      const tp = data.providers || {};
+      const usage = data.usage || {};
+      const status = data.status || {};
+
+      // 共通ヘルパー: ID取得 (新旧両対応)
+      const getEl = (...ids) => {
+        for (const id of ids) {
+          const el = document.getElementById(id);
+          if (el) return el;
+        }
+        return null;
+      };
+
+      // 緊急最速並行
+      const chkFastest = getEl('settingTtsUrgentFastest', 'ttsUrgentFastest');
+      if (chkFastest) chkFastest.checked = data.urgentFastest ?? tp.urgentFastest !== false;
+
+      // 1. Azure
+      if (tp.azure) {
+        const aConf = tp.azure.config || tp.azure;
+        const chk = getEl('settingAzureEnabled', 'ttsAzureEnabled');
+        const key = getEl('settingAzureApiKey', 'ttsAzureKey');
+        const reg = getEl('settingAzureRegion', 'ttsAzureRegion');
+        const to = getEl('settingAzureTimeout', 'ttsAzureTimeout');
+        if (chk) chk.checked = !!(tp.azure.enabled ?? aConf.enabled);
+        if (key) key.value = aConf.apiKey || '';
+        if (reg) reg.value = aConf.region || 'japaneast';
+        if (to) to.value = aConf.timeoutSeconds || 5;
+      }
+
+      // 2. GCP
+      if (tp.gcp) {
+        const gConf = tp.gcp.config || tp.gcp;
+        const chk = getEl('settingGcpEnabled', 'ttsGcpEnabled');
+        const key = getEl('settingGcpApiKey', 'ttsGcpKey');
+        const to = getEl('settingGcpTimeout', 'ttsGcpTimeout');
+        if (chk) chk.checked = !!(tp.gcp.enabled ?? gConf.enabled);
+        if (key) key.value = gConf.apiKey || '';
+        if (to) to.value = gConf.timeoutSeconds || 5;
+      }
+
+      // 3. 動的ローカル音声エンジン群 (voice_engines) の反映
+      state.voiceEngines = data.voice_engines || tp.voice_engines || [];
+      renderVoiceEnginesList();
+
+      // 無料枠使用量プログレスバーの更新
+      // GCP Neural2 (1,000,000文字)
+      const gcpNeuralUsed = usage.gcp?.neural?.used ?? usage.gcp_neural ?? 0;
+      const gcpNeuralMax = usage.gcp?.neural?.limit ?? 1000000;
+      const gcpNeuralPct = Math.min(100, Math.round((gcpNeuralUsed / gcpNeuralMax) * 100));
+      const elGcpNeuralTxt = getEl('labelGcpUsageNeural', 'ttsGcpNeuralUsage');
+      const elGcpNeuralBar = getEl('barGcpUsageNeural', 'ttsGcpNeuralBar');
+      if (elGcpNeuralTxt) elGcpNeuralTxt.textContent = `${gcpNeuralUsed.toLocaleString()} / ${gcpNeuralMax.toLocaleString()} 文字 (${gcpNeuralPct}%)`;
+      if (elGcpNeuralBar) {
+        elGcpNeuralBar.style.width = `${gcpNeuralPct}%`;
+      }
+
+      // Azure (500,000文字)
+      const azureUsed = usage.azure?.neural?.used ?? usage.azure ?? 0;
+      const azureMax = usage.azure?.neural?.limit ?? 500000;
+      const azurePct = Math.min(100, Math.round((azureUsed / azureMax) * 100));
+      const elAzureTxt = getEl('labelAzureUsage', 'ttsAzureUsage');
+      const elAzureBar = getEl('barAzureUsage', 'ttsAzureBar');
+      if (elAzureTxt) elAzureTxt.textContent = `${azureUsed.toLocaleString()} / ${azureMax.toLocaleString()} 文字 (${azurePct}%)`;
+      if (elAzureBar) {
+        elAzureBar.style.width = `${azurePct}%`;
+      }
+
+      // ヘッダーバッジの更新 (未接続 / 有効)
+      const badgeMap = {
+        azure: ['badgeAzureCount', 'ttsAzureStatus'],
+        gcp: ['badgeGcpCount', 'ttsGcpStatus']
+      };
+
+      for (const [pid, ids] of Object.entries(badgeMap)) {
+        const pObj = tp[pid];
+        const isEnabled = pObj?.enabled ?? false;
+        const b = getEl(...ids);
+        if (b) {
+          if (!isEnabled) {
+            b.textContent = '未接続';
+            b.className = 'badge badge-secondary';
+          } else {
+            b.textContent = '有効';
+            b.className = 'badge badge-success';
+          }
+        }
+      }
+
+      // Edge-TTS の役割表示更新（Azure有効時は最終フォールバック待機中）
+      const isAzureActive = !!data.isAzureActive;
+      const badgeEdge = document.getElementById('badgeEdgeTtsStatus');
+      const labelRole = document.getElementById('labelEdgeTtsRole');
+      const descEdge = document.getElementById('descEdgeTtsStatus');
+      if (badgeEdge) {
+        if (isAzureActive) {
+          badgeEdge.textContent = '🛡️ 最終フォールバック待機中';
+          badgeEdge.style.background = 'rgba(99, 102, 241, 0.2)';
+          badgeEdge.style.color = '#818cf8';
+          badgeEdge.style.border = '1px solid rgba(99, 102, 241, 0.4)';
+          if (labelRole) labelRole.textContent = '全滅時セーフティネット';
+          if (descEdge) descEdge.textContent = '※ Azure Speech が有効化されているため、通常の話者選択からは除外され、全音声エンジンが通信障害または障害停止した際の最後の命綱（最終フォールバック）として安全に待機しています。';
+        } else {
+          badgeEdge.textContent = '常時有効';
+          badgeEdge.style.background = 'rgba(34, 197, 94, 0.2)';
+          badgeEdge.style.color = '#4ade80';
+          badgeEdge.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+          if (labelRole) labelRole.textContent = '標準音声';
+          if (descEdge) descEdge.textContent = '七海（Nanami）、圭太（Keita）をはじめとする 7名の話者が追加設定なしでご利用いただけます。外部エンジンが未設定・オフラインの場合も自動的にこちらで発話されます。';
+        }
+      }
+      if (typeof renderVoiceSelects === 'function') {
+        renderVoiceSelects();
+      }
+    } catch (err) {
+      console.error('loadTtsProvidersSettings error:', err);
+    }
+  }
+
+  // ================= 動的ローカル音声エンジン管理 =================
+  function renderVoiceEnginesList() {
+    const container = document.getElementById('voiceEnginesList');
+    if (!container) return;
+
+    const engines = state.voiceEngines || [];
+    const badgeTotal = document.getElementById('badgeVoiceEnginesTotal');
+    if (badgeTotal) {
+      badgeTotal.textContent = `${engines.length}件登録`;
+    }
+
+    if (engines.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 24px; color: var(--text-muted); background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px dashed rgba(255,255,255,0.1);">
+          登録されているローカル音声エンジンがありません。「➕ 音声エンジンを追加」から VOICEVOX / SHAREVOX / COEIROINK を追加してください。
+        </div>
+      `;
+      return;
+    }
+
+    const typeIcons = {
+      voicevox: '🟢',
+      sharevox: '🔵',
+      coeiroink: '🟣'
+    };
+
+    let html = '';
+    engines.forEach(eng => {
+      const icon = typeIcons[eng.type] || '🎙️';
+      const typeLabel = eng.type === 'voicevox' ? 'VOICEVOX 互換' : (eng.type === 'sharevox' ? 'SHAREVOX 互換' : 'COEIROINK v2 互換');
+      const isEnabled = !!eng.enabled;
+
+      html += `
+        <div class="card glass-card engine-card" data-eng-card="${escapeHtml(eng.id)}" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 14px 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.2rem;">${icon}</span>
+              <strong style="font-size: 1rem; color: #fff;">${escapeHtml(eng.name || '名称未設定')}</strong>
+              <span class="badge" style="background: rgba(255,255,255,0.08); font-size: 0.75rem;">${typeLabel}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <label class="switch" title="このエンジンを有効化">
+                <input type="checkbox" class="eng-enable-toggle" data-eng-id="${escapeHtml(eng.id)}" ${isEnabled ? 'checked' : ''}>
+                <span class="slider round"></span>
+              </label>
+              <button type="button" class="btn btn-danger btn-sm btn-delete-eng" data-eng-id="${escapeHtml(eng.id)}" title="このエンジンを削除" style="padding: 4px 8px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171;">
+                🗑️ 削除
+              </button>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.8rem;">表示名</label>
+              <input type="text" class="form-input eng-name" data-eng-id="${escapeHtml(eng.id)}" value="${escapeHtml(eng.name || '')}" placeholder="例: VOICEVOX (メインPC)">
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.8rem;">エンジン種別</label>
+              <select class="form-select eng-type" data-eng-id="${escapeHtml(eng.id)}">
+                <option value="voicevox" ${eng.type === 'voicevox' ? 'selected' : ''}>VOICEVOX 互換</option>
+                <option value="sharevox" ${eng.type === 'sharevox' ? 'selected' : ''}>SHAREVOX 互換</option>
+                <option value="coeiroink" ${eng.type === 'coeiroink' ? 'selected' : ''}>COEIROINK v2 互換</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.8rem;">接続先 URL (LAN IP / Docker)</label>
+              <input type="text" class="form-input eng-url" data-eng-id="${escapeHtml(eng.id)}" value="${escapeHtml(eng.baseUrl || '')}" placeholder="http://192.168.11.xxx:50021">
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.8rem;">タイムアウト (秒)</label>
+              <input type="number" class="form-input eng-timeout" data-eng-id="${escapeHtml(eng.id)}" min="1" max="30" value="${eng.timeoutSeconds || 5}">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px;">
+            <div class="form-group" style="margin: 0;">
+              <label class="form-label" style="font-size: 0.8rem;">推奨ボイスID (初期値・テスト用)</label>
+              <input type="text" class="form-input eng-voice" data-eng-id="${escapeHtml(eng.id)}" value="${escapeHtml(eng.defaultVoiceId || '')}" placeholder="例: voicevox:2 または coeiroink:140">
+            </div>
+            <div style="margin-top: 4px;">
+              <label style="display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer; color: var(--text-muted);">
+                <input type="checkbox" class="eng-preload" data-eng-id="${escapeHtml(eng.id)}" ${eng.preload !== false ? 'checked' : ''}>
+                <span>起動時に推奨ボイスを事前初期化 (コールドスタート時の初回発声遅延を防止)</span>
+              </label>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.06);">
+            <button type="button" class="btn btn-secondary btn-sm btn-test-eng" data-eng-id="${escapeHtml(eng.id)}">
+              🔌 接続テスト & 認識確認
+            </button>
+            <span class="status-test-eng" data-eng-id="${escapeHtml(eng.id)}" style="font-size: 0.82rem; color: var(--text-muted);"></span>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+
+    // イベントバインド
+    container.querySelectorAll('.eng-enable-toggle').forEach(el => {
+      el.addEventListener('change', function() {
+        const id = this.getAttribute('data-eng-id');
+        const found = (state.voiceEngines || []).find(e => e.id === id);
+        if (found) found.enabled = this.checked;
+      });
+    });
+
+    container.querySelectorAll('.eng-name').forEach(el => {
+      el.addEventListener('input', function() {
+        const id = this.getAttribute('data-eng-id');
+        const found = (state.voiceEngines || []).find(e => e.id === id);
+        if (found) found.name = this.value;
+      });
+    });
+
+    container.querySelectorAll('.eng-type').forEach(el => {
+      el.addEventListener('change', function() {
+        const id = this.getAttribute('data-eng-id');
+        const found = (state.voiceEngines || []).find(e => e.id === id);
+        if (found) {
+          found.type = this.value;
+          renderVoiceEnginesList();
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-delete-eng').forEach(el => {
+      el.addEventListener('click', function() {
+        const id = this.getAttribute('data-eng-id');
+        const target = (state.voiceEngines || []).find(e => e.id === id);
+        const name = target ? target.name : 'このエンジン';
+        if (confirm(`「${name}」を削除してもよろしいですか？`)) {
+          state.voiceEngines = (state.voiceEngines || []).filter(e => e.id !== id);
+          renderVoiceEnginesList();
+          showToast(`「${name}」を削除しました（保存ボタンで確定）`, 'info');
+        }
+      });
+    });
+
+    container.querySelectorAll('.btn-test-eng').forEach(el => {
+      el.addEventListener('click', function() {
+        const id = this.getAttribute('data-eng-id');
+        testSpecificVoiceEngine(id);
+      });
+    });
+  }
+
+  function addNewVoiceEngine() {
+    const engines = state.voiceEngines || [];
+    const newIdx = engines.length + 1;
+    const newId = 'engine_' + Date.now();
+    const newEngine = {
+      id: newId,
+      name: `ローカル音声エンジン ${newIdx}`,
+      type: 'voicevox',
+      enabled: false,
+      baseUrl: 'http://192.168.11.xxx:50021',
+      timeoutSeconds: 5.0,
+      defaultVoiceId: `${newId}:2`,
+      preload: true
+    };
+    engines.push(newEngine);
+    state.voiceEngines = engines;
+    renderVoiceEnginesList();
+
+    const card = document.querySelector(`[data-eng-card="${newId}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    showToast('音声エンジンの設定枠を追加しました。接続先URLを入力して保存してください。', 'info');
+  }
+
+  async function testSpecificVoiceEngine(engineId) {
+    const card = document.querySelector(`[data-eng-card="${engineId}"]`);
+    if (!card) return;
+
+    const btn = card.querySelector('.btn-test-eng');
+    const statusEl = card.querySelector('.status-test-eng');
+    const name = card.querySelector('.eng-name')?.value?.trim() || engineId;
+    const type = card.querySelector('.eng-type')?.value?.trim() || 'voicevox';
+    const url = card.querySelector('.eng-url')?.value?.trim() || '';
+    const timeout = parseFloat(card.querySelector('.eng-timeout')?.value) || 5.0;
+
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ テスト中...';
+    }
+    if (statusEl) {
+      statusEl.textContent = '接続テスト中...';
+      statusEl.style.color = 'var(--text-muted)';
+    }
+
+    try {
+      const res = await fetch('/api/tts/providers/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: engineId,
+          type: type,
+          engineType: type,
+          baseUrl: url,
+          timeoutSeconds: timeout
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.isAvailable) {
+        showToast(`[${name}] ${data.message || '接続に成功しました'}`, 'success');
+        if (statusEl) {
+          statusEl.textContent = `✅ 接続成功 (${data.voicesCount || 0}話者・スタイル認識)`;
+          statusEl.style.color = 'var(--success)';
+        }
+      } else {
+        showToast(`[${name}] ${data.message || '接続テストに失敗しました'}`, 'error');
+        if (statusEl) {
+          statusEl.textContent = `❌ ${data.message || '接続失敗'}`;
+          statusEl.style.color = 'var(--danger)';
+        }
+      }
+    } catch (err) {
+      showToast(`[${name}] 接続エラー: ${err.message}`, 'error');
+      if (statusEl) {
+        statusEl.textContent = `❌ 通信エラー: ${err.message}`;
+        statusEl.style.color = 'var(--danger)';
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+  }
+
+  async function saveTtsProvidersSettings() {
+    const getEl = (...ids) => {
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) return el;
+      }
+      return null;
+    };
+
+    const btn = getEl('btnSaveTtsSettings', 'btnSaveTtsProviders');
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ 保存中...';
+    }
+
+    // 動的ローカル音声エンジンの最新値を DOM から抽出
+    const updatedEngines = (state.voiceEngines || []).map(eng => {
+      const card = document.querySelector(`[data-eng-card="${eng.id}"]`);
+      if (!card) return eng;
+      return {
+        id: eng.id,
+        name: card.querySelector('.eng-name')?.value?.trim() || eng.name,
+        type: card.querySelector('.eng-type')?.value?.trim() || eng.type,
+        enabled: card.querySelector('.eng-enable-toggle')?.checked ?? eng.enabled,
+        baseUrl: card.querySelector('.eng-url')?.value?.trim() || eng.baseUrl,
+        timeoutSeconds: parseFloat(card.querySelector('.eng-timeout')?.value) || eng.timeoutSeconds || 5.0,
+        defaultVoiceId: card.querySelector('.eng-voice')?.value?.trim() || eng.defaultVoiceId,
+        preload: card.querySelector('.eng-preload')?.checked ?? eng.preload ?? true
+      };
+    });
+    state.voiceEngines = updatedEngines;
+
+    const payload = {
+      urgentFastest: getEl('settingTtsUrgentFastest', 'ttsUrgentFastest')?.checked ?? true,
+      azure: {
+        enabled: getEl('settingAzureEnabled', 'ttsAzureEnabled')?.checked ?? false,
+        apiKey: getEl('settingAzureApiKey', 'ttsAzureKey')?.value?.trim() || '',
+        region: getEl('settingAzureRegion', 'ttsAzureRegion')?.value?.trim() || 'japaneast',
+        timeoutSeconds: parseFloat(getEl('settingAzureTimeout', 'ttsAzureTimeout')?.value) || 5.0
+      },
+      gcp: {
+        enabled: getEl('settingGcpEnabled', 'ttsGcpEnabled')?.checked ?? false,
+        apiKey: getEl('settingGcpApiKey', 'ttsGcpKey')?.value?.trim() || '',
+        timeoutSeconds: parseFloat(getEl('settingGcpTimeout', 'ttsGcpTimeout')?.value) || 5.0
+      },
+      voice_engines: updatedEngines
+    };
+
+    try {
+      const res = await fetch('/api/tts/providers/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tts_providers: payload })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast('外部音声エンジン (TTS) 設定を保存しました', 'success');
+        if (typeof loadVoices === 'function') {
+          await loadVoices();
+        }
+        await loadTtsProvidersSettings();
+      } else {
+        throw new Error(data.detail || data.error || '保存に失敗しました');
+      }
+    } catch (err) {
+      showToast('設定保存エラー: ' + err.message, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText || '💾 音声エンジン設定を保存';
+      }
+    }
+  }
+
+  async function testTtsProvider(providerId, btnId, statusIds) {
+    const getEl = (...ids) => {
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el) return el;
+      }
+      return null;
+    };
+
+    const btn = document.getElementById(btnId);
+    const statusEl = Array.isArray(statusIds) ? getEl(...statusIds) : document.getElementById(statusIds);
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ テスト中...';
+    }
+    if (statusEl) {
+      statusEl.textContent = '接続テスト中...';
+      statusEl.style.color = 'var(--text-muted)';
+    }
+
+    let reqBody = { provider: providerId };
+    if (providerId === 'gcp') {
+      reqBody.apiKey = getEl('settingGcpApiKey', 'ttsGcpKey')?.value?.trim();
+      reqBody.timeoutSeconds = parseFloat(getEl('settingGcpTimeout', 'ttsGcpTimeout')?.value) || 5.0;
+    } else if (providerId === 'azure') {
+      reqBody.apiKey = getEl('settingAzureApiKey', 'ttsAzureKey')?.value?.trim();
+      reqBody.region = getEl('settingAzureRegion', 'ttsAzureRegion')?.value?.trim();
+      reqBody.timeoutSeconds = parseFloat(getEl('settingAzureTimeout', 'ttsAzureTimeout')?.value) || 5.0;
+    }
+
+    try {
+      const res = await fetch('/api/tts/providers/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reqBody)
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.isAvailable) {
+        showToast(data.message || '接続に成功しました', 'success');
+        if (statusEl) {
+          statusEl.textContent = `✅ 接続成功 (${data.voicesCount || 0}話者・スタイル)`;
+          statusEl.style.color = 'var(--success)';
+        }
+        const badgeMap = {
+          gcp: 'badgeGcpCount',
+          azure: 'badgeAzureCount'
+        };
+        const b = document.getElementById(badgeMap[providerId]);
+        if (b) {
+          b.textContent = `${data.voicesCount || 0}話者 オンライン`;
+          b.className = 'badge badge-success';
+        }
+      } else {
+        showToast(data.message || '接続テストに失敗しました', 'error');
+        if (statusEl) {
+          statusEl.textContent = `❌ ${data.message || '接続失敗'}`;
+          statusEl.style.color = 'var(--danger)';
+        }
+      }
+    } catch (err) {
+      showToast('接続エラー: ' + err.message, 'error');
+      if (statusEl) {
+        statusEl.textContent = `❌ 通信エラー: ${err.message}`;
+        statusEl.style.color = 'var(--danger)';
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+  }
+
+  function setupTtsProvidersSettings() {
+    const bindClick = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
+    bindClick('btnSaveTtsSettings', saveTtsProvidersSettings);
+    bindClick('btnSaveTtsProviders', saveTtsProvidersSettings);
+    bindClick('btnAddVoiceEngine', addNewVoiceEngine);
+    bindClick('btnTestGcp', () => testTtsProvider('gcp', 'btnTestGcp', ['statusGcpTest', 'ttsGcpStatus']));
+    bindClick('btnTestAzure', () => testTtsProvider('azure', 'btnTestAzure', ['statusAzureTest', 'ttsAzureStatus']));
   }
 
   // 起動実行

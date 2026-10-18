@@ -1,4 +1,4 @@
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
@@ -233,4 +233,138 @@ async def api_say_get(
 
 @router.get("/api/tts/voices")
 async def api_tts_voices():
-    return tts_service.get_voices()
+    voices = await tts_service.get_voices()
+    return voices
+
+@router.get("/api/tts/providers")
+async def api_tts_providers(request: Request):
+    return tts_service.get_providers_status()
+
+class TtsProviderTestRequest(BaseModel):
+    provider: str
+    type: Optional[str] = None
+    engineType: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+    baseUrl: Optional[str] = None
+    apiKey: Optional[str] = None
+    region: Optional[str] = None
+    timeoutSeconds: Optional[float] = None
+    preload: Optional[bool] = None
+
+@router.post("/api/tts/providers/test")
+async def api_tts_providers_test(req: TtsProviderTestRequest, request: Request):
+    from app.services.tts import (
+        VoicevoxProvider,
+        SharevoxProvider,
+        CoeiroinkProvider,
+        GcpTtsProvider,
+        AzureTtsProvider
+    )
+
+    pid = req.provider.lower()
+    conf = dict(req.config or {})
+    for k in ["baseUrl", "apiKey", "region", "timeoutSeconds", "preload", "type", "engineType"]:
+        val = getattr(req, k, None)
+        if val is not None and k not in conf:
+            conf[k] = val
+
+    # エンジン種別の判定 (pid または type / engineType)
+    resolved_type = (conf.get("type") or conf.get("engineType") or pid).lower()
+
+    try:
+        if resolved_type in ["voicevox", "voicevox_family"] or "voicevox" in pid:
+            url = conf.get("baseUrl") or "http://127.0.0.1:50021"
+            timeout = float(conf.get("timeoutSeconds") or 5.0)
+            p = VoicevoxProvider(base_url=url, enabled=True, timeout_seconds=timeout)
+            if not await p.is_available():
+                return {"success": False, "isAvailable": False, "message": f"VOICEVOX サーバー ({url}) に接続できませんでした。URLまたはサーバー稼働状態を確認してください。"}
+            voices = await p.get_voices()
+            init_ok = await p.initialize_speaker("voicevox:2")
+            return {
+                "success": True,
+                "isAvailable": True,
+                "message": f"VOICEVOX 接続成功！{len(voices)} 件の話者・スタイルを検出しました（四国めたん事前初期化: {'完了' if init_ok else 'スキップ'}）。",
+                "voicesCount": len(voices),
+                "voices": voices
+            }
+
+        elif resolved_type == "sharevox" or "sharevox" in pid:
+            url = conf.get("baseUrl") or "http://127.0.0.1:50025"
+            timeout = float(conf.get("timeoutSeconds") or 5.0)
+            p = SharevoxProvider(base_url=url, enabled=True, timeout_seconds=timeout)
+            if not await p.is_available():
+                return {"success": False, "isAvailable": False, "message": f"SHAREVOX サーバー ({url}) に接続できませんでした。URLを確認してください。"}
+            voices = await p.get_voices()
+            init_ok = await p.initialize_speaker("sharevox:21")
+            return {
+                "success": True,
+                "isAvailable": True,
+                "message": f"SHAREVOX 接続成功！{len(voices)} 件の話者を検出しました（らごぱすブラック事前初期化: {'完了' if init_ok else 'スキップ'}）。",
+                "voicesCount": len(voices),
+                "voices": voices
+            }
+
+        elif resolved_type == "coeiroink" or "coeiroink" in pid:
+            url = conf.get("baseUrl") or "http://127.0.0.1:50031"
+            timeout = float(conf.get("timeoutSeconds") or 5.0)
+            p = CoeiroinkProvider(base_url=url, enabled=True, timeout_seconds=timeout)
+            if not await p.is_available():
+                return {"success": False, "isAvailable": False, "message": f"COEIROINK サーバー ({url}) に接続できませんでした。URLを確認してください。"}
+            voices = await p.get_voices()
+            return {
+                "success": True,
+                "isAvailable": True,
+                "message": f"COEIROINK 接続成功！{len(voices)} 件の話者・スタイルを検出しました。",
+                "voicesCount": len(voices),
+                "voices": voices
+            }
+
+        elif pid == "gcp":
+            key = (conf.get("apiKey") or "").strip()
+            if not key:
+                return {"success": False, "isAvailable": False, "message": "GCP API Key を入力してください。"}
+            p = GcpTtsProvider(api_key=key, enabled=True)
+            if not await p.is_available():
+                return {"success": False, "isAvailable": False, "message": "Google Cloud Text-to-Speech API に接続できませんでした。API Key の有効性と権限を確認してください。"}
+            voices = await p.get_voices()
+            return {
+                "success": True,
+                "isAvailable": True,
+                "message": f"Google Cloud TTS 接続成功！{len(voices)} 件の日本語音声を認識しました。",
+                "voicesCount": len(voices),
+                "voices": voices
+            }
+
+        elif pid == "azure":
+            key = (conf.get("apiKey") or "").strip()
+            region = (conf.get("region") or "japaneast").strip()
+            if not key:
+                return {"success": False, "isAvailable": False, "message": "Azure Speech Key を入力してください。"}
+            p = AzureTtsProvider(api_key=key, region=region, enabled=True)
+            if not await p.is_available():
+                return {"success": False, "isAvailable": False, "message": f"Azure Speech サービス (リージョン: {region}) に接続できませんでした。Key またはリージョンを確認してください。"}
+            voices = await p.get_voices()
+            return {
+                "success": True,
+                "isAvailable": True,
+                "message": f"Azure Speech 接続成功！{len(voices)} 件の日本語音声を認識しました。",
+                "voicesCount": len(voices),
+                "voices": voices
+            }
+
+        else:
+            return {"success": False, "message": f"未知のプロバイダーです: {pid}"}
+
+    except Exception as e:
+        return {"success": False, "message": f"テスト中にエラーが発生しました: {str(e)}"}
+
+class TtsProvidersSettingsUpdateRequest(BaseModel):
+    tts_providers: Dict[str, Any]
+
+@router.put("/api/tts/providers/settings")
+async def api_tts_providers_settings_update(req: TtsProvidersSettingsUpdateRequest, request: Request):
+    from app.services.settings_service import settings_manager
+    updated = settings_manager.update({"tts_providers": req.tts_providers})
+    tts_service.sync_settings()
+    return {"success": True, "settings": updated.get("tts_providers", {})}
+

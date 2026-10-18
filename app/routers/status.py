@@ -35,7 +35,8 @@ async def get_system_status() -> Dict[str, Any]:
 
 @router.get("/api/voices")
 async def get_voices() -> Dict[str, Any]:
+    voices = await tts_service.get_voices()
     return {
-        "voices": tts_service.get_voices(),
+        "voices": voices,
         "defaultVoice": settings.default_voice
     }

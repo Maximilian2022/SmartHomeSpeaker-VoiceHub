@@ -149,6 +149,75 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "haDiscoveryEnabled": True,
         "haDiscoveryPrefix": "homeassistant",
         "brokers": []
+    },
+    "tts_providers": {
+        "urgentFastest": True,
+        "azure": {
+            "enabled": False,
+            "apiKey": "",
+            "region": "japaneast",
+            "timeoutSeconds": 5.0,
+            "defaultVoiceId": "azure:ja-JP-NanamiNeural"
+        },
+        "gcp": {
+            "enabled": False,
+            "apiKey": "",
+            "timeoutSeconds": 5.0,
+            "defaultVoiceId": "gcp:ja-JP-Neural2-B"
+        },
+        "voicevox": {
+            "enabled": False,
+            "baseUrl": "http://127.0.0.1:50021",
+            "timeoutSeconds": 5.0,
+            "defaultVoiceId": "voicevox:2",
+            "preload": True
+        },
+        "sharevox": {
+            "enabled": False,
+            "baseUrl": "http://127.0.0.1:50025",
+            "timeoutSeconds": 5.0,
+            "defaultVoiceId": "sharevox:21",
+            "preload": True
+        },
+        "coeiroink": {
+            "enabled": False,
+            "baseUrl": "http://192.168.11.245:50031",
+            "timeoutSeconds": 5.0,
+            "defaultVoiceId": "coeiroink:140",
+            "preload": True
+        },
+        "voice_engines": [
+            {
+                "id": "voicevox_default",
+                "name": "VOICEVOX (ローカル)",
+                "type": "voicevox",
+                "enabled": False,
+                "baseUrl": "http://127.0.0.1:50021",
+                "timeoutSeconds": 5.0,
+                "defaultVoiceId": "voicevox:2",
+                "preload": True
+            },
+            {
+                "id": "sharevox_default",
+                "name": "SHAREVOX (ローカル)",
+                "type": "sharevox",
+                "enabled": False,
+                "baseUrl": "http://127.0.0.1:50025",
+                "timeoutSeconds": 5.0,
+                "defaultVoiceId": "sharevox:21",
+                "preload": True
+            },
+            {
+                "id": "coeiroink_default",
+                "name": "COEIROINK (ローカル)",
+                "type": "coeiroink",
+                "enabled": False,
+                "baseUrl": "http://192.168.11.245:50031",
+                "timeoutSeconds": 5.0,
+                "defaultVoiceId": "coeiroink:140",
+                "preload": True
+            }
+        ]
     }
 }
 
@@ -214,6 +283,110 @@ class SettingsManager:
         if not model or any(p in model for p in deprecated_patterns):
             ai_conf["geminiModel"] = "gemini-2.5-flash"
 
+    def _normalize_tts_providers(self, data: Dict[str, Any]):
+        """TTS プロバイダー設定の初期化・マージ補正および動的音声エンジン群のマイグレーション"""
+        if "tts_providers" not in data or not isinstance(data["tts_providers"], dict):
+            data["tts_providers"] = dict(DEFAULT_SETTINGS["tts_providers"])
+            return
+
+        defaults = DEFAULT_SETTINGS["tts_providers"]
+        tp = data["tts_providers"]
+        if "urgentFastest" not in tp:
+            tp["urgentFastest"] = defaults["urgentFastest"]
+
+        for key in ["azure", "gcp", "voicevox", "sharevox", "coeiroink"]:
+            if key not in tp or not isinstance(tp[key], dict):
+                tp[key] = dict(defaults[key])
+            else:
+                for sub_k, sub_v in defaults[key].items():
+                    if sub_k not in tp[key]:
+                        tp[key][sub_k] = sub_v
+
+        # 既知の無効デフォルトボイスIDの自動補正
+        if tp.get("sharevox", {}).get("defaultVoiceId") in ["sharevox:0", "0"]:
+            tp["sharevox"]["defaultVoiceId"] = "sharevox:21"
+        if tp.get("coeiroink", {}).get("defaultVoiceId") in ["coeiroink:0", "0"]:
+            tp["coeiroink"]["defaultVoiceId"] = "coeiroink:140"
+
+        # COEIROINK IPアドレスの最新化補正 (ユーザー指定: 192.168.11.245)
+        ci_url = tp.get("coeiroink", {}).get("baseUrl", "")
+        if "192.168.11.244:50031" in ci_url:
+            tp["coeiroink"]["baseUrl"] = "http://192.168.11.245:50031"
+
+        # 動的ローカル音声エンジン群 (voice_engines) のマイグレーション & 同期
+        v_engines = tp.get("voice_engines")
+        if not v_engines or not isinstance(v_engines, list) or len(v_engines) == 0:
+            # 既存の voicevox / sharevox / coeiroink 設定から配列を作成
+            tp["voice_engines"] = [
+                {
+                    "id": "voicevox_default",
+                    "name": "VOICEVOX (ローカル)",
+                    "type": "voicevox",
+                    "enabled": bool(tp.get("voicevox", {}).get("enabled", False)),
+                    "baseUrl": tp.get("voicevox", {}).get("baseUrl") or "http://127.0.0.1:50021",
+                    "timeoutSeconds": float(tp.get("voicevox", {}).get("timeoutSeconds") or 5.0),
+                    "defaultVoiceId": tp.get("voicevox", {}).get("defaultVoiceId") or "voicevox:2",
+                    "preload": bool(tp.get("voicevox", {}).get("preload", True))
+                },
+                {
+                    "id": "sharevox_default",
+                    "name": "SHAREVOX (ローカル)",
+                    "type": "sharevox",
+                    "enabled": bool(tp.get("sharevox", {}).get("enabled", False)),
+                    "baseUrl": tp.get("sharevox", {}).get("baseUrl") or "http://127.0.0.1:50025",
+                    "timeoutSeconds": float(tp.get("sharevox", {}).get("timeoutSeconds") or 5.0),
+                    "defaultVoiceId": tp.get("sharevox", {}).get("defaultVoiceId") or "sharevox:21",
+                    "preload": bool(tp.get("sharevox", {}).get("preload", True))
+                },
+                {
+                    "id": "coeiroink_default",
+                    "name": "COEIROINK (ローカル)",
+                    "type": "coeiroink",
+                    "enabled": bool(tp.get("coeiroink", {}).get("enabled", False)),
+                    "baseUrl": tp.get("coeiroink", {}).get("baseUrl") or "http://192.168.11.245:50031",
+                    "timeoutSeconds": float(tp.get("coeiroink", {}).get("timeoutSeconds") or 5.0),
+                    "defaultVoiceId": tp.get("coeiroink", {}).get("defaultVoiceId") or "coeiroink:140",
+                    "preload": bool(tp.get("coeiroink", {}).get("preload", True))
+                }
+            ]
+        else:
+            # voice_engines 配列が存在する場合、各要素のバリデーションと補完
+            sanitized_engines = []
+            for idx, eng in enumerate(v_engines):
+                if not isinstance(eng, dict):
+                    continue
+                e_type = str(eng.get("type") or "voicevox").lower().strip()
+                e_id = str(eng.get("id") or f"engine_{idx}").strip()
+                e_name = str(eng.get("name") or (e_type.upper() if e_type in ["voicevox", "sharevox", "coeiroink"] else "カスタム音声エンジン")).strip()
+                default_voice = eng.get("defaultVoiceId")
+                if not default_voice:
+                    if e_type == "sharevox": default_voice = "sharevox:21"
+                    elif e_type == "coeiroink": default_voice = "coeiroink:140"
+                    else: default_voice = "voicevox:2"
+
+                sanitized_engines.append({
+                    "id": e_id,
+                    "name": e_name,
+                    "type": e_type,
+                    "enabled": bool(eng.get("enabled", False)),
+                    "baseUrl": str(eng.get("baseUrl") or "http://127.0.0.1:50021").rstrip("/"),
+                    "timeoutSeconds": float(eng.get("timeoutSeconds") or 5.0),
+                    "defaultVoiceId": default_voice,
+                    "preload": bool(eng.get("preload", True))
+                })
+            tp["voice_engines"] = sanitized_engines
+
+            # 既存コードとの後方互換性のため、代表エンジンを tp["voicevox"] 等に逆同期
+            for t in ["voicevox", "sharevox", "coeiroink"]:
+                found = next((e for e in sanitized_engines if e["type"] == t), None)
+                if found:
+                    tp[t] = {
+                        "enabled": found["enabled"],
+                        "baseUrl": found["baseUrl"],
+                        "timeoutSeconds": found["timeoutSeconds"],
+                        "defaultVoiceId": found["defaultVoiceId"],
+                        "preload": found["preload"]
+                    }
 
     def _load(self) -> Dict[str, Any]:
         if not SETTINGS_FILE.exists():
@@ -230,6 +403,7 @@ class SettingsManager:
                         merged[k] = v
                 self._normalize_mqtt(merged)
                 self._normalize_ai(merged)
+                self._normalize_tts_providers(merged)
                 return merged
         except Exception as e:
             print(f"[SettingsManager] Load error: {e}")
@@ -253,6 +427,7 @@ class SettingsManager:
                 self.settings[k] = v
         self._normalize_mqtt(self.settings)
         self._normalize_ai(self.settings)
+        self._normalize_tts_providers(self.settings)
         self._save(self.settings)
         return self.settings
 

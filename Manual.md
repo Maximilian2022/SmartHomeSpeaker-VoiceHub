@@ -18,7 +18,7 @@
    - 3.2 [スピーカー種別の自動判別と解決アルゴリズム](#32-スピーカー種別の自動判別と解決アルゴリズム)
    - 3.3 [マルチプラットフォーム音ズレ補正エンジン (Sync Engine)](#33-マルチプラットフォーム音ズレ補正エンジン-sync-engine)
 4. [音声合成 (TTS) とオーディオパイプライン仕様](#4-音声合成-tts-とオーディオパイプライン仕様)
-   - 4.1 [Microsoft Edge Neural TTS パラメータ](#41-microsoft-edge-neural-tts-パラメータ)
+   - 4.1 [Edge-TTS パラメータ](#41-edge-tts-パラメータ)
    - 4.2 [チャイム音声結合 (FFmpeg / バイト連結)](#42-チャイム音声結合-ffmpeg--バイト連結)
    - 4.3 [音声キャッシュ管理 (MD5・LRU・容量制限)](#43-音声キャッシュ管理-md5lru容量制限)
    - 4.4 [時間帯別自動音量調整 (Auto Volume)](#44-時間帯別自動音量調整-auto-volume)
@@ -67,7 +67,7 @@
 
 ## 1. システムアーキテクチャ概要
 
-Smart Home Speaker Voice Hub は、規格の異なる 5 つのスマートスピーカー・音響機器（**Google Home / Cast**、**Amazon Echo / Alexa**、**Apple HomePod / AirPlay 2**、**ONVIF ネットワークカメラ**、**DLNA / UPnP MediaRenderer**）を単一の抽象レイヤーで統合し、日本語音声（Microsoft Edge TTS）を宅内のスピーカーへ配信する音声プラットフォームです。
+Smart Home Speaker Voice Hub は、規格の異なる 5 つのスマートスピーカー・音響機器（**Google Home / Cast**、**Amazon Echo / Alexa**、**Apple HomePod / AirPlay 2**、**ONVIF ネットワークカメラ**、**DLNA / UPnP MediaRenderer**）を単一の抽象レイヤーで統合し、日本語音声（Edge-TTS）を宅内のスピーカーへ配信する音声プラットフォームです。
 
 バックエンドは **Python 3.14 + FastAPI** による完全非同期（`async/await`）アーキテクチャで構築されており、高速な応答性と高い並行処理性能を備えています。
 
@@ -207,9 +207,9 @@ Google Home、Amazon Echo、Apple HomePod は、通信プロトコル（Castv2�
 
 ## 4. 音声合成 (TTS) とオーディオパイプライン仕様
 
-### 4.1 Microsoft Edge Neural TTS パラメータ
+### 4.1 Edge-TTS パラメータ
 
-Microsoft Edge の Neural 音声エンジン（SSML 対応）を採用しています。
+Edge-TTS の Neural 音声エンジン（SSML 対応）を採用しています。
 
 * **標準ボイス (`voice`)**:
   - `ja-JP-NanamiNeural`: 七海（女性・標準アナウンス、透明感のある自然な声調）
@@ -257,6 +257,92 @@ Microsoft Edge の Neural 音声エンジン（SSML 対応）を採用してい�
 * **日跨ぎ対応ルール**:
   - 例: `23:00` 〜 `07:00` を音量 `25%`、`07:00` 〜 `09:00` を `60%`、`09:00` 〜 `18:00` を `70%` など。
 * API 呼び出し時に個別の `volumeLevel` が指定されていない場合、このカーブに基づいた音量が各スピーカーへ自動適用されます。
+
+### 4.5 外部音声エンジン自由追加アーキテクチャ (TTS Engine Extensibility)
+
+標準の Edge-TTS だけで完全自律稼働しますが、家庭内 LAN 内の別 PC や Docker で稼働しているローカル音声エンジン群（複数動的追加対応）、および公式クラウド音声 API（Azure / GCP）を自由に追加・併用できるプラグイン構造を備えています。
+
+```text
+                     ┌──────────────────────────────────────────────┐
+                     │          発声リクエスト (say / urgent)         │
+                     └──────────────────────┬───────────────────────┘
+                                            │
+               ┌────────────────────────────┴───────────────────────────┐
+               ▼ (通常発話)                                              ▼ (緊急速報: urgent=True)
+    [指定プロバイダー合成]                                       [最速並行生成: Fastest Wins]
+    ├─► Azure Speech Service (公式SLAクラウド)                  ├─► Azure Speech
+    ├─► Google Cloud TTS (Neural2/Standard)                     ├─► Google Cloud TTS
+    ├─► ローカル音声エンジン群 (複数登録可)                     ├─► VOICEVOX / SHAREVOX / COEIROINK
+    │   ├─► VOICEVOX (メインPC / GPUサーバー等)                 └─► 追加ローカル音声エンジン群
+    │   ├─► SHAREVOX                                                        │
+    │   └─► COEIROINK (192.168.11.245 等)                      asyncio.wait(FIRST_COMPLETED)
+    └─► Edge-TTS (Azure未登録時)                                            │
+               │                                                            ▼
+       (タイムアウト/通信障害時)                                      最速完了音声を即採用
+               │                                                 (残りの遅延タスクは即キャンセル)
+               ▼
+    【段階的フォールバック (Cascading Fallback)】
+    Azure → GCP → ローカルエンジン群 → 🛡️ 最後の命綱: Edge-TTS
+    (家庭内アナウンスを絶対に途切れさせない多重セーフティネット)
+```
+
+#### 4.5.1 対応音声合成プロバイダー一覧
+
+| プロバイダー | 種別 | プロトコル・仕様 | 特徴・推奨ボイス |
+|---|---|---|---|
+| **Azure Speech Service** | クラウド (公式/無料枠あり) | 公式 Cognitive Services REST API | **公式推奨**。Microsoft 正規クラウド音声サービス。公式 SLA に基づき永続的・安定的に稼働。Azure 有効時は Edge-TTS が通常選択から待機化され、全障害時の最終セーフティネットとして安全に待機します。推奨: `azure:ja-JP-NanamiNeural`。 |
+| **Google Cloud TTS (GCP)** | クラウド (従量課金/無料枠) | 公式 Cloud Text-to-Speech API | Neural2、Wavenet、Journey などの高品質クラウド音声。推奨: `gcp:ja-JP-Neural2-B`。 |
+| **ローカル音声エンジン群 (VOICEVOX / SHAREVOX / COEIROINK / 互換)** | ローカル / LAN | REST API / 動的複数登録 | 家庭内 LAN 内の別 PC や Docker で稼働するエンジンを**何台でも追加・個別設定可能**。四国めたん、ずんだもん、らごぱすブラック、アメノちゃん等。モデル事前初期化 (`initialize_speaker`) 対応。 |
+| **Edge-TTS (標準)** | クラウド (無料) | 非公式ブラウザ通信 | **標準搭載（Azure有効時は最終フォールバック待機）**。APIキー不要で即座に動作する7話者。手軽に利用できる一方、非公式手法のため将来の仕様変更リスクを伴います。 |
+
+#### 4.5.2 耐障害・自動フォールバック設計
+* 外部エンジンが起動していない、別 PC がスリープ中、あるいは指定秒数（`timeoutSeconds`: デフォルト 5.0秒）以内に合成が完了しなかった場合、エラーでアナウンスを落とすことなく、即座に **Edge TTS（七海）** へフォールバックして発声を継続します。
+* 発言履歴ログにはフォールバックが発生した事実（`fallback: true`）が記録されます。
+
+#### 4.5.3 緊急速報の最速並行生成 (Fastest Wins)
+* 地震速報（EEW）や気象特別警報など、1秒を争う緊急アナウンス（`urgent: true`）を受信した際、有効化されているすべてのエンジン（Edge TTS、VOICEVOX、COEIROINK 等）へ同時に並行して音声合成リクエストを発行します。
+* `asyncio.wait(..., return_when=FIRST_COMPLETED)` により、**0.1秒でも早く合成が完了した音声を即座にスピーカーへ送出**し、他の未完了タスクは直ちにキャンセルされます。これにより、エンジンの負荷やネットワーク揺らぎに左右されず、常に最短時間で警報を鳴らすことができます。
+
+#### 4.5.4 クラウド無料枠月次使用量トラッカー
+* Google Cloud TTS（Neural2: 月 100万文字、Standard: 月 400万文字）および Azure Speech（F0 プラン: 月 50万文字）の無料枠を超過して意図せぬ課金が発生することを防ぐため、文字数カウンターマネージャーを内蔵しています。
+* 合成したテキストの文字数を `data/tts_usage.json` に永続記録し、毎月1日午前0時に自動リセットします。
+* Web GUI の設定画面上で現在の当月消費文字数とパーセンテージ（プログレスバー）をリアルタイムに確認できます。
+
+#### 4.5.5 クラウド音声エンジン（GCP / Azure）のキー取得手順
+
+<details>
+<summary><strong>💡 Google Cloud Text-to-Speech (GCP) API Key の取得手順</strong></summary>
+
+1. [Google Cloud Console](https://console.cloud.google.com/) にアクセスし、プロジェクトを選択（または新規作成）します。
+2. 左メニューの「API とサービス」→「ライブラリ」を開き、**「Cloud Text-to-Speech API」** を検索して「有効にする」をクリックします。
+3. 「API とサービス」→「認証情報」を開き、画面上部の「+ 認証情報を作成」→ **「API キー」** を選択します。
+4. 生成された API キー（`AIzaSy...`）をコピーし、WebUI の「API Key」欄に入力します。
+5. *(推奨設定)*: API キーの編集画面を開き、「API の制限」で「Cloud Text-to-Speech API」のみに限定しておくと安全です。
+
+* **毎月の無料枠**: Neural2 / Journey 音声は **毎月 100万文字**、Standard 音声は **毎月 400万文字** まで無料枠が提供されています（Voice Hub 側で月次消費量を自動集計）。
+</details>
+
+<details>
+<summary><strong>💡 Azure Speech Service キー・リージョンの取得手順・エラー対処</strong></summary>
+
+> **【公式 Azure Speech をおすすめする理由】**
+> * **標準の Edge TTS について**: 初期設定不要ですぐに動く反面、Edge ブラウザ用の非公式通信を利用しているため、Microsoft のサイレント仕様変更によって突然使えなくなるリスク（グレーな側面）があります。
+> * **公式 Azure Speech のメリット**: Microsoft 公式の正規 API であるため仕様変更による停止リスクがなく、**「長期的に安定稼働させたい場合」** や **「Edge TTS が障害で不通になった際の堅牢なバックアップ」** として、公式無料枠（F0 プラン: 毎月 50万文字）の取得を推奨いたします。
+
+1. [Azure ポータル](https://portal.azure.com/) にサインインします。
+2. 上部検索バーで「音声サービス」(Speech Services) を検索し、「作成」をクリックします。
+3. サブスクリプション、リソースグループを選択し、地域（例: **東日本 / `japaneast`**）を指定します。
+4. 価格レベルで **「Free F0」**（無料プラン）を選択し、「確認および作成」をクリックしてデプロイします。
+5. 作成完了後、リソースを開き、左メニューの「リソース管理」→ **「キーとエンドポイント」** を開きます。
+6. **「キー 1」**（またはキー 2）をコピーして WebUI の「Speech Key」欄に、**「場所/地域」**（例: `japaneast`）を「リージョン」欄に入力します。
+
+> **⚠️「テナント 'Microsoft Services' に存在しない」エラーが出る場合**
+> 個人用 Microsoft アカウント（@outlook.jp, @gmail.com 等）で直接 Azure ポータルを開いた際や、ブラウザの古い認証情報が競合している際によく発生します。
+> * **対処法**: ブラウザの**シークレットウィンドウ（InPrivate）**を開き、[Azure 無料アカウント作成ページ](https://azure.microsoft.com/ja-jp/free/) の**「無料で始める」**から初期登録を行ってからポータルにお進みください。
+
+* **毎月の無料枠**: Free F0 プランの場合、Neural 音声が **毎月 50万文字** まで完全無料でご利用いただけます（Voice Hub 側で月次消費量を自動集計）。
+</details>
+
 
 ---
 
@@ -655,6 +741,12 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`POST /api/mqtt/test`**: 指定ブローカーへの接続テスト
 - **`POST /api/mqtt/reconnect`**: 全ブローカーの再接続
 
+### 13.13 外部音声エンジン (TTS) API
+- **`GET /api/tts/voices`**: 有効な全プロバイダー（Edge, VOICEVOX, SHAREVOX, COEIROINK, GCP, Azure）の統合話者一覧取得
+- **`GET /api/tts/providers`**: 各プロバイダーの稼働・設定状態および当月文字数使用量（GCP/Azure無料枠）の取得
+- **`POST /api/tts/providers/test`**: 指定プロバイダーの接続疎通検証、話者数検出、事前初期化テスト
+- **`PUT /api/tts/providers/settings`**: 外部音声エンジン有効/無効、接続先URL、タイムアウト、最速並行生成設定の更新
+
 ---
 
 ## 14. ファイル構成と永続化ディレクトリ
@@ -669,7 +761,8 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 ├── README.md                   # 一般向け概要・導入ガイド
 │
 ├── data/                       # [Named Volume: smart_speaker_data]
-│   ├── settings.json           # システム全体設定 (DND, 防災, AI, デバイス, MQTT等)
+│   ├── settings.json           # システム全体設定 (DND, 防災, AI, デバイス, MQTT, TTS等)
+│   ├── tts_usage.json          # クラウドTTS (GCP/Azure) 月次消費文字数カウンター
 │   ├── schedules.json          # 定期スケジュール定義
 │   ├── dnd_queue.json          # DND 保留メッセージキュー (WAL)
 │   ├── webhook_queue.json      # Webhook 非同期キュー (WAL)
@@ -678,7 +771,7 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 │
 ├── public/                     # Web フロントエンド静的配信
 │   ├── index.html              # Web GUI Single Page Application
-│   ├── app.js                  # フロントエンドロジック
+│   ├── app.js                  # フロントエンドロジック (optgroup動的グループ化・TTS連携)
 │   ├── style.css               # グラスモーフィズム UI スタイル定義
 │   ├── sound/                  # チャイム音源 (dingdong.mp3, bell.mp3)
 │   ├── plugins/                # 配布用プラグイン静的公開ファイル
@@ -690,6 +783,7 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 │   ├── core/                   # 境界防御、認証、ロギング、重複排除基盤
 │   ├── routers/                # REST API / SSE / MCP ルーター群
 │   └── services/               # TTS、Cast、Alexa、HomePod、ONVIF/DLNA、DND、MQTT、MCP等の各サービス
+│       └── tts/                # 外部音声エンジンプロバイダー基盤 (Edge, Voicevox, Sharevox, Coeiroink, GCP, Azure, Tracker)
 │
 ├── plugins/
 │   └── homebridge-voicehub/    # Homebridge 公式準拠プラットフォームプラグイン
@@ -721,7 +815,14 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 
 ### 15.2 サービスモジュール (`app/services/`)
 - **`tts_service.py`**:
-  `edge-tts` によるストリーミング音声合成、FFmpeg によるチャイム結合、LRU ディスクキャッシュ管理。
+  プロバイダー別動的ルーティング、タイムアウト時の Edge TTS 自動フォールバック、緊急速報（`urgent: true`）時の最速並行生成（Fastest Wins）、FFmpeg チャイム結合、LRU ディスクキャッシュ管理。
+- **`tts/` パッケージ**:
+  - `base.py`: 抽象基底クラス `BaseTtsProvider`
+  - `usage_tracker.py`: GCP/Azure の月次文字数カウントと無料枠管理（自動月次リセット）
+  - `edge_provider.py`: Edge-TTS プロバイダー
+  - `voicevox_provider.py`: VOICEVOX / SHAREVOX / COEIROINK (v2 API) クライアント
+  - `gcp_provider.py`: Google Cloud Text-to-Speech クライアント
+  - `azure_provider.py`: Azure Cognitive Services Speech クライアント
 - **`cast_service.py`**:
   `pychromecast` による Google Cast デバイス・スピーカーグループの検出および再生制御。
 - **`alexa_service.py`**:

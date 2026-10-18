@@ -254,7 +254,8 @@ class SpeechService:
             voice=opt_voice,
             rate=opt_rate,
             pitch=opt_pitch,
-            chime=opt_chime
+            chime=opt_chime,
+            urgent=urgent
         )
 
         effective_vol = self._get_effective_volume(volume_level)
@@ -326,6 +327,9 @@ class SpeechService:
             f"一部端末のみ成功 ({sum(1 for r in detailed_results if r['status'] == 'success')}/{len(detailed_results)} 台)" if has_success else "全デバイスへの送信に失敗しました"
         )
 
+        if speech.get("fallback"):
+            history_msg = f"{history_msg} (※外部TTS接続不可のためEdge TTSでフォールバック発話)"
+
         # 6. 永続化履歴記録
         history_entry = {
             "text": text,
@@ -336,6 +340,8 @@ class SpeechService:
             "wasQueued": was_queued,
             "targets": [d.get("name") or d.get("ip") for d in unique_targets],
             "voice": opt_voice,
+            "actualVoice": speech.get("voice", opt_voice),
+            "fallback": bool(speech.get("fallback", False)),
             "rate": opt_rate,
             "pitch": opt_pitch,
             "audioUrl": f"/voice/{speech['filename']}",

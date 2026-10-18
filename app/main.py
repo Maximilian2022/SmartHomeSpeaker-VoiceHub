@@ -70,6 +70,10 @@ async def lifespan(app: FastAPI):
     # MQTT サービスのバックグラウンドワーカー開始
     mqtt_service.start()
 
+    # 外部 TTS エンジン (VOICEVOX等) の事前初期化・ウォームアップ
+    from app.services.tts_service import tts_service
+    asyncio.create_task(tts_service.warmup_enabled_speakers())
+
     yield
 
     # 終了時処理

@@ -500,6 +500,10 @@
                   <span class="nav-icon">⚙️</span>
                   <span class="nav-label">音声・機能拡張</span>
                 </button>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-tts" id="btnSubtabSettingsTts">
+                  <span class="nav-icon">🎙️</span>
+                  <span class="nav-label">外部音声エンジン (TTS)</span>
+                </button>
                 <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-dnd" id="btnSubtabSettingsDnd">
                   <span class="nav-icon">🔕</span>
                   <span class="nav-label">おやすみ・会議 (DND)</span>
@@ -545,9 +549,240 @@
           <!-- 右側メインコンテンツエリア -->
           <div class="settings-content">
 
+            <!-- 0. 外部音声エンジン (TTS) サブペイン -->
+            <div id="subtab-settings-tts" class="sub-tab-pane">
+              <!-- 上部: 緊急速報の最速並行生成オプション -->
+              <div class="card glass-card" style="margin-bottom: 20px; border-left: 4px solid var(--accent, #6366f1);">
+                <div class="card-header flex-between">
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <h2 style="margin: 0; font-size: 1.15rem;">⚡ 緊急速報の最速並行生成 (Fastest Wins)</h2>
+                      <span class="badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.4);">超高速防災</span>
+                    </div>
+                    <span class="card-sub">緊急地震速報や特別警報の際、有効な複数エンジンで並行生成し、最速で完了した音声を即座に再生します</span>
+                  </div>
+                  <label class="switch">
+                    <input type="checkbox" id="settingTtsUrgentFastest" checked>
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+                <div class="card-body" style="padding-top: 0;">
+                  <div style="font-size: 0.82rem; color: var(--text-muted);">
+                    ※ 1秒を争う緊急時、ネットワーク遅延やエンジンの負荷に左右されず、0.1秒でも速く音声を送出します。最速の音声が決定した瞬間に他の生成タスクは自動キャンセルされます。
+                  </div>
+                </div>
+              </div>
 
-        <!-- 1. 音声・機能拡張 サブペイン -->
-        <div id="subtab-settings-features" class="sub-tab-pane active">
+              <!-- 1. クラウド音声エンジン (Azure Speech & Google Cloud TTS) 2カラム配置 -->
+              <div class="two-col-layout" style="margin-bottom: 24px;">
+                <!-- 左カラム: 1. Azure Speech Service (公式推奨・SLAクラウド) -->
+                <div class="col">
+                  <div class="card glass-card">
+                    <div class="card-header flex-between">
+                      <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <h3>Azure Speech Service</h3>
+                          <span class="badge badge-secondary" id="badgeAzureCount">未接続</span>
+                        </div>
+                        <span class="card-sub">Microsoft Azure Neural 音声サービス (公式推奨)</span>
+                      </div>
+                      <label class="switch">
+                        <input type="checkbox" id="settingAzureEnabled">
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+                    <div class="card-body">
+                      <div class="form-group">
+                        <label for="settingAzureApiKey" class="form-label">Speech Key (サブスクリプションキー)</label>
+                        <input type="password" id="settingAzureApiKey" class="form-input" placeholder="Azure ポータルのキー">
+                      </div>
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px;">
+                        <div class="form-group">
+                          <label for="settingAzureRegion" class="form-label">リージョン</label>
+                          <input type="text" id="settingAzureRegion" class="form-input" placeholder="例: japaneast" value="japaneast">
+                        </div>
+                        <div class="form-group">
+                          <label for="settingAzureTimeout" class="form-label">タイムアウト (秒)</label>
+                          <input type="number" id="settingAzureTimeout" class="form-input" min="1" max="30" value="5">
+                        </div>
+                      </div>
+                      <!-- 無料枠使用状況 -->
+                      <div style="margin-top: 14px; padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+                          <span style="font-weight: 600;">📊 今月の無料枠使用状況 (F0プラン / 50万文字)</span>
+                          <span id="labelAzureUsage" style="color: var(--accent);">0 / 500,000 文字 (0%)</span>
+                        </div>
+                        <div style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden;">
+                          <div id="barAzureUsage" style="width: 0%; height: 100%; background: #06b6d4; transition: width 0.3s;"></div>
+                        </div>
+                      </div>
+                      <div style="display: flex; gap: 8px; margin-top: 14px; align-items: center; flex-wrap: wrap;">
+                        <button type="button" id="btnTestAzure" class="btn btn-secondary btn-sm">🔌 API 接続テスト</button>
+                        <span id="statusAzureTest" style="font-size: 0.82rem; color: var(--text-muted);"></span>
+                      </div>
+
+                      <!-- Azure Speech Key 取得手順 (折りたたみ) -->
+                      <details style="margin-top: 14px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 10px; cursor: pointer;">
+                        <summary style="font-size: 0.83rem; color: var(--accent); outline: none; font-weight: 500;">
+                          💡 Azure Speech Key・リージョンの取得方法・エラー対処・無料枠
+                        </summary>
+                        <div style="margin-top: 10px; background: rgba(0,0,0,0.25); border-radius: 8px; padding: 12px; font-size: 0.82rem; line-height: 1.6; color: var(--text-muted);">
+                          <div style="margin-bottom: 10px; padding: 10px 12px; background: rgba(99, 102, 241, 0.12); border-left: 3px solid var(--accent); border-radius: 4px; color: #e0e7ff; font-size: 0.8rem; line-height: 1.6;">
+                            <strong style="color: #fff; display: block; margin-bottom: 2px;">💡 Azure Speech Service（公式）の位置づけと推奨理由:</strong>
+                            ・<strong>Edge-TTS について:</strong> 設定不要ですぐにご利用いただけますが、ブラウザ用の非公式エンドポイントを利用しているため、将来的な仕様変更リスクを伴います。<br>
+                            ・<strong>公式 Azure Speech のメリット:</strong> SLAに準拠した公式APIのため仕様変更で途切れるリスクがなく、<strong>「長期安定運用の本命」</strong>として推奨されます。本設定が有効な場合、Edge-TTS は通常選択肢から隠され、全障害時の最終セーフティネットとして待機します。
+                          </div>
+
+                          <strong style="color: #fff; display: block; margin-bottom: 4px;">📖 Speech Key 取得ステップ:</strong>
+                          <ol style="margin: 4px 0 10px 18px; padding: 0;">
+                            <li><a href="https://portal.azure.com/" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">Azure ポータル</a> にサインインします。</li>
+                            <li>上部検索バーに「音声サービス」(Speech Services) と入力し、「作成」をクリックします。</li>
+                            <li>サブスクリプションとリソースグループを選択し、地域に <strong>東日本 (japaneast)</strong> などを指定します。</li>
+                            <li>価格レベルで <strong>「Free F0」</strong>（無料プラン）を選択し、「確認および作成」をクリックしてデプロイします。</li>
+                            <li>リソース完成後、左メニュー「リソース管理」→ <strong>「キーとエンドポイント」</strong> を開きます。</li>
+                            <li><strong>「キー 1」</strong> をコピーして上の「Speech Key」欄に、<strong>「場所/地域」</strong>（例: <code style="background: rgba(255,255,255,0.1); padding: 1px 4px; border-radius: 3px; color: #fff;">japaneast</code>）を「リージョン」欄に入力します。</li>
+                          </ol>
+
+                          <!-- トラブルシューティング: テナントエラー -->
+                          <div style="margin-top: 8px; padding: 8px 10px; background: rgba(239, 68, 68, 0.08); border-left: 3px solid #ef4444; border-radius: 4px; color: #fca5a5; font-size: 0.78rem;">
+                            <strong>⚠️「テナント 'Microsoft Services' に存在しない」エラーが出る場合:</strong><br>
+                            個人用 Microsoft アカウント（@outlook.jp, @gmail.com等）で直接ポータルを開いた際や、ブラウザの古い認証情報が競合している際によく発生します。<br>
+                            👉 <strong>対処法:</strong> ブラウザの<strong>シークレットウィンドウ（InPrivate）</strong>を開き、<a href="https://azure.microsoft.com/ja-jp/free/" target="_blank" rel="noopener" style="color: #60a5fa; text-decoration: underline;">Azure 無料アカウント作成ページ</a> の<strong>「無料で始める」</strong>から初期登録を行ってからポータルにお進みください。
+                          </div>
+
+                          <div style="margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px; font-size: 0.8rem;">
+                            <strong>🎁 毎月の無料枠:</strong> Free F0 プランの場合、Neural 音声が <strong>毎月 50万文字</strong> まで完全無料でご利用いただけます。
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 右カラム: 2. Google Cloud Text-to-Speech (GCP) -->
+                <div class="col">
+                  <div class="card glass-card">
+                    <div class="card-header flex-between">
+                      <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <h3>Google Cloud Text-to-Speech (GCP)</h3>
+                          <span class="badge badge-secondary" id="badgeGcpCount">未接続</span>
+                        </div>
+                        <span class="card-sub">Neural2 / Wavenet / Journey 高品位クラウド音声</span>
+                      </div>
+                      <label class="switch">
+                        <input type="checkbox" id="settingGcpEnabled">
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+                    <div class="card-body">
+                      <div class="form-group">
+                        <label for="settingGcpApiKey" class="form-label">API Key</label>
+                        <input type="password" id="settingGcpApiKey" class="form-input" placeholder="AIzaSy...">
+                      </div>
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px;">
+                        <div class="form-group">
+                          <label for="settingGcpTimeout" class="form-label">タイムアウト (秒)</label>
+                          <input type="number" id="settingGcpTimeout" class="form-input" min="1" max="30" value="5">
+                        </div>
+                        <div class="form-group">
+                          <label for="settingGcpDefaultVoice" class="form-label">推奨ボイス (初期値)</label>
+                          <select id="settingGcpDefaultVoice" class="form-select">
+                            <option value="gcp:ja-JP-Neural2-B" selected>Neural2-B (女性・ニュース調)</option>
+                            <option value="gcp:ja-JP-Neural2-C">Neural2-C (男性・標準)</option>
+                            <option value="gcp:ja-JP-Wavenet-B">Wavenet-B (女性・落ち着き)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <!-- 無料枠使用状況 -->
+                      <div style="margin-top: 14px; padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+                          <span style="font-weight: 600;">📊 今月の無料枠使用状況 (Neural2 / 100万文字)</span>
+                          <span id="labelGcpUsageNeural" style="color: var(--accent);">0 / 1,000,000 文字 (0%)</span>
+                        </div>
+                        <div style="width: 100%; height: 6px; background: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden;">
+                          <div id="barGcpUsageNeural" style="width: 0%; height: 100%; background: #3b82f6; transition: width 0.3s;"></div>
+                        </div>
+                      </div>
+                      <div style="display: flex; gap: 8px; margin-top: 14px; align-items: center; flex-wrap: wrap;">
+                        <button type="button" id="btnTestGcp" class="btn btn-secondary btn-sm">🔌 API 接続テスト</button>
+                        <span id="statusGcpTest" style="font-size: 0.82rem; color: var(--text-muted);"></span>
+                      </div>
+
+                      <!-- GCP API Key 取得手順 (折りたたみ) -->
+                      <details style="margin-top: 14px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 10px; cursor: pointer;">
+                        <summary style="font-size: 0.83rem; color: var(--accent); outline: none; font-weight: 500;">
+                          💡 Google Cloud API Key の取得方法・無料枠について
+                        </summary>
+                        <div style="margin-top: 10px; background: rgba(0,0,0,0.25); border-radius: 8px; padding: 12px; font-size: 0.82rem; line-height: 1.6; color: var(--text-muted);">
+                          <strong style="color: #fff; display: block; margin-bottom: 4px;">📖 API Key 取得ステップ:</strong>
+                          <ol style="margin: 4px 0 10px 18px; padding: 0;">
+                            <li><a href="https://console.cloud.google.com/" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: underline;">Google Cloud Console</a> にログインし、プロジェクトを選択（または新規作成）します。</li>
+                            <li>左メニュー「API とサービス」→「ライブラリ」を開き、<strong>「Cloud Text-to-Speech API」</strong> を検索して「有効にする」をクリックします。</li>
+                            <li>「API とサービス」→「認証情報」を開き、画面上部「+ 認証情報を作成」→ <strong>「API キー」</strong> を選択します。</li>
+                            <li>生成されたキー（<code style="background: rgba(255,255,255,0.1); padding: 1px 4px; border-radius: 3px; color: #fff;">AIzaSy...</code>）をコピーして上の「API Key」欄に入力します。</li>
+                            <li><em>(推奨設定)</em>: API キーの編集画面で「API の制限」にチェックを入れ、「Cloud Text-to-Speech API」のみに限定しておくと安全です。</li>
+                          </ol>
+                          <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px; font-size: 0.8rem;">
+                            <strong>🎁 毎月の無料枠:</strong> Neural2 / Journey 音声は <strong>毎月 100万文字</strong>、Standard 音声は <strong>毎月 400万文字</strong> まで無料です。
+                          </div>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. ローカル音声エンジン群 (VOICEVOX / SHAREVOX / COEIROINK / 互換) 動的複数追加エリア -->
+              <div class="card glass-card" style="margin-bottom: 24px;">
+                <div class="card-header flex-between" style="flex-wrap: wrap; gap: 12px;">
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <h3 style="margin: 0; font-size: 1.15rem;">🎙️ ローカル音声エンジン群 (VOICEVOX / SHAREVOX / COEIROINK / 互換)</h3>
+                      <span class="badge badge-info" id="badgeVoiceEnginesTotal">3件登録</span>
+                    </div>
+                    <span class="card-sub">同一LAN内や別PC、GPUサーバー、Docker等で稼働する音声エンジンを自由に複数登録・個別設定できます</span>
+                  </div>
+                  <button type="button" id="btnAddVoiceEngine" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600;">
+                    <span>➕ 音声エンジンを追加</span>
+                  </button>
+                </div>
+                <div class="card-body">
+                  <div id="voiceEnginesList" style="display: flex; flex-direction: column; gap: 16px;">
+                    <!-- 動的エンジンカードが JS によりレンダリングされます -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. Edge-TTS (標準 / 最終フォールバック) -->
+              <div class="card glass-card" style="margin-bottom: 24px;">
+                <div class="card-header flex-between">
+                  <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <h3>Edge-TTS (標準)</h3>
+                      <span class="badge" id="badgeEdgeTtsStatus" style="background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4);">常時有効</span>
+                    </div>
+                    <span class="card-sub">完全無料・APIキー不要の自然な高品質日本語音声</span>
+                  </div>
+                  <span style="font-size: 0.8rem; color: var(--text-muted);" id="labelEdgeTtsRole">標準音声</span>
+                </div>
+                <div class="card-body">
+                  <p id="descEdgeTtsStatus" style="font-size: 0.85rem; color: var(--text-muted); margin: 0; line-height: 1.6;">
+                    七海（Nanami）、圭太（Keita）をはじめとする 7名の話者が追加設定なしでご利用いただけます。設定された外部エンジンが未設定・オフラインの場合も自動的にこちらで発話されます。
+                  </p>
+                </div>
+              </div>
+
+              <!-- 下部: 設定保存ボタン -->
+              <div style="margin-top: 24px; text-align: right;">
+                <button type="button" id="btnSaveTtsProviders" class="btn btn-primary" style="padding: 10px 24px; font-weight: 600;">
+                  💾 音声エンジン設定を保存
+                </button>
+              </div>
+            </div>
+
+            <!-- 1. 音声・機能拡張 サブペイン -->
+            <div id="subtab-settings-features" class="sub-tab-pane active">
           <div class="two-col-layout">
           <!-- 左カラム: チャイム & 重複防止 & 自動音量 -->
           <div class="col">

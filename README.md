@@ -1,6 +1,6 @@
 # Smart Home Speaker Voice Hub 🎙️
 
-Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワークカメラ、DLNA ネットワークオーディオなど、規格の異なる家庭内のスピーカー機器をまとめて、WebhookやAI、外部APIから自然な日本語音声（Microsoft Edge TTS）でお知らせを放送できる音声ハブです。
+Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワークカメラ、DLNA ネットワークオーディオなど、規格の異なる家庭内のスピーカー機器をまとめて、WebhookやAI、外部APIから自然な日本語音声（Edge-TTS）でお知らせを放送できる音声ハブです。
 
 日常のちょっとしたお知らせやリマインダーを、手軽に心地よく届けることを目指して作成されたツールです。
 
@@ -14,8 +14,8 @@ Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワー
 
 - **いろいろなスピーカーへまとめて発声**:
   Google Home (Nest)、Amazon Alexa (Echo)、Apple HomePod、ONVIF 対応ネットワークカメラ、DLNA / UPnP 対応オーディオ機器へ、個別に、または家中で一斉にアナウンスを再生できます。
-- **自然で聴き取りやすい日本語音声**:
-  Microsoft Edge TTS による高品質な音声合成を採用しており、落ち着いた女性音声・男性音声などを用途に合わせて選択できます。
+- **自然で聴き取りやすい日本語音声 & 多彩なエンジン拡張**:
+  標準の Edge-TTS による高品質な音声合成に加え、公式推奨の Azure Speech Service、Google Cloud TTS、ローカルの VOICEVOX / SHAREVOX / COEIROINK などを自由に追加・多段フォールバック連携できます。
 - **直感的な Web 画面**:
   スマートフォンやパソコンのブラウザからメッセージを入力するだけで、その場ですぐにアナウンスを送信できます。発言前の試聴プレビューや、過去の発言履歴からの再発話も可能です。
 - **毎日の定期放送 & カレンダー連携**:
