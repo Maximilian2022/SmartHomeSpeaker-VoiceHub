@@ -2702,6 +2702,202 @@ input:checked + .slider:before {
   font-weight: 700;
 }
 
+/* ========================================================
+   ボタン・トグル・アクティブ状態 & 視覚的フィードバック
+======================================================== */
+.btn-secondary.active,
+.btn.active {
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%) !important;
+  color: #ffffff !important;
+  border-color: rgba(99, 102, 241, 0.6) !important;
+  box-shadow: 0 0 14px rgba(79, 70, 229, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  font-weight: 600;
+}
+
+.btn-secondary.active:hover,
+.btn.active:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 18px rgba(79, 70, 229, 0.6) !important;
+}
+
+/* セグメントボタングループ (切り替えトグルUI) */
+.btn-group-segmented {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 4px;
+  gap: 4px;
+  width: 100%;
+}
+
+.btn-group-segmented .btn-segment {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-group-segmented .btn-segment:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-group-segmented .btn-segment.active {
+  background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.4);
+}
+
+/* 保存中・保存完了フィードバックアニメーション */
+.btn-saving {
+  opacity: 0.75;
+  pointer-events: none;
+  cursor: wait;
+}
+
+.btn-saved {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+  color: #ffffff !important;
+  border-color: rgba(16, 185, 129, 0.6) !important;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.5) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: pulse-saved 0.6s ease-in-out;
+}
+
+@keyframes pulse-saved {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+/* ONVIF スキャン進行インジケーター */
+.scan-progress-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.scan-progress-bar-container {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 8px;
+  position: relative;
+}
+
+.scan-progress-bar-indeterminate {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, #38bdf8, #6366f1, #a855f7);
+  border-radius: 3px;
+  animation: scan-indeterminate 1.8s infinite ease-in-out;
+}
+
+@keyframes scan-indeterminate {
+  0% { left: -40%; }
+  50% { left: 40%; width: 50%; }
+  100% { left: 100%; width: 30%; }
+}
+
+/* MQTT 接続ステータスサマリーボード */
+.mqtt-summary-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.mqtt-summary-item {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mqtt-summary-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mqtt-summary-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 各ブローカーカード内の統計行 */
+.mqtt-broker-stats-row {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Webhook ビルダー時間指定クイックチップ */
+.time-quick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.time-quick-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.time-quick-chip:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #60a5fa;
+}
+
+.time-quick-chip.active {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #3b82f6;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+
 
 
 

@@ -1846,6 +1846,20 @@
                 </div>
               </div>
 
+              <!-- スキャン進行インジケーター (スキャン実行時に表示) -->
+              <div id="onvifScanProgressBox" class="scan-progress-box">
+                <div class="flex-between" style="align-items: center;">
+                  <span style="font-size: 0.85rem; color: #38bdf8; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    宅内の ONVIF 防犯カメラおよび DLNA スピーカーを探索中...
+                  </span>
+                  <span style="font-size: 0.75rem; color: var(--text-muted);">WS-Discovery / SSDP 応答待機中 (約8秒)</span>
+                </div>
+                <div class="scan-progress-bar-container">
+                  <div class="scan-progress-bar-indeterminate"></div>
+                </div>
+              </div>
+
               <!-- 検出された ONVIF / DLNA デバイス一覧 -->
               <div style="margin-bottom: 24px;">
                 <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
@@ -2033,6 +2047,31 @@
                 <input type="text" id="builderText" class="form-input" value="ご飯ができましたよ！みんな集まってください。" placeholder="喋らせる文言を入力">
               </div>
 
+              <!-- 発声時刻指定 (at / time) - 常時表示 & クイック選択チップ -->
+              <div class="form-group" style="background: rgba(56, 189, 248, 0.03); border: 1px solid rgba(56, 189, 248, 0.15); border-radius: 8px; padding: 12px;">
+                <label for="builderAt" class="form-label" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="color: #38bdf8; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+                    <span>⏰</span> 発声時刻指定 (at / time)
+                  </span>
+                  <span style="font-weight: normal; color: var(--text-muted); font-size: 0.78rem;">空欄時は即時発声 / 未来日時はタイマー予約</span>
+                </label>
+                <div style="display: flex; gap: 8px;">
+                  <input type="text" id="builderAt" class="form-input" placeholder="例: +10m, +1h, 19:30, 2026-10-19T15:00:00 (空欄なら即時)" style="flex: 1;">
+                  <button type="button" id="btnClearBuilderAt" class="btn btn-secondary btn-sm" title="即時に戻す">即時に戻す</button>
+                </div>
+                <div class="time-quick-chips" style="margin-top: 8px;">
+                  <button type="button" class="time-quick-chip active" data-time="">即時 (空欄)</button>
+                  <button type="button" class="time-quick-chip" data-time="+5m">+5分後</button>
+                  <button type="button" class="time-quick-chip" data-time="+10m">+10分後</button>
+                  <button type="button" class="time-quick-chip" data-time="+15m">+15分後</button>
+                  <button type="button" class="time-quick-chip" data-time="+30m">+30分後</button>
+                  <button type="button" class="time-quick-chip" data-time="+1h">+1時間後</button>
+                </div>
+                <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 6px; display: block;">
+                  💡 過去の日時は即時発声、未来の日時（<code>+10m</code> や <code>19:30</code> 等）は指定時刻に自動発声します。右側の cURL / JSON / IFTTT スニペットに即時反映されます。
+                </small>
+              </div>
+
               <!-- 送信元 (from) -->
               <div class="form-group">
                 <label for="builderFrom" class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
@@ -2083,14 +2122,6 @@
                       <option value="0.7">70% (はっきり)</option>
                       <option value="0.9">90% (大音量)</option>
                     </select>
-                  </div>
-                  <div class="form-group" style="grid-column: 1 / -1;">
-                    <label for="builderAt" class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
-                      <span>⏰ 発声時刻指定 (at / time)</span>
-                      <span style="font-weight: normal; color: var(--text-muted); font-size: 0.8rem;">任意 (過去: 即時発声 / 未来: 予約発声)</span>
-                    </label>
-                    <input type="text" id="builderAt" class="form-input" placeholder="例: +10m, +1h, 08:30, 2026-10-19T08:30:00 (空欄なら即時)">
-                    <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 4px; display: block;">💡 ISO 8601、時刻（08:30）、相対指定（+10m, +1h）に対応。過去なら即時発声、未来なら予定時刻に自動アナウンスされます。</small>
                   </div>
                 </div>
               </details>
@@ -2460,7 +2491,7 @@ Body:
                 </div>
                 <div class="card-body">
                   <!-- 接続ステータスサマリーインジケーター -->
-                  <div id="mqttStatusBanner" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+                  <div id="mqttStatusBanner" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
                     <div style="display: flex; align-items: center; gap: 10px;">
                       <span id="mqttStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #64748b; display: inline-block;"></span>
                       <div>
@@ -2471,6 +2502,34 @@ Body:
                     <button type="button" id="btnReconnectMqtt" class="btn btn-secondary btn-sm">
                       🔄 全再接続
                     </button>
+                  </div>
+
+                  <!-- 接続ステータスサマリーボード (接続中ブローカー詳細サマリー) -->
+                  <div id="mqttSummaryBoard" class="mqtt-summary-board">
+                    <div class="mqtt-summary-item">
+                      <span class="mqtt-summary-label">接続ステータス</span>
+                      <div class="mqtt-summary-value" id="mqttSummaryConn">
+                        <span style="color: var(--text-muted); font-size: 0.9rem;">取得中...</span>
+                      </div>
+                    </div>
+                    <div class="mqtt-summary-item">
+                      <span class="mqtt-summary-label">メインブローカー</span>
+                      <div class="mqtt-summary-value" id="mqttSummaryHost">
+                        <span style="color: var(--text-muted); font-size: 0.9rem;">-</span>
+                      </div>
+                    </div>
+                    <div class="mqtt-summary-item">
+                      <span class="mqtt-summary-label">購読トピック / 受信</span>
+                      <div class="mqtt-summary-value" id="mqttSummaryTopic">
+                        <span style="color: var(--text-muted); font-size: 0.9rem;">-</span>
+                      </div>
+                    </div>
+                    <div class="mqtt-summary-item">
+                      <span class="mqtt-summary-label">Home Assistant 連携</span>
+                      <div class="mqtt-summary-value" id="mqttSummaryHa">
+                        <span style="color: var(--text-muted); font-size: 0.9rem;">-</span>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- 登録ブローカー一覧コンテナ (動的レンダリング) -->
@@ -2566,7 +2625,16 @@ Body:
   "volume": 0.8,
   "urgent": false
 }</pre>
-                  <div style="font-size: 0.78rem; color: var(--text-muted);">
+
+                  <div style="font-weight: 600; color: #38bdf8; margin-bottom: 6px;">3. ⏰ 発声時刻指定（タイマー予約・時報・リマインダー）</div>
+                  <pre style="background: rgba(0,0,0,0.4); padding: 10px; border-radius: 6px; font-size: 0.8rem; overflow-x: auto; color: #86efac; margin: 0 0 12px 0;">{
+  "text": "10分経ちました。洗濯物を干してください。",
+  "target": "リビング",
+  "at": "+10m"
+}</pre>
+                  <div style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">
+                    ※ <code>at</code> または <code>time</code> に相対時間（<code>+5m</code>, <code>+10m</code>, <code>+1h</code>）や時刻（<code>19:30</code>）、ISO日時を指定すると、指定時刻に自動発声されます。<br>
+                    ※ 過去の日時は即時発声、未来の日時は永続化キューに保存され、再起動後も予定時刻に確実に実行されます。<br>
                     ※ 単なる文字列（<code>"お風呂が沸きました"</code>）をそのまま送るだけでも即時発話されます。<br>
                     ※ 発話完了時に <code>voicehub/events/say</code> へ完了通知が届くため、後続フローのトリガーとしても活用できます。
                   </div>
@@ -2605,14 +2673,14 @@ Body:
                     </div>
                   </div>
 
-                  <!-- 接続モード切り替え (ローカル LAN / インターネット Tunnel) -->
+                  <!-- 接続モード切り替え (セグメントコントロール) -->
                   <div style="margin-bottom: 14px;">
                     <label class="form-label">接続環境の選択</label>
-                    <div style="display: flex; gap: 8px;">
-                      <button type="button" id="btnMcpModeLocal" class="btn btn-secondary btn-sm active" style="flex: 1;">
+                    <div class="btn-group-segmented">
+                      <button type="button" id="btnMcpModeLocal" class="btn-segment active">
                         🏠 宅内 LAN (ローカル)
                       </button>
-                      <button type="button" id="btnMcpModeInternet" class="btn btn-secondary btn-sm" style="flex: 1;">
+                      <button type="button" id="btnMcpModeInternet" class="btn-segment">
                         🌐 インターネット (Cloudflare Tunnel / 外出先)
                       </button>
                     </div>
@@ -2732,23 +2800,32 @@ Body:
                 </div>
                 <div class="card-body" style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary);">
                   <div style="margin-bottom: 8px;">
-                    <strong style="color: #38bdf8;">1. speak(text, target?, volume?, voice?, urgent?)</strong><br>
-                    スマートスピーカーから音声を読み上げます。「ALL」で全室一斉放送も可能。
+                    <strong style="color: #38bdf8;">1. speak(text, target?, volume?, voice?, urgent?, at?)</strong><br>
+                    スマートスピーカーから音声を読み上げます。「ALL」で全室一斉放送も可能。<br>
+                    <span style="color: #86efac; font-size: 0.8rem;">⏰ <code>at</code> 引数に「<code>+10m</code>」「<code>19:30</code>」等を渡すと、その時刻に予約発声します（過去なら即時発声）。</span>
                   </div>
                   <div style="margin-bottom: 8px;">
-                    <strong style="color: #38bdf8;">2. list_speakers()</strong><br>
+                    <strong style="color: #38bdf8;">2. list_scheduled_speeches()</strong><br>
+                    待機中の発声予約タスク（タイマー・日時指定発声）の一覧・予定時刻・残り時間を取得。
+                  </div>
+                  <div style="margin-bottom: 8px;">
+                    <strong style="color: #38bdf8;">3. cancel_scheduled_speech(taskId)</strong><br>
+                    指定した予約発声タスクを取り消し・キャンセルします。
+                  </div>
+                  <div style="margin-bottom: 8px;">
+                    <strong style="color: #38bdf8;">4. list_speakers()</strong><br>
                     家にある Google Cast, Alexa, HomePod, DLNA, ONVIF スピーカー一覧を取得。
                   </div>
                   <div style="margin-bottom: 8px;">
-                    <strong style="color: #38bdf8;">3. get_status()</strong><br>
+                    <strong style="color: #38bdf8;">5. get_status()</strong><br>
                     おやすみモード（DND）の動作状態、現在進行中のカレンダー会議名を確認。
                   </div>
                   <div style="margin-bottom: 8px;">
-                    <strong style="color: #38bdf8;">4. set_dnd(enabled, durationMinutes?, reason?)</strong><br>
+                    <strong style="color: #38bdf8;">6. set_dnd(enabled, durationMinutes?, reason?)</strong><br>
                     一時的な集中や睡眠に合わせてスピーカーのミュートを制御。
                   </div>
                   <div>
-                    <strong style="color: #38bdf8;">5. get_history(limit?)</strong><br>
+                    <strong style="color: #38bdf8;">7. get_history(limit?)</strong><br>
                     直近にどんなアナウンスが流れたかを AI が把握。
                   </div>
                 </div>

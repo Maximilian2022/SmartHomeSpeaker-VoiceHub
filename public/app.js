@@ -1408,11 +1408,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (subtabId === 'subtab-settings-disaster') {
               loadDisasterSettings();
+            } else if (subtabId === 'subtab-settings-onvif') {
+              if (typeof renderRegisteredOnvifTable === 'function') renderRegisteredOnvifTable();
             } else if (subtabId === 'subtab-settings-mqtt') {
+              if (typeof window.populateMqttSettings === 'function') window.populateMqttSettings();
               if (typeof updateMqttStatus === 'function') updateMqttStatus();
             } else if (subtabId === 'subtab-settings-mcp') {
               if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
               if (typeof updateMcpStatus === 'function') updateMcpStatus();
+            } else if (subtabId === 'subtab-settings-webhook') {
+              if (typeof updateWebhookSnippets === 'function') updateWebhookSnippets();
             } else if (subtabId === 'subtab-settings-tts') {
               if (typeof loadTtsProvidersSettings === 'function') loadTtsProvidersSettings();
             }
@@ -2534,8 +2539,36 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rateSelect) rateSelect.addEventListener('change', updateBuilderCode);
     if (volSelect) volSelect.addEventListener('change', updateBuilderCode);
     if (chimeSelect) chimeSelect.addEventListener('change', updateBuilderCode);
-    if (atInput) atInput.addEventListener('input', updateBuilderCode);
+    if (atInput) {
+      atInput.addEventListener('input', () => {
+        // 手動入力時、クイックチップのアクティブ状態を更新
+        document.querySelectorAll('.time-quick-chips .time-quick-chip').forEach(c => {
+          c.classList.toggle('active', c.getAttribute('data-time') === atInput.value.trim());
+        });
+        updateBuilderCode();
+      });
+    }
     urlRadios.forEach(r => r.addEventListener('change', updateBuilderCode));
+
+    // 発声時刻指定クイックチップのイベント紐付け
+    document.querySelectorAll('.time-quick-chips .time-quick-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('.time-quick-chips .time-quick-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        const timeVal = chip.getAttribute('data-time') || '';
+        if (atInput) atInput.value = timeVal;
+        updateBuilderCode();
+      });
+    });
+
+    // 即時に戻すボタン
+    document.getElementById('btnClearBuilderAt')?.addEventListener('click', () => {
+      if (atInput) atInput.value = '';
+      document.querySelectorAll('.time-quick-chips .time-quick-chip').forEach(c => c.classList.remove('active'));
+      const instantChip = document.querySelector('.time-quick-chips .time-quick-chip[data-time=""]');
+      if (instantChip) instantChip.classList.add('active');
+      updateBuilderCode();
+    });
 
     // 短縮マクロボタン (ALL, GH:ALL, AL:ALL, HP:ALL)
     document.querySelectorAll('.btn-macro').forEach(btn => {
@@ -2611,7 +2644,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // トークン保存ボタン
-    document.getElementById('btnSaveWebhookToken')?.addEventListener('click', async () => {
+    document.getElementById('btnSaveWebhookToken')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const done = setButtonSaving(btn, '保存中...');
       const token = tokenInput ? tokenInput.value.trim() : '';
       try {
         const res = await fetch('/api/settings', {
@@ -2623,8 +2658,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.serverInfo) state.serverInfo.webhookToken = token;
         updateBuilderCode();
         if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
+        done(true, '✓ 保存完了');
         showToast('Webhook 認証トークンを保存しました！', 'success');
       } catch (e) {
+        done(false);
         showToast('トークン保存エラー: ' + e.message, 'error');
       }
     });
@@ -4162,6 +4199,31 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/'/g, '&#039;');
   }
 
+  function setButtonSaving(btn, text = '保存中...') {
+    if (!btn) return () => {};
+    const origHtml = btn.innerHTML;
+    const origDisabled = btn.disabled;
+    btn.disabled = true;
+    btn.classList.add('btn-saving');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin" style="margin-right: 6px; vertical-align: middle;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>${escapeHtml(text)}`;
+
+    return function restore(isSuccess = true, successText = '✓ 保存完了') {
+      btn.classList.remove('btn-saving');
+      if (isSuccess) {
+        btn.classList.add('btn-saved');
+        btn.innerHTML = `<span style="margin-right: 6px; font-weight: 700;">✓</span>${escapeHtml(successText)}`;
+        setTimeout(() => {
+          btn.classList.remove('btn-saved');
+          btn.disabled = origDisabled;
+          btn.innerHTML = origHtml;
+        }, 1800);
+      } else {
+        btn.disabled = origDisabled;
+        btn.innerHTML = origHtml;
+      }
+    };
+  }
+
   // ================= 8. 拡張・システム設定 (チャイム、重複ブロック、カスタムグループ、自動音量、IPエイリアス) =================
   async function loadSettings() {
     try {
@@ -4434,8 +4496,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 3. 同調遅延スライダー値のリアルタイム表示
     // 5. 全設定保存ボタン
-    document.getElementById('btnSaveAllSettings')?.addEventListener('click', async () => {
-      await saveAllSettings();
+    document.getElementById('btnSaveAllSettings')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const done = setButtonSaving(btn, '設定を保存中...');
+      const ok = await saveAllSettings();
+      done(ok, '✓ 設定を保存しました');
     });
 
     // 4. IPエイリアス追加ボタン
@@ -4909,6 +4974,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       };
 
+      const done = setButtonSaving(btnSaveAuth, '認証保存中...');
       try {
         const res = await fetch('/api/settings', {
           method: 'PUT',
@@ -4921,8 +4987,10 @@ document.addEventListener('DOMContentLoaded', () => {
           authSavedMsg.style.display = 'inline';
           setTimeout(() => { authSavedMsg.style.display = 'none'; }, 3000);
         }
+        done(true, '✓ 認証保存完了');
         showToast('ONVIF デフォルト認証情報を保存しました', 'success');
       } catch (e) {
+        done(false);
         showToast('保存エラー: ' + e.message, 'error');
       }
     });
@@ -5003,6 +5071,9 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
       showToast('宅内の ONVIF カメラおよび DLNA スピーカーをスキャンしています...');
 
+      const progressBox = document.getElementById('onvifScanProgressBox');
+      if (progressBox) progressBox.style.display = 'block';
+
       const tbody = document.getElementById('onvifDiscoveredTableBody');
       const scanCount = document.getElementById('onvifScanCount');
       if (tbody) {
@@ -5021,11 +5092,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!res.ok) throw new Error(data.error || 'スキャンに失敗しました');
 
         discoveredOnvifDevices = Array.isArray(data) ? data : (data.devices || []);
+        const regList = state.settings?.onvif?.registeredDevices || [];
+        const regCount = discoveredOnvifDevices.filter(d => regList.some(r => r.ip === d.ip)).length;
+
         if (scanCount) {
-          scanCount.textContent = `${discoveredOnvifDevices.length} 台検出`;
+          scanCount.textContent = `${discoveredOnvifDevices.length} 台検出 (登録済: ${regCount}台)`;
         }
         renderDiscoveredOnvifTable();
-        showToast(`ONVIF / DLNA デバイスを ${discoveredOnvifDevices.length} 台検出しました`, 'success');
+        showToast(`ONVIF / DLNA デバイスを ${discoveredOnvifDevices.length} 台検出しました（内 ${regCount} 台は連携中）`, 'success');
       } catch (err) {
         console.error('ONVIF/DLNA スキャンエラー:', err);
         showToast('ONVIF/DLNA スキャンエラー: ' + err.message, 'error');
@@ -5033,6 +5107,7 @@ document.addEventListener('DOMContentLoaded', () => {
           tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">スキャンに失敗しました: ${escapeHtml(err.message)}</td></tr>`;
         }
       } finally {
+        if (progressBox) progressBox.style.display = 'none';
         btnScan.disabled = false;
         btnScan.innerHTML = origHtml;
       }
@@ -5154,6 +5229,42 @@ document.addEventListener('DOMContentLoaded', () => {
           selBroker.value = currentVal;
         }
       }
+
+      // 接続ステータスサマリーボード (接続中ブローカー詳細) の更新
+      const sumConn = document.getElementById('mqttSummaryConn');
+      const sumHost = document.getElementById('mqttSummaryHost');
+      const sumTopic = document.getElementById('mqttSummaryTopic');
+      const sumHa = document.getElementById('mqttSummaryHa');
+
+      if (sumConn) {
+        if (!data.enabled) {
+          sumConn.innerHTML = '<span style="color: var(--text-muted); font-size: 0.9rem;">⚪ 無効</span>';
+        } else if (data.connected) {
+          sumConn.innerHTML = `<span style="color: #34d399; font-size: 0.9rem;">🟢 接続中 (${data.connectedCount}/${data.totalBrokers || 1}台)</span>`;
+        } else {
+          sumConn.innerHTML = `<span style="color: #f87171; font-size: 0.9rem;">🔴 切断中 (${data.connectedCount}/${data.totalBrokers || 0}台)</span>`;
+        }
+      }
+
+      if (sumHost) {
+        const activeBroker = (Array.isArray(data.brokers) && data.brokers.find(b => b.connected)) || (data.brokers && data.brokers[0]);
+        if (activeBroker && activeBroker.broker) {
+          sumHost.innerHTML = `<code>${escapeHtml(activeBroker.broker)}:${activeBroker.port || 1883}</code>`;
+        } else {
+          sumHost.innerHTML = '<span style="color: var(--text-muted); font-size: 0.9rem;">未設定</span>';
+        }
+      }
+
+      if (sumTopic) {
+        sumTopic.innerHTML = `<span>${data.receivedCount || 0} 件</span> <small style="color: var(--text-muted); font-size: 0.75rem;">(voicehub/say)</small>`;
+      }
+
+      if (sumHa) {
+        const haEnabled = data.brokers ? data.brokers.some(b => b.haDiscoveryEnabled !== false) : true;
+        sumHa.innerHTML = haEnabled
+          ? '<span style="color: #38bdf8; font-size: 0.9rem;">🟢 自動検出 有効</span>'
+          : '<span style="color: var(--text-muted); font-size: 0.9rem;">⚪ 無効</span>';
+      }
     } catch (e) {
       dot.style.background = '#f59e0b';
       text.textContent = '通信エラー';
@@ -5212,6 +5323,10 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
             <div class="mqtt-broker-card-body">
+              <div id="mqttBrokerStats_${escapeHtml(b.id)}" class="mqtt-broker-stats-row" style="margin-top: 0; margin-bottom: 12px; padding-top: 0; border-top: none;">
+                トピック: <code>${escapeHtml(b.baseTopic || 'voicehub')}/say</code>
+              </div>
+
               <div class="form-group" style="margin-bottom: 12px;">
                 <label class="form-label" style="font-size: 0.85rem;">ブローカー表示名 *</label>
                 <input type="text" class="form-input broker-input-name" placeholder="例: Home Assistant Mosquitto" value="${escapeHtml(b.name || '')}">
@@ -5511,9 +5626,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 全体保存ボタン
     btnSave?.addEventListener('click', async () => {
-      const origText = btnSave.textContent;
-      btnSave.disabled = true;
-      btnSave.textContent = '💾 保存中...';
+      const done = setButtonSaving(btnSave, 'MQTT 設定を保存中...');
 
       const brokersToSave = currentMqttBrokers.map(b => {
         const copy = { ...b };
@@ -5538,13 +5651,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // クライアント再起動
         await fetch('/api/mqtt/restart', { method: 'POST' });
+        done(true, '✓ MQTT 設定を保存しました');
         showToast('MQTT 設定を保存し、ブローカー接続を更新しました', 'success');
-        setTimeout(updateMqttStatus, 1000);
+        setTimeout(updateMqttStatus, 800);
       } catch (err) {
+        done(false);
         showToast('エラー: ' + err.message, 'error');
-      } finally {
-        btnSave.disabled = false;
-        btnSave.textContent = origText;
       }
     });
 
@@ -7249,10 +7361,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const btn = getEl('btnSaveTtsSettings', 'btnSaveTtsProviders');
-    const origText = btn ? btn.textContent : '';
+    let done = null;
     if (btn && !silent) {
-      btn.disabled = true;
-      btn.textContent = '⏳ 保存中...';
+      done = setButtonSaving(btn, 'TTS 設定を保存中...');
     }
 
     const payload = {
@@ -7284,6 +7395,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!silent) {
           showToast('外部音声エンジン (TTS) 設定を保存しました', 'success');
         }
+        if (done) done(true, '✓ TTS 設定を保存しました');
         if (typeof loadVoices === 'function') {
           await loadVoices();
         }
@@ -7292,15 +7404,11 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data.detail || data.error || '保存に失敗しました');
       }
     } catch (err) {
+      if (done) done(false);
       if (!silent) {
         showToast('設定保存エラー: ' + err.message, 'error');
       }
       console.error('saveTtsProvidersSettings error:', err);
-    } finally {
-      if (btn && !silent) {
-        btn.disabled = false;
-        btn.textContent = origText || '💾 音声エンジン設定を保存';
-      }
     }
   }
 

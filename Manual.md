@@ -22,6 +22,8 @@
    - 4.2 [チャイム音声結合 (FFmpeg / バイト連結)](#42-チャイム音声結合-ffmpeg--バイト連結)
    - 4.3 [音声キャッシュ管理 (MD5・LRU・容量制限)](#43-音声キャッシュ管理-md5lru容量制限)
    - 4.4 [時間帯別自動音量調整 (Auto Volume)](#44-時間帯別自動音量調整-auto-volume)
+   - 4.5 [外部音声エンジン自由追加アーキテクチャ (TTS Engine Extensibility)](#45-外部音声エンジン自由追加アーキテクチャ-tts-engine-extensibility)
+   - 4.6 [発声時刻指定（タイマー予約発声）仕様](#46-発声時刻指定タイマー予約発声仕様)
 5. [おやすみ・会議モード (DND) 仕様](#5-おやすみ会議モード-dnd-仕様)
    - 5.1 [DND 優先度判定パイプライン](#51-dnd-優先度判定パイプライン)
    - 5.2 [3つの抑制動作モード (Skip / Whisper / Queue)](#52-3つの抑制動作モード-skip--whisper--queue)
@@ -55,13 +57,18 @@
     - 11.1 [マルチブローカー接続アーキテクチャ](#111-マルチブローカー接続アーキテクチャ)
     - 11.2 [トピック設計とメッセージ仕様](#112-トピック設計とメッセージ仕様)
     - 11.3 [Home Assistant MQTT Discovery 自動エンティティ仕様](#113-home-assistant-mqtt-discovery-自動エンティティ仕様)
+    - 11.4 [リアルタイム接続ステータスサマリーボード](#114-リアルタイム接続ステータスサマリーボード)
 12. [Web GUI インターフェース仕様](#12-web-gui-インターフェース仕様)
     - 12.1 [macOS 風 2カラム縦型設定ナビゲーション](#121-macos-風-2カラム縦型設定ナビゲーション)
     - 12.2 [発言履歴 (リアルタイム記録・再発言・試聴)](#122-発言履歴-リアルタイム記録再発言試聴)
     - 12.3 [Webhook コマンドビルダー ＆ プラグイン解説書モーダル](#123-webhook-コマンドビルダー--プラグイン解説書モーダル)
+    - 12.4 [視覚的フィードバックとモダンアニメーション](#124-視覚的フィードバックとモダンアニメーション)
 13. [完全 REST API リファレンス](#13-完全-rest-api-リファレンス)
 14. [ファイル構成と永続化ディレクトリ](#14-ファイル構成と永続化ディレクトリ)
 15. [システム内部アーキテクチャ詳細 (FastAPI モジュール仕様)](#15-システム内部アーキテクチャ詳細-fastapi-モジュール仕様)
+    - 15.1 [コアモジュール (`app/core/`)](#151-コアモジュール-appcore)
+    - 15.2 [サービスモジュール (`app/services/`)](#152-サービスモジュール-appservices)
+    - 15.3 [ロギング・運用保守基盤（シームレスログ ＆ 起動時バナー）](#153-ロギング運用保守基盤シームレスログ--起動時バナー)
 
 ---
 
@@ -340,9 +347,24 @@ Edge-TTS の Neural 音声エンジン（SSML 対応）を採用しています�
 > 個人用 Microsoft アカウント（@outlook.jp, @gmail.com 等）で直接 Azure ポータルを開いた際や、ブラウザの古い認証情報が競合している際によく発生します。
 > * **対処法**: ブラウザの**シークレットウィンドウ（InPrivate）**を開き、[Azure 無料アカウント作成ページ](https://azure.microsoft.com/ja-jp/free/) の**「無料で始める」**から初期登録を行ってからポータルにお進みください。
 
-* **毎月の無料枠**: Free F0 プランの場合、Neural 音声が **毎月 50万文字** まで完全無料でご利用いただけます（Voice Hub 側で月次消費量を自動集計）。
-</details>
+### 4.6 発声時刻指定（タイマー予約発声）仕様
 
+「お風呂が沸いてから10分後にリマインド」「指定した時刻（19:30）に夕食のアナウンス」など、未来の特定日時にアナウンスを自動予約・発声させる機能です。
+
+* **対応パラメータ名**:
+  `at`, `time`, `scheduled_at`, `datetime`（すべて同等のエイリアスとして自動解釈されます）
+* **指定可能な時刻フォーマット**:
+  1. **相対時間指定**:
+     - `+10m` (10分後), `+30m` (30分後), `+1h` (1時間後), `+45s` (45秒後) など、単位（`s`: 秒, `m`: 分, `h`: 時間, `d`: 日）を用いた直感的な指定。
+  2. **時刻指定**:
+     - `19:30`, `08:00:00` など（当日の指定時刻。すでに時刻が過ぎている場合は翌日の同時刻または即時判定）。
+  3. **完全日時指定**:
+     - `2026-10-19T15:00:00`, `2026-10-19 18:30:00` などの ISO 8601 / 日時文字列。
+* **動作ライフサイクル**:
+  1. **非同期即時応答**: 未来の日時が指定された場合、バックグラウンドのスケジューラーに予約タスクを登録し、即座に HTTP 200 OK（`{"status": "scheduled", "task_id": "...", "scheduled_at": "..."}`）を返却します。外部の呼び出し元（cURL、Home Assistant、Node-RED 等）を長時間待機させません。
+  2. **定時自動実行**: 指定時刻の到来とともに、通常の音声合成・宛先解決・DND 優先度判定パイプラインが実行され、スピーカーからアナウンスが送出されます。
+  3. **過去日時・空欄時の挙動**: 過去の日時や空欄が指定された場合は、遅延なく即時発声が行われます。
+  4. **全連携機能との統合**: Web GUI（クイック選択チップ）、REST API (`/api/say`)、Webhook、MQTT (`voicehub/say`)、MCP サーバー (`speak(at=...)`, `list_scheduled_speeches`, `cancel_scheduled_speech`) のすべてでシームレスに機能します。
 
 ---
 
@@ -481,6 +503,8 @@ P2P地震情報 API（`wss://api.p2pquake.net/v2/ws`）の WebSocket に常時�
   1. **ブラウザプロキシ連携 (推奨)**: Web GUI の「Amazon ログインを開始」から、手元のブラウザで Amazon アカウントにログインするだけで連携完了。
   2. **リフレッシュトークン (`Atnr|...`) 手動登録**:
      ターミナルで `npx alexa-cookie2` を実行して取得した `Refresh Token: Atnr|...` を、Web GUI または `.my.env` (`REFRESH_TOKEN`) に登録して運用することも可能です。
+- **全台発声時の公式 Everywhere グループ自動集約最適化**:
+  アカウント内の全 Echo デバイスが発話対象となった場合（`devices: ["ALL"]` や `AL:ALL` 指定時）、個々の端末へ並行して個別 API を叩くのではなく、Amazon Alexa 公式の「Everywhere グループ（すべてのデバイス）」へ単一のブロードキャストコマンドとして自動集約します。これにより、Amazon 側の API レートリミット（429）を確実に回避し、複数台でのタイムラグやエコーのない同期同時鳴動を実現します。
 
 ### 8.3 Apple HomePod (AirPlay 2 / pyatv)
 - **プロトコル**: Apple AirPlay 2 / RAOP (Bonjour / mDNS 探索)
@@ -493,7 +517,9 @@ P2P地震情報 API（`wss://api.p2pquake.net/v2/ws`）の WebSocket に常時�
 - **プロトコル**: ONVIF Profile T (WS-Discovery, UDP 3702, go2rtc 経由 RTSP バックチャンネル)
 - **コーデック**: G.711 PCMU (8kHz 64kbps)
 - **連携方法**:
-  Web GUI の「ONVIF / DLNA」タブで「デバイスをスキャン」を実行し、検出された Profile T 対応カメラを登録します。発声時は FFmpeg 経由でカメラのスピーカーへ音声が送信されます。
+  Web GUI の「ONVIF / DLNA」タブで「自動スキャン実行」を行うと、WS-Discovery により同一ネットワーク上のカメラ機器を自動検出します。Profile T（双方向音声）対応カメラをワンクリックで登録可能です。
+- **go2rtc 通信堅牢化とタイムアウト・リトライ制御**:
+  カメラ機器の起動遅延や Wi-Fi の一時的な電波揺らぎを考慮し、go2rtc バックチャンネルへの音声送出リクエストには `httpx.Timeout(30.0)` の適切なタイムアウトと非同期リトライハンドリングを実装。応答遅延による不用意な発声失敗を防止しています。
 
 ### 8.5 DLNA / UPnP ネットワークオーディオ (MediaRenderer)
 - **プロトコル**: UPnP AVTransport / RenderingControl (SSDP, UDP 1900, SOAP)
@@ -585,15 +611,19 @@ Claude Desktop、Cursor、Cline などの AI アシスタントから直接ス�
 
 | ツール名 | 説明 | 主要引数 |
 |---|---|---|
-| `say_message` | 指定したスピーカーへメッセージを発話 | `text` (必須), `targets`, `voice`, `rate`, `pitch`, `chime`, `volumeLevel`, `urgent` |
-| `list_speakers` | 利用可能な全スピーカー・グループの一覧を取得 | なし |
-| `get_status` | システム状態（DND状態、保留件数、デフォルト端末等）を取得 | なし |
-| `set_dnd` | おやすみ・会議モード (DND) の有効化・解除 | `enabled` (必須), `duration` (分単位), `reason` |
+| `speak` | 指定したスピーカーへ音声を発話・予約 | `text` (必須), `target`, `volume`, `voice`, `urgent`, `at` (任意: `+10m`, `19:30` 等の予約時刻) |
+| `list_speakers` | 利用可能な全スピーカー（Google, Alexa, HomePod, ONVIF, DLNA）の一覧を取得 | なし |
+| `get_status` | システム状態（DND 状態、保留件数、デフォルト端末等）を取得 | なし |
+| `set_dnd` | おやすみ・会議モード (DND) の有効化・解除 | `enabled` (必須), `durationMinutes`, `reason` |
 | `get_history` | 直近の発言履歴ログ（直近 N 件）を取得 | `limit` (デフォルト 10) |
+| `list_scheduled_speeches` | 現在スケジュールされている未来の発声予約タスク一覧を取得 | なし |
+| `cancel_scheduled_speech` | スケジュールされた特定の発声予約タスクをキャンセル | `task_id` (必須) |
 
 ### 10.3 AI アシスタント設定例 (Claude Desktop / Cursor / Cline)
 
-`claude_desktop_config.json` 等に以下を追加します：
+Web GUI の「MCP ツール連携」画面には、**「🏠 宅内 LAN (ローカル)」** と **「🌐 インターネット (Cloudflare Tunnel)」** をワンクリックで切り替えられるセグメントボタンが用意されており、環境に応じた設定 JSON スニペットが自動生成されます。
+
+`claude_desktop_config.json` 等の設定例：
 
 ```json
 {
@@ -607,7 +637,7 @@ Claude Desktop、Cursor、Cline などの AI アシスタントから直接ス�
   }
 }
 ```
-*(外部の Tunnel 経由で接続する場合は `https://<your-tunnel-domain>/mcp/sse` を指定します)*
+*(外出先やリモートの AI クライアントから接続する場合は、Web GUI のセグメントボタンで「インターネット」を選択し、表示される Tunnel 経由の URL をコピーしてご利用ください)*
 
 ---
 
@@ -626,10 +656,12 @@ Node-RED、Home Assistant、n8n などのホームオートメーションと連
 
 | トピック | 種別 | 説明・ペイロード例 |
 |---|---|---|
-| `voicehub/say` | Subscribe (受信) | 発声コマンドの受付。JSON: `{"text": "こんにちは", "devices": ["ALL"]}` またはテキスト直打ち |
+| `voicehub/say` | Subscribe (受信) | 発声コマンドの受付。JSON: `{"text": "こんにちは", "devices": ["ALL"], "at": "+10m"}` またはテキスト直打ち |
 | `voicehub/dnd/set` | Subscribe (受信) | DND 切替コマンド。`ON`, `OFF`, `30`, `60`, `120` |
 | `voicehub/status` | Publish (送信) | 定期ステータス発行。JSON: `{"status": "online", "dnd": false, "queued": 0}` |
 | `voicehub/availability` | LWT (遺言) | 接続状態。`online` / `offline` |
+
+※ `voicehub/say` で発声時刻（`"at": "+10m"` や `"at": "19:30"`）を指定すると、自動的にタイマー予約発声として登録され、指定時刻に実行されます。
 
 ### 11.3 Home Assistant MQTT Discovery 自動エンティティ仕様
 設定画面で「Home Assistant Discovery」を有効にすると、`homeassistant/<component>/voicehub/.../config` トピックへ Discovery メッセージを自動発行し、Home Assistant 側に以下のエンティティが自動生成されます：
@@ -638,6 +670,13 @@ Node-RED、Home Assistant、n8n などのホームオートメーションと連
 - **セレクト (`select`)**: 送信先スピーカー選択ボックス
 - **ナンバー (`number`)**: スピーカー音量スライダー
 - **センサー (`sensor`)**: 直近の発言内容、DND 状態センサー
+
+### 11.4 リアルタイム接続ステータスサマリーボード
+Web GUI の「MQTT ブローカー連携」画面上部には、登録されたすべてのブローカーの健全性を一目で把握できるサマリーボードが常時配置されています：
+- **稼働台数バッジ**: 接続中 / 登録ブローカー数のリアルタイム集計（例: `1/1 稼働中`）
+- **メインホスト情報**: 接続先 IP / ポートの明示
+- **購読トピック・累計受信数**: リアルタイム送受信カウンタ
+- **Home Assistant 連携ステータス**: HA Discovery の有効化状態および送出状況
 
 ---
 
@@ -656,8 +695,19 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 ### 12.3 Webhook コマンドビルダー ＆ プラグイン解説書モーダル
 - **Webhook コマンドビルダー**:
   画面上でスピーカーやメッセージを入力するだけで、cURL や IFTTT 向けの呼び出し設定が自動生成され、ワンクリックでコピーできます。
+  - **⏰ 発声時刻指定 (at / time) 常時表示セクション**:
+    アナウンス内容の直下に発声時刻指定枠が常時配置されており、「即時 (空欄)」「+5分後」「+10分後」「+15分後」「+30分後」「+1時間後」のクイック選択チップや「即時に戻す」ボタンからワンタップで設定可能。右側の cURL (GET/POST)、JSON、IFTTT スニペットにリアルタイム連動します。
 - **プラグイン解説書モーダル**:
   Web 画面右上の「📖 プラグイン解説書を見る」ボタンから、いつでも Homebridge プラグインの導入手順や設定 JSON 例を確認・コピーできます。
+
+### 12.4 視覚的フィードバックとモダンアニメーション
+ユーザーが操作の進捗や状態を直感的に把握できるよう、以下のフィードバックデザインが適用されています：
+- **保存ボタンの二段階遷移**:
+  各種設定（全体設定、ONVIF認証、MQTT設定、Webhookトークン、TTSプロバイダー）の保存ボタン押下時、アイコンが「保存中（回転スピナー）」に変わり、完了時に「✓ 保存完了（エメラルドグリーンのバウンスアニメーション）」へと鮮やかに遷移し、数秒後に自然に戻ります。
+- **アクティブボタンのグラデーショングロー**:
+  MCP 接続環境選択（ローカル / インターネット）やフィルターボタンにおいて、選択中の要素に青紫グラデーションと発光グロー（`box-shadow`）が付与され、現在の状態が一目で判別できます。
+- **ONVIF / DLNA スキャンプログレスバー**:
+  探索処理実行中（約8秒間）、デバイス一覧の上部に滑らかな青色アニメーションバーが表示され、進行中であることが視覚的に明示されます。
 
 ---
 
@@ -667,24 +717,29 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 
 ### 13.1 発声・Webhook API
 - **`POST /api/say`** / **`GET /api/say`**: スピーカーへの発話実行
+  - **主要パラメータ**: `text` (必須), `devices` / `targets`, `voice`, `rate`, `pitch`, `chime`, `volumeLevel`, `urgent`, `at` / `time` / `scheduled_at` (予約日時: `+10m`, `19:30` 等)
 - **`POST /api/webhook`** / **`GET /api/webhook`**: 外部 Webhook 経由の発話実行
 - **`POST /api/tts`**: 音声合成ファイル（MP3）の直接生成・ダウンロード
 
-### 13.2 認証 API
+### 13.2 予約発声（スケジュールスピーチ）API
+- **`GET /api/schedule/speeches`**: 現在スケジュールされている未来の発声予約タスク一覧を取得
+- **`POST /api/schedule/speeches/{id}/cancel`**: 指定した発声予約タスクをキャンセル
+
+### 13.3 認証 API
 - **`GET /api/auth/status`**: 認証設定状態およびログイン状態の取得
 - **`POST /api/auth/login`**: 管理者パスワードによるログイン (Cookie 発行)
 - **`POST /api/auth/logout`**: ログアウト処理
 
-### 13.3 履歴・キュー API
+### 13.4 履歴・キュー API
 - **`GET /api/history`**: 直近 100 件の発言ログ取得
 - **`DELETE /api/history`**: 発言履歴ログのクリア
 - **`GET /api/queue`**: 処理待ち Webhook キュー一覧の取得
 
-### 13.4 デバイス・スピーカー API
+### 13.5 デバイス・スピーカー API
 - **`GET /api/devices`**: 検出された全スピーカー・グループ一覧の取得
 - **`POST /api/devices/default`**: デフォルトスピーカー IP の変更
 
-### 13.5 スケジュール API
+### 13.6 スケジュール API
 - **`GET /api/schedules`**: スケジュール一覧の取得
 - **`POST /api/schedules`**: スケジュールの新規登録
 - **`PUT /api/schedules/{id}`**: スケジュールの更新
@@ -692,18 +747,18 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`POST /api/schedules/{id}/toggle`**: 有効/無効の切り替え
 - **`POST /api/schedules/{id}/run`**: スケジュールのテスト実行
 
-### 13.6 カレンダー連携 API
+### 13.7 カレンダー連携 API
 - **`GET /api/calendar/events`**: 同期済み予定一覧の取得
 - **`POST /api/calendar/sync`**: Google カレンダー即時再同期
 - **`POST /api/calendar/summary`**: 朝の予定まとめ発声テスト
 
-### 13.7 おやすみ・会議モード (DND) API
+### 13.8 おやすみ・会議モード (DND) API
 - **`GET /api/dnd/status`**: 現在の DND 状態・保留件数の取得
 - **`POST /api/dnd/quick`**: ワンタップ即時ミュートのオン/オフ
 - **`GET /api/dnd/history`**: DND 抑制記録ログの取得
 - **`DELETE /api/dnd/history`**: DND ログのクリア
 
-### 13.8 防災・緊急速報 API
+### 13.9 防災・緊急速報 API
 - **`GET /api/disaster/settings`**: 防災・気象設定の取得
 - **`PUT /api/disaster/settings`**: 防災・気象設定の更新
 - **`GET /api/disaster/areas`**: 地域マスター一覧の取得
@@ -711,19 +766,19 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`GET /api/disaster/status`**: WebSocket 接続状態および現在の警報取得
 - **`POST /api/disaster/test`**: シミュレーションテスト発報
 
-### 13.9 AI 連携 API
+### 13.10 AI 連携 API
 - **`GET /api/ai/status`**: AI 連携状態の取得
 - **`POST /api/ai/test`**: API Key の疎通検証
 - **`GET /api/ai/models`**: 利用可能モデル一覧の動的取得
 - **`POST /api/ai/summarize-test`**: 保留メッセージ要約テスト試聴
 - **`POST /api/ai/calendar-test`**: カレンダー朝サマリー要約テスト試聴
 
-### 13.10 システム設定 API
+### 13.11 システム設定 API
 - **`GET /api/settings`**: システム全体設定の取得
 - **`PUT /api/settings`**: システム全体設定の更新
 - **`POST /api/settings/sync-test`**: スピーカー間音ズレ同期テスト
 
-### 13.11 ハードウェア固有 API
+### 13.12 ハードウェア固有 API
 - **`GET /api/alexa/status`**: Alexa 連携状態の取得
 - **`POST /api/alexa/auth/start`**: Alexa プロキシログイン開始
 - **`POST /api/alexa/auth/stop`**: Alexa プロキシログイン停止
@@ -736,16 +791,19 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`POST /api/onvif/test`**: ONVIF / DLNA テスト発声
 - **`POST /api/onvif/default-auth`**: カメラ共通デフォルト認証情報の保存
 
-### 13.12 MQTT API
+### 13.13 MQTT API
 - **`GET /api/mqtt/status`**: 全 MQTT ブローカーの接続状態取得
 - **`POST /api/mqtt/test`**: 指定ブローカーへの接続テスト
 - **`POST /api/mqtt/reconnect`**: 全ブローカーの再接続
 
-### 13.13 外部音声エンジン (TTS) API
+### 13.14 外部音声エンジン (TTS) API
 - **`GET /api/tts/voices`**: 有効な全プロバイダー（Edge, VOICEVOX, SHAREVOX, COEIROINK, GCP, Azure）の統合話者一覧取得
 - **`GET /api/tts/providers`**: 各プロバイダーの稼働・設定状態および当月文字数使用量（GCP/Azure無料枠）の取得
 - **`POST /api/tts/providers/test`**: 指定プロバイダーの接続疎通検証、話者数検出、事前初期化テスト
 - **`PUT /api/tts/providers/settings`**: 外部音声エンジン有効/無効、接続先URL、タイムアウト、最速並行生成設定の更新
+
+### 13.15 システムログ API
+- **`GET /api/logs`**: シームレスログ（メモリバッファと永続化ログファイルをマージした最新のシステムログ一覧）の取得（引数: `limit`, `level`）
 
 ---
 
@@ -844,4 +902,14 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`mqtt_service.py`**:
   `aiomqtt` による複数ブローカーへの同時接続、トピック購読・発行、および Home Assistant MQTT Discovery 自動管理。
 - **`mcp_service.py`**:
-  JSON-RPC 2.0 メッセージの解釈、SSE 接続管理、および各ツール（`say_message` 等）のディスパッチ処理。
+  JSON-RPC 2.0 メッセージの解釈、SSE 接続管理、および各ツール（`speak`, `list_speakers`, `get_status`, `set_dnd`, `get_history`, `list_scheduled_speeches`, `cancel_scheduled_speech`）のディスパッチ処理。
+- **`scheduler_service.py`**:
+  発声予約（タイマー発声）タスクのメモリ管理、日時パーサー（相対 `+10m`、時刻 `19:30`、ISO8601対応）、バックグラウンド遅延実行ループ、および予約キャンセルハンドリング。
+
+### 15.3 ロギング・運用保守基盤（シームレスログ ＆ 起動時バナー）
+- **シームレスログ機構 (`core/logging.py`)**:
+  - **メモリバッファ**: 直近 2,000 件のログレコードを `collections.deque` によるリングバッファでメモリ上に保持。超高速な WebUI リアルタイム閲覧を実現。
+  - **永続化ログファイル (`logs/app.log`)**: ディスクへ常時書き出しを行い、再起動やコンテナ破棄に備えて永続保存。
+  - **透過的自動マージ (`GET /api/logs`)**: WebUI がログを要求した際、直近のメモリバッファと再起動前の永続化ファイル内容を自動で時系列マージして返却。再起動直後でも過去のログが消えず、トラブルシューティングを極めて円滑に行えます。
+- **システム起動時バナー (Startup Banner)**:
+  - FastAPI の Lifespan 起動時に、システムバージョン、Python 実行環境、リッスン IP・ポート、有効化されたスピーカー連携（Cast, Alexa, HomePod, ONVIF, DLNA）、マルチ MQTT 接続構成、MCP サーバー待受状態等をアスキーアートバナーとともにログ先頭へ明刻。再起動の発生タイミングや稼働環境の変更が一目で把握できます。
