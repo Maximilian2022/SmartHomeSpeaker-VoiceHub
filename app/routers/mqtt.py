@@ -9,6 +9,7 @@ router = APIRouter()
 class MqttTestRequest(BaseModel):
     text: str = "こちらはMQTT経由のテスト発話です"
     target: Optional[str] = None
+    brokerId: Optional[str] = None
 
 @router.get("/api/mqtt/status")
 async def get_mqtt_status():
@@ -25,19 +26,20 @@ async def restart_mqtt():
 async def test_mqtt(req: MqttTestRequest):
     """MQTT ブローカーを経由したテスト送信・発話検証"""
     try:
-        res = await mqtt_service.test_publish(req.text, req.target)
+        res = await mqtt_service.test_publish(req.text, req.target, broker_id=req.brokerId)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 class HaDiscoveryRequest(BaseModel):
     clear: bool = False
+    brokerId: Optional[str] = None
 
 @router.post("/api/mqtt/ha-discovery")
 async def trigger_ha_discovery(req: HaDiscoveryRequest = HaDiscoveryRequest()):
     """Home Assistant MQTT Auto-Discovery トピックの強制パブリッシュ / 削除"""
     try:
-        res = await mqtt_service.publish_ha_discovery(clear=req.clear)
+        res = await mqtt_service.publish_ha_discovery(clear=req.clear, broker_id=req.brokerId)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

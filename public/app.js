@@ -3849,8 +3849,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function escapeHtml(str) {
-    if (!str) return '';
-    return str
+    if (str === null || str === undefined) return '';
+    return String(str)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
@@ -3931,9 +3931,25 @@ document.addEventListener('DOMContentLoaded', () => {
       if (state.historyItems && state.historyItems.length > 0) {
         renderFullHistory();
       }
+
+      // 11. Homebridge 連携案内カードのパラメータ動的反映
+      const hbHostEl = document.getElementById('homebridgeHostDisplay');
+      if (hbHostEl) {
+        hbHostEl.textContent = `${window.location.protocol}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '80')}`;
+      }
+      const hbTokenEl = document.getElementById('homebridgeTokenDisplay');
+      if (hbTokenEl) {
+        if (data.webhookToken) {
+          hbTokenEl.textContent = `${data.webhookToken.slice(0, 6)}...${data.webhookToken.slice(-4)}`;
+          hbTokenEl.title = data.webhookToken;
+        } else {
+          hbTokenEl.textContent = 'なし (未設定)';
+        }
+      }
     } catch (e) {
       console.warn('システム設定読み込みエラー:', e.message);
     }
+
   }
 
   // カスタム部屋グループ一覧描画
@@ -4193,6 +4209,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (groupModal) groupModal.style.display = 'none';
       showToast(`カスタムグループ「${name}」を保存しました`, 'success');
+    });
+
+    // 6. Homebridge プラグイン解説書モーダル関連
+    const hbModal = document.getElementById('modalHomebridgeManual');
+    document.getElementById('btnOpenHomebridgeManual')?.addEventListener('click', () => {
+      if (hbModal) hbModal.style.display = 'flex';
+    });
+    document.getElementById('btnCloseHomebridgeManualModal')?.addEventListener('click', () => {
+      if (hbModal) hbModal.style.display = 'none';
+    });
+    document.getElementById('btnCloseHomebridgeManualModalFooter')?.addEventListener('click', () => {
+      if (hbModal) hbModal.style.display = 'none';
+    });
+    hbModal?.addEventListener('click', (e) => {
+      if (e.target === hbModal) hbModal.style.display = 'none';
+    });
+
+    // Homebridge インストールコマンドコピー
+    document.getElementById('btnCopyInstallCmd')?.addEventListener('click', () => {
+      navigator.clipboard.writeText('npm install -g homebridge-voicehub').then(() => {
+        showToast('インストールコマンドをコピーしました', 'success');
+      }).catch(() => {
+        showToast('コピーに失敗しました', 'error');
+      });
+    });
+
+    // Homebridge 設定 JSON コピー
+    document.getElementById('btnCopyHomebridgeJson')?.addEventListener('click', () => {
+      const pre = document.getElementById('preHomebridgeConfigJson');
+      if (pre) {
+        navigator.clipboard.writeText(pre.textContent).then(() => {
+          showToast('Homebridge 設定 JSON をコピーしました', 'success');
+        }).catch(() => {
+          showToast('コピーに失敗しました', 'error');
+        });
+      }
     });
   }
 
@@ -4686,15 +4738,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ================= 8.5. MQTT 連携設定 (Node-RED / n8n メッセージ読み上げ) =================
-  function renderMqttSpeakerOptions() {
-    const selDef = document.getElementById('settingMqttDefaultTarget');
-    const selTest = document.getElementById('selectMqttTestTarget');
-    if (!selDef && !selTest) return;
+  // ================= 8.5. MQTT 連携設定 (マルチブローカー対応) =================
+  let currentMqttBrokers = [];
 
+  function getMqttSpeakerOptionsHtml() {
     const devs = state.devices || [];
-    const currentDefVal = selDef ? selDef.value : '';
-    const currentTestVal = selTest ? selTest.value : '';
-
     const optionsHtml = [
       '<option value="">全体デフォルトスピーカーに従う</option>',
       '<optgroup label="全室マクロ">',
@@ -4724,15 +4772,22 @@ document.addEventListener('DOMContentLoaded', () => {
       optionsHtml.push('</optgroup>');
     }
 
-    const htmlString = optionsHtml.join('\n');
-    if (selDef) {
-      selDef.innerHTML = htmlString;
-      selDef.value = currentDefVal;
-    }
+    return optionsHtml.join('\n');
+  }
+
+  function renderMqttSpeakerOptions() {
+    const htmlString = getMqttSpeakerOptionsHtml();
+    const selTest = document.getElementById('selectMqttTestTarget');
     if (selTest) {
-      selTest.innerHTML = optionsHtml.slice(0, 1).concat(optionsHtml.slice(1)).join('\n');
-      selTest.value = currentTestVal;
+      const curTestVal = selTest.value;
+      selTest.innerHTML = htmlString;
+      selTest.value = curTestVal;
     }
+    document.querySelectorAll('.broker-select-target').forEach(sel => {
+      const curVal = sel.value;
+      sel.innerHTML = htmlString;
+      sel.value = curVal;
+    });
   }
 
   async function updateMqttStatus() {
@@ -4753,16 +4808,47 @@ document.addEventListener('DOMContentLoaded', () => {
         if (detail) detail.textContent = 'スイッチをONにして保存すると、設定したMQTTブローカーへ接続を開始します';
       } else if (data.connected) {
         dot.style.background = '#10b981'; // green
-        text.textContent = `接続中 (${data.broker}:${data.port})`;
+        text.textContent = `接続中 (${data.connectedCount} / ${data.totalBrokers || 1} 台のブローカー)`;
         text.style.color = '#34d399';
         if (detail) {
-          detail.textContent = `トピック: ${data.baseTopic}/say | 受信: ${data.receivedCount} 件${data.lastMessageAt ? ' (最終: ' + data.lastMessageAt + ')' : ''}`;
+          detail.textContent = `受信合計: ${data.receivedCount} 件${data.lastMessageAt ? ' (最新: ' + data.lastMessageAt + ')' : ''}`;
         }
       } else {
         dot.style.background = '#ef4444'; // red
-        text.textContent = `切断 / 接続失敗 (${data.broker}:${data.port})`;
+        text.textContent = `切断 / 接続待機 (${data.connectedCount} / ${data.totalBrokers || 0} 台接続)`;
         text.style.color = '#f87171';
-        if (detail) detail.textContent = data.lastError || 'ブローカーに接続できません。IP・ポートやネットワークを確認してください';
+        if (detail) detail.textContent = data.lastError || 'ブローカーに接続できません。設定やネットワークを確認してください';
+      }
+
+      // 各ブローカーカードのステータスバッジ & 統計情報の個別更新
+      if (Array.isArray(data.brokers)) {
+        data.brokers.forEach(ws => {
+          const pill = document.getElementById(`mqttBrokerPill_${ws.id}`);
+          if (pill) {
+            pill.className = 'mqtt-broker-status-pill ' + (!ws.enabled ? 'disabled' : (ws.connected ? 'connected' : 'disconnected'));
+            pill.textContent = !ws.enabled ? '⚪ 無効' : (ws.connected ? '🟢 接続中' : '🔴 切断');
+          }
+          const stats = document.getElementById(`mqttBrokerStats_${ws.id}`);
+          if (stats) {
+            let statsHtml = `受信: <strong>${ws.receivedCount || 0}</strong> 件 | トピック: <code>${escapeHtml(ws.baseTopic || 'voicehub')}/say</code>`;
+            if (ws.lastMessageAt) statsHtml += ` | 最新: ${escapeHtml(ws.lastMessageAt)}`;
+            if (ws.lastError) statsHtml += `<div style="color: #f87171; margin-top: 4px;">⚠️ ${escapeHtml(ws.lastError)}</div>`;
+            stats.innerHTML = statsHtml;
+          }
+        });
+
+        // テスト送信先ブローカー選択セレクトボックスの更新
+        const selBroker = document.getElementById('selectMqttTestBroker');
+        if (selBroker) {
+          const currentVal = selBroker.value;
+          let opts = '<option value="">🌐 すべての接続中ブローカーに配信</option>';
+          data.brokers.forEach(b => {
+            const statusLabel = !b.enabled ? '無効' : (b.connected ? '接続中' : '切断');
+            opts += `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name || b.broker)} (${escapeHtml(b.broker)}:${b.port}) [${statusLabel}]</option>`;
+          });
+          selBroker.innerHTML = opts;
+          selBroker.value = currentVal;
+        }
       }
     } catch (e) {
       dot.style.background = '#f59e0b';
@@ -4773,61 +4859,367 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setupMqttSettings() {
     const checkEnabled = document.getElementById('settingMqttEnabled');
-    const inputBroker = document.getElementById('settingMqttBroker');
-    const inputPort = document.getElementById('settingMqttPort');
-    const inputUser = document.getElementById('settingMqttUsername');
-    const inputPass = document.getElementById('settingMqttPassword');
-    const inputBaseTopic = document.getElementById('settingMqttBaseTopic');
-    const inputClientId = document.getElementById('settingMqttClientId');
-    const selDefaultTarget = document.getElementById('settingMqttDefaultTarget');
-    const checkPublishEvents = document.getElementById('settingMqttPublishEvents');
-    const checkTls = document.getElementById('settingMqttTls');
-    const checkHaDiscovery = document.getElementById('settingMqttHaDiscoveryEnabled');
-    const inputHaPrefix = document.getElementById('settingMqttHaDiscoveryPrefix');
-
+    const container = document.getElementById('mqttBrokersContainer');
+    const btnAddBroker = document.getElementById('btnAddMqttBroker');
     const btnSave = document.getElementById('btnSaveMqttSettings');
     const btnReconnect = document.getElementById('btnReconnectMqtt');
     const btnTest = document.getElementById('btnSendMqttTest');
-    const btnResendHa = document.getElementById('btnResendHaDiscovery');
-    const btnClearHa = document.getElementById('btnClearHaDiscovery');
 
-    // フォームへの初期値反映関数
+    function renderBrokersList() {
+      if (!container) return;
+      if (currentMqttBrokers.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 36px 20px; color: var(--text-muted); background: rgba(255,255,255,0.02); border: 1px dashed rgba(255,255,255,0.1); border-radius: var(--radius-md);">
+            <div style="font-size: 2.2rem; margin-bottom: 8px;">📡</div>
+            <div style="font-weight: 600; font-size: 1rem; color: var(--text-color); margin-bottom: 4px;">登録された MQTT ブローカーはありません</div>
+            <div style="font-size: 0.85rem;">「＋ 新しい MQTT ブローカーを追加」ボタンから Home Assistant や Node-RED などのブローカーを追加してください</div>
+          </div>
+        `;
+        return;
+      }
+
+      const speakerOptionsHtml = getMqttSpeakerOptionsHtml();
+
+      container.innerHTML = currentMqttBrokers.map((b, idx) => {
+        const isCollapsed = Boolean(b._collapsed);
+        const hostDisplay = b.broker ? `${b.broker}:${b.port || 1883}` : 'ホスト未設定';
+        return `
+          <div class="mqtt-broker-card ${isCollapsed ? 'collapsed' : ''} ${b.enabled === false ? 'disabled' : ''}" data-broker-id="${escapeHtml(b.id)}">
+            <div class="mqtt-broker-card-header" data-action="toggle-collapse">
+              <div class="mqtt-broker-header-left">
+                <span class="collapse-icon" style="font-size: 0.75rem; color: var(--text-muted); width: 14px;">${isCollapsed ? '▶' : '▼'}</span>
+                <div>
+                  <div class="mqtt-broker-title">${escapeHtml(b.name || `ブローカー #${idx + 1}`)}</div>
+                  <div class="mqtt-broker-subtitle">${escapeHtml(hostDisplay)}</div>
+                </div>
+              </div>
+              <div class="mqtt-broker-header-right" onclick="event.stopPropagation();">
+                <span id="mqttBrokerPill_${escapeHtml(b.id)}" class="mqtt-broker-status-pill ${b.enabled === false ? 'disabled' : 'disconnected'}">
+                  ${b.enabled === false ? '⚪ 無効' : '🔴 未接続'}
+                </span>
+                <label class="switch" title="このブローカーを有効化">
+                  <input type="checkbox" class="broker-toggle-enabled" ${b.enabled !== false ? 'checked' : ''}>
+                  <span class="slider round"></span>
+                </label>
+                <button type="button" class="btn-icon-danger btn-delete-broker" title="このブローカー設定を削除">
+                  🗑️
+                </button>
+              </div>
+            </div>
+
+            <div class="mqtt-broker-card-body">
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label" style="font-size: 0.85rem;">ブローカー表示名 *</label>
+                <input type="text" class="form-input broker-input-name" placeholder="例: Home Assistant Mosquitto" value="${escapeHtml(b.name || '')}">
+              </div>
+
+              <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.85rem;">ブローカー IP / ホスト名 *</label>
+                  <input type="text" class="form-input broker-input-host" placeholder="例: 192.168.11.248 または localhost" value="${escapeHtml(b.broker || '')}">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.85rem;">ポート番号 *</label>
+                  <input type="number" class="form-input broker-input-port" placeholder="1883" value="${escapeHtml(b.port || 1883)}">
+                </div>
+              </div>
+
+              <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.85rem;">ユーザー名 (任意)</label>
+                  <input type="text" class="form-input broker-input-user" placeholder="空欄時は認証なし" value="${escapeHtml(b.username || '')}">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.85rem;">パスワード (任意)</label>
+                  <input type="password" class="form-input broker-input-pass" placeholder="空欄時はパスワードなし" value="${escapeHtml(b.password || '')}">
+                </div>
+              </div>
+
+              <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.85rem;">ベーストピック *</label>
+                  <input type="text" class="form-input broker-input-basetopic" placeholder="voicehub" value="${escapeHtml(b.baseTopic || 'voicehub')}">
+                  <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;">購読: <code>${escapeHtml(b.baseTopic || 'voicehub')}/say</code>, <code>${escapeHtml(b.baseTopic || 'voicehub')}/say/#</code></div>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                  <label class="form-label" style="font-size: 0.85rem;">クライアント ID</label>
+                  <input type="text" class="form-input broker-input-clientid" placeholder="voice-hub" value="${escapeHtml(b.clientId || 'voice-hub')}">
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 12px;">
+                <label class="form-label" style="font-size: 0.85rem;">デフォルト読み上げ先スピーカー</label>
+                <select class="form-input broker-select-target">
+                  ${speakerOptionsHtml}
+                </select>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px;">トピックやメッセージ内でスピーカー指定が無い場合に使用されます</div>
+              </div>
+
+              <div class="form-group flex-between" style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.05);">
+                <div>
+                  <div style="font-weight: 500; font-size: 0.85rem;">イベント通知の自動発行 (Publish)</div>
+                  <small style="color: var(--text-muted);">発話完了時に <code>${escapeHtml(b.baseTopic || 'voicehub')}/events/say</code> へ結果を通知</small>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" class="broker-check-publishevents" ${b.publishEvents !== false ? 'checked' : ''}>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+
+              <div class="form-group flex-between" style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.05);">
+                <div>
+                  <div style="font-weight: 500; font-size: 0.85rem;">MQTTS (TLS/SSL 暗号化通信)</div>
+                  <small style="color: var(--text-muted);">ポート8883等の暗号化接続</small>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" class="broker-check-tls" ${b.tls ? 'checked' : ''}>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+
+              <div class="form-group flex-between" style="padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.05);">
+                <div>
+                  <div style="font-weight: 500; font-size: 0.85rem;">🏠 Home Assistant 自動検出 (MQTT Discovery)</div>
+                  <small style="color: var(--text-muted);">このブローカー経由で HA にエンティティを自動登録</small>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" class="broker-check-hadiscovery" ${b.haDiscoveryEnabled !== false ? 'checked' : ''}>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+
+              <div class="broker-ha-options" style="padding: 10px 12px; background: rgba(0,0,0,0.25); border-radius: 6px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05); ${b.haDiscoveryEnabled === false ? 'display: none;' : ''}">
+                <div class="form-group" style="margin: 0 0 8px 0;">
+                  <label class="form-label" style="font-size: 0.75rem;">HA Discovery プレフィックス</label>
+                  <input type="text" class="form-input broker-input-haprefix" placeholder="homeassistant" value="${escapeHtml(b.haDiscoveryPrefix || 'homeassistant')}" style="font-size: 0.8rem; padding: 6px 10px;">
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                  <button type="button" class="btn btn-secondary btn-sm btn-broker-resend-ha" style="font-size: 0.75rem;">
+                    🔄 Discovery 再送信
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm btn-broker-clear-ha" style="font-size: 0.75rem; color: #f87171;">
+                    🗑️ HA 解除
+                  </button>
+                </div>
+              </div>
+
+              <!-- 統計情報フッター -->
+              <div id="mqttBrokerStats_${escapeHtml(b.id)}" style="font-size: 0.78rem; color: var(--text-muted); background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.04);">
+                受信: 0 件 | トピック: <code>${escapeHtml(b.baseTopic || 'voicehub')}/say</code>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // 各カードへの初期値とイベントバインド
+      currentMqttBrokers.forEach(b => {
+        const card = container.querySelector(`[data-broker-id="${b.id}"]`);
+        if (!card) return;
+
+        // デフォルトスピーカー選択肢の反映
+        const selTarget = card.querySelector('.broker-select-target');
+        if (selTarget && b.defaultTarget) {
+          selTarget.value = b.defaultTarget;
+        }
+
+        // 開閉
+        const header = card.querySelector('.mqtt-broker-card-header');
+        header?.addEventListener('click', (e) => {
+          if (e.target.closest('.switch') || e.target.closest('.btn-delete-broker')) return;
+          b._collapsed = !b._collapsed;
+          card.classList.toggle('collapsed', b._collapsed);
+          const icon = card.querySelector('.collapse-icon');
+          if (icon) icon.textContent = b._collapsed ? '▶' : '▼';
+        });
+
+        // 有効/無効トグル
+        const toggleEnabled = card.querySelector('.broker-toggle-enabled');
+        toggleEnabled?.addEventListener('change', () => {
+          b.enabled = toggleEnabled.checked;
+          card.classList.toggle('disabled', !b.enabled);
+        });
+
+        // 削除ボタン
+        const btnDelete = card.querySelector('.btn-delete-broker');
+        btnDelete?.addEventListener('click', () => {
+          if (!confirm(`MQTTブローカー「${b.name || b.broker || '無題'}」を削除しますか？`)) return;
+          currentMqttBrokers = currentMqttBrokers.filter(item => item.id !== b.id);
+          renderBrokersList();
+        });
+
+        // 各種入力フィールドバインド
+        const inputName = card.querySelector('.broker-input-name');
+        inputName?.addEventListener('input', () => {
+          b.name = inputName.value.trim();
+          const title = card.querySelector('.mqtt-broker-title');
+          if (title) title.textContent = b.name || 'ブローカー';
+        });
+
+        const inputHost = card.querySelector('.broker-input-host');
+        inputHost?.addEventListener('input', () => {
+          b.broker = inputHost.value.trim();
+          const sub = card.querySelector('.mqtt-broker-subtitle');
+          if (sub) sub.textContent = b.broker ? `${b.broker}:${b.port || 1883}` : 'ホスト未設定';
+        });
+
+        const inputPort = card.querySelector('.broker-input-port');
+        inputPort?.addEventListener('input', () => {
+          b.port = parseInt(inputPort.value || '1883', 10);
+          const sub = card.querySelector('.mqtt-broker-subtitle');
+          if (sub) sub.textContent = b.broker ? `${b.broker}:${b.port || 1883}` : 'ホスト未設定';
+        });
+
+        const inputUser = card.querySelector('.broker-input-user');
+        inputUser?.addEventListener('input', () => { b.username = inputUser.value.trim(); });
+
+        const inputPass = card.querySelector('.broker-input-pass');
+        inputPass?.addEventListener('input', () => { b.password = inputPass.value; });
+
+        const inputBaseTopic = card.querySelector('.broker-input-basetopic');
+        inputBaseTopic?.addEventListener('input', () => { b.baseTopic = inputBaseTopic.value.trim() || 'voicehub'; });
+
+        const inputClientId = card.querySelector('.broker-input-clientid');
+        inputClientId?.addEventListener('input', () => { b.clientId = inputClientId.value.trim() || 'voice-hub'; });
+
+        selTarget?.addEventListener('change', () => { b.defaultTarget = selTarget.value; });
+
+        const checkPublish = card.querySelector('.broker-check-publishevents');
+        checkPublish?.addEventListener('change', () => { b.publishEvents = checkPublish.checked; });
+
+        const checkTls = card.querySelector('.broker-check-tls');
+        checkTls?.addEventListener('change', () => { b.tls = checkTls.checked; });
+
+        const checkHa = card.querySelector('.broker-check-hadiscovery');
+        const haOpts = card.querySelector('.broker-ha-options');
+        checkHa?.addEventListener('change', () => {
+          b.haDiscoveryEnabled = checkHa.checked;
+          if (haOpts) haOpts.style.display = b.haDiscoveryEnabled ? 'block' : 'none';
+        });
+
+        const inputHaPrefix = card.querySelector('.broker-input-haprefix');
+        inputHaPrefix?.addEventListener('input', () => { b.haDiscoveryPrefix = inputHaPrefix.value.trim() || 'homeassistant'; });
+
+        // 個別 HA Discovery 再送
+        const btnResendHa = card.querySelector('.btn-broker-resend-ha');
+        btnResendHa?.addEventListener('click', async () => {
+          const orig = btnResendHa.textContent;
+          btnResendHa.disabled = true;
+          btnResendHa.textContent = '🔄 送信中...';
+          try {
+            const res = await fetch('/api/mqtt/ha-discovery', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ clear: false, brokerId: b.id })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Discovery 送信に失敗しました');
+            showToast(`[${b.name}] HA Discovery トピック (${data.count} 件) を発行しました！`, 'success');
+          } catch (err) {
+            showToast('HA Discovery エラー: ' + err.message, 'error');
+          } finally {
+            btnResendHa.disabled = false;
+            btnResendHa.textContent = orig;
+          }
+        });
+
+        // 個別 HA Discovery 解除
+        const btnClearHa = card.querySelector('.btn-broker-clear-ha');
+        btnClearHa?.addEventListener('click', async () => {
+          if (!confirm(`Home Assistant から「${b.name}」の登録エンティティを解除しますか？`)) return;
+          const orig = btnClearHa.textContent;
+          btnClearHa.disabled = true;
+          btnClearHa.textContent = '🗑️ 削除中...';
+          try {
+            const res = await fetch('/api/mqtt/ha-discovery', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ clear: true, brokerId: b.id })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || 'Discovery 解除に失敗しました');
+            showToast(`[${b.name}] HA から Discovery エンティティを解除しました`, 'success');
+          } catch (err) {
+            showToast('HA Discovery 解除エラー: ' + err.message, 'error');
+          } finally {
+            btnClearHa.disabled = false;
+            btnClearHa.textContent = orig;
+          }
+        });
+      });
+    }
+
+    // 初期化・設定データ流し込み
     window.populateMqttSettings = (mqttData) => {
       const m = mqttData || state.settings?.mqtt || {};
       if (checkEnabled) checkEnabled.checked = Boolean(m.enabled);
-      if (inputBroker) inputBroker.value = m.broker || '';
-      if (inputPort) inputPort.value = m.port || 1883;
-      if (inputUser) inputUser.value = m.username || '';
-      if (inputPass) inputPass.value = m.password || '';
-      if (inputBaseTopic) inputBaseTopic.value = m.baseTopic || 'voicehub';
-      if (inputClientId) inputClientId.value = m.clientId || 'voice-hub';
-      if (selDefaultTarget && m.defaultTarget !== undefined) selDefaultTarget.value = m.defaultTarget;
-      if (checkPublishEvents) checkPublishEvents.checked = m.publishEvents !== false;
-      if (checkTls) checkTls.checked = Boolean(m.tls);
-      if (checkHaDiscovery) checkHaDiscovery.checked = m.haDiscoveryEnabled !== false;
-      if (inputHaPrefix) inputHaPrefix.value = m.haDiscoveryPrefix || 'homeassistant';
+      if (Array.isArray(m.brokers) && m.brokers.length > 0) {
+        currentMqttBrokers = JSON.parse(JSON.stringify(m.brokers));
+      } else if (m.broker) {
+        currentMqttBrokers = [{
+          id: 'default',
+          name: 'メインブローカー',
+          enabled: m.enabled !== false,
+          broker: m.broker || '',
+          port: m.port || 1883,
+          username: m.username || '',
+          password: m.password || '',
+          clientId: m.clientId || 'voice-hub',
+          baseTopic: m.baseTopic || 'voicehub',
+          defaultTarget: m.defaultTarget || '',
+          publishEvents: m.publishEvents !== false,
+          tls: Boolean(m.tls),
+          haDiscoveryEnabled: m.haDiscoveryEnabled !== false,
+          haDiscoveryPrefix: m.haDiscoveryPrefix || 'homeassistant'
+        }];
+      } else {
+        currentMqttBrokers = [];
+      }
+      renderBrokersList();
       updateMqttStatus();
     };
 
-    // 保存ボタン
+    // 新規ブローカー追加ボタン
+    btnAddBroker?.addEventListener('click', () => {
+      const newIdx = currentMqttBrokers.length + 1;
+      const newId = 'broker_' + Date.now();
+      currentMqttBrokers.push({
+        id: newId,
+        name: `ブローカー #${newIdx}`,
+        enabled: true,
+        broker: '',
+        port: 1883,
+        username: '',
+        password: '',
+        clientId: `voice-hub-${Math.floor(Math.random() * 1000)}`,
+        baseTopic: 'voicehub',
+        defaultTarget: '',
+        publishEvents: true,
+        tls: false,
+        haDiscoveryEnabled: true,
+        haDiscoveryPrefix: 'homeassistant',
+        _collapsed: false
+      });
+      renderBrokersList();
+      const newCard = container?.querySelector(`[data-broker-id="${newId}"]`);
+      newCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    // 全体保存ボタン
     btnSave?.addEventListener('click', async () => {
       const origText = btnSave.textContent;
       btnSave.disabled = true;
       btnSave.textContent = '💾 保存中...';
 
+      const brokersToSave = currentMqttBrokers.map(b => {
+        const copy = { ...b };
+        delete copy._collapsed;
+        return copy;
+      });
+
       const mqttPayload = {
         enabled: checkEnabled?.checked || false,
-        broker: inputBroker?.value.trim() || '',
-        port: parseInt(inputPort?.value || '1883', 10),
-        username: inputUser?.value.trim() || '',
-        password: inputPass?.value || '',
-        baseTopic: inputBaseTopic?.value.trim() || 'voicehub',
-        clientId: inputClientId?.value.trim() || 'voice-hub',
-        defaultTarget: selDefaultTarget?.value || '',
-        publishEvents: checkPublishEvents?.checked !== false,
-        tls: checkTls?.checked || false,
-        haDiscoveryEnabled: checkHaDiscovery ? checkHaDiscovery.checked : true,
-        haDiscoveryPrefix: inputHaPrefix?.value.trim() || 'homeassistant'
+        brokers: brokersToSave
       };
 
       try {
@@ -4838,11 +5230,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         if (!res.ok) throw new Error('MQTT設定保存に失敗しました');
         const updated = await res.json();
-        if (state.settings) state.settings.mqtt = mqttPayload;
+        if (state.settings) state.settings.mqtt = updated.mqtt || mqttPayload;
 
         // クライアント再起動
         await fetch('/api/mqtt/restart', { method: 'POST' });
-        showToast('MQTT 設定を保存し、クライアントを更新しました', 'success');
+        showToast('MQTT 設定を保存し、ブローカー接続を更新しました', 'success');
         setTimeout(updateMqttStatus, 1000);
       } catch (err) {
         showToast('エラー: ' + err.message, 'error');
@@ -4852,52 +5244,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // HA Discovery 再送ボタン
-    btnResendHa?.addEventListener('click', async () => {
-      const origText = btnResendHa.textContent;
-      btnResendHa.disabled = true;
-      btnResendHa.textContent = '🔄 送信中...';
-      try {
-        const res = await fetch('/api/mqtt/ha-discovery', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clear: false })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Discovery 送信に失敗しました');
-        showToast(`Home Assistant Discovery トピック (${data.count} エンティティ) を発行しました！`, 'success');
-      } catch (err) {
-        showToast('HA Discovery エラー: ' + err.message, 'error');
-      } finally {
-        btnResendHa.disabled = false;
-        btnResendHa.textContent = origText;
-      }
-    });
-
-    // HA Discovery 解除ボタン
-    btnClearHa?.addEventListener('click', async () => {
-      if (!confirm('Home Assistant から Voice Hub の自動検出エンティティを解除（削除）しますか？')) return;
-      const origText = btnClearHa.textContent;
-      btnClearHa.disabled = true;
-      btnClearHa.textContent = '🗑️ 削除中...';
-      try {
-        const res = await fetch('/api/mqtt/ha-discovery', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clear: true })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Discovery 削除に失敗しました');
-        showToast('Home Assistant から Discovery エンティティを解除しました', 'success');
-      } catch (err) {
-        showToast('HA Discovery 解除エラー: ' + err.message, 'error');
-      } finally {
-        btnClearHa.disabled = false;
-        btnClearHa.textContent = origText;
-      }
-    });
-
-    // 再接続ボタン
+    // 全再接続ボタン
     btnReconnect?.addEventListener('click', async () => {
       btnReconnect.disabled = true;
       btnReconnect.textContent = '🔄 接続中...';
@@ -4909,7 +5256,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('再接続エラー: ' + err.message, 'error');
       } finally {
         btnReconnect.disabled = false;
-        btnReconnect.textContent = '🔄 再接続';
+        btnReconnect.textContent = '🔄 全再接続';
       }
     });
 
@@ -4917,8 +5264,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btnTest?.addEventListener('click', async () => {
       const inputTestText = document.getElementById('inputMqttTestText');
       const selectTestTarget = document.getElementById('selectMqttTestTarget');
+      const selectTestBroker = document.getElementById('selectMqttTestBroker');
       const text = inputTestText?.value.trim();
       const target = selectTestTarget?.value || null;
+      const brokerId = selectTestBroker?.value || null;
 
       if (!text) {
         showToast('テスト発話テキストを入力してください', 'warning');
@@ -4933,12 +5282,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/mqtt/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, target })
+          body: JSON.stringify({ text, target, brokerId })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || data.error || 'テスト送信に失敗しました');
 
-        showToast(`トピック [${data.topic}] にPublishしました！まもなくスピーカーから発声されます`, 'success');
+        const pubCount = data.publishedTo ? data.publishedTo.length : 1;
+        showToast(`${pubCount} 件のブローカーにPublishしました！まもなくスピーカーから発声されます`, 'success');
         setTimeout(updateMqttStatus, 1000);
       } catch (err) {
         showToast('MQTTテストエラー: ' + err.message, 'error');
@@ -4968,17 +5318,22 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!preClaude && !preCursor) return;
 
     const token = state.settings?.webhookToken || '';
-    const host = location.host || '192.168.11.244:8080';
+    const host = location.host || '127.0.0.1:8080';
     const proto = location.protocol || 'http:';
 
     let sseUrl = '';
     if (mcpConnectionMode === 'local') {
       sseUrl = `${proto}//${host}/mcp/sse`;
     } else {
-      const isIp = /^[0-9.]+(:[0-9]+)?$/.test(host);
-      const tunnelDomain = isIp ? 'your-tunnel-domain.trycloudflare.com' : host;
+      let tunnelDomain = state.serverStatus?.tunnelDomain;
+      if (!tunnelDomain) {
+        const isIp = /^[0-9.]+(:[0-9]+)?$/.test(host);
+        tunnelDomain = isIp ? 'your-tunnel-domain.com' : host;
+      }
       sseUrl = `https://${tunnelDomain}/mcp/sse${token ? '?token=' + encodeURIComponent(token) : ''}`;
     }
+
+
 
     // Claude Desktop 設定
     const claudeJson = {
@@ -5150,8 +5505,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
-      const models = data.models || [];
-      const currentSelected = selectEl.value || data.currentModel || (provider === 'gemini' ? 'gemini-3.8-flash' : 'gpt-4o-mini');
+      let rawModels = data.models || data[provider] || [];
+      const models = rawModels.map(m => typeof m === 'string' ? { id: m, name: m } : m);
+      const defaultModel = provider === 'gemini' ? 'gemini-2.5-flash' : 'gpt-4o-mini';
+      let currentSelected = selectEl.value || data.currentModel || defaultModel;
+      if (typeof currentSelected === 'string' && (currentSelected.includes('1.5') || currentSelected.includes('1.0') || currentSelected.includes('2.0'))) {
+        currentSelected = defaultModel;
+      }
+
 
       selectEl.replaceChildren();
 
@@ -5273,10 +5634,15 @@ document.addEventListener('DOMContentLoaded', () => {
       ]);
 
       const geminiModelSelect = document.getElementById('selectGeminiModel');
-      if (geminiModelSelect && ai.geminiModel) {
-        // もし退役モデルだった場合は loadAiModels 内で既に自己修復済み
-        if (Array.from(geminiModelSelect.options).some(o => o.value === ai.geminiModel)) {
-          geminiModelSelect.value = ai.geminiModel;
+      if (geminiModelSelect) {
+        let targetModel = ai.geminiModel || 'gemini-2.5-flash';
+        if (targetModel.includes('3.8') || targetModel.includes('3.5') || targetModel.includes('argon')) {
+          targetModel = 'gemini-2.5-flash';
+        }
+        if (Array.from(geminiModelSelect.options).some(o => o.value === targetModel)) {
+          geminiModelSelect.value = targetModel;
+        } else {
+          geminiModelSelect.value = 'gemini-2.5-flash';
         }
       }
 

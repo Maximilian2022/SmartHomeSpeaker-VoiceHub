@@ -25,7 +25,7 @@ async def get_dnd_status():
     return status
 
 @router.post("/api/dnd/mute")
-async def mute_dnd(req: MuteRequest):
+async def mute_dnd(req: MuteRequest = MuteRequest()):
     now_ts = time.time()
     until_ts = req.until
     if req.durationMinutes:
@@ -58,6 +58,15 @@ async def unmute_dnd():
     asyncio.create_task(dnd_service.check_and_flush_queue())
     asyncio.create_task(mqtt_service.publish_dnd_state())
     return {"success": True}
+
+@router.post("/api/dnd/toggle")
+async def toggle_dnd():
+    status = dnd_service.get_global_status()
+    if status.get("isActive", False):
+        return await unmute_dnd()
+    else:
+        return await mute_dnd()
+
 
 @router.post("/api/dnd/quick")
 async def quick_dnd(req: Dict[str, Any]):

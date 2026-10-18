@@ -1,108 +1,118 @@
-# Smart Home Speaker Voice Hub 徹底仕様書 (Manual.md) 📘
+# Smart Home Speaker Voice Hub 総合技術仕様書 (Manual.md) 📘
 
-本ドキュメントは、[README.md](file:///root/google-home-voicetext-docker/README.md) に記載しきれていない **Smart Home Speaker Voice Hub** の全機能仕様、内部アーキテクチャ、アクセス制御・セキュリティ設計、および全 REST API の詳細仕様を網羅した包括的なテクニカルリファレンスです。
+本ドキュメントは、[README.md](README.md) では割愛している **Smart Home Speaker Voice Hub** のシステムアーキテクチャ、各種スマートスピーカーとの接続仕様、Homebridge プラグイン、MCP (Model Context Protocol) サーバー、マルチ MQTT 連携、アクセス制御・セキュリティ設計、および全 REST API の詳細を網羅した技術仕様書です。
 
 ---
 
 ## 目次
 
 1. [システムアーキテクチャ概要](#1-システムアーキテクチャ概要)
-2. [ネットワーク＆アクセス制御・セキュリティ仕様](#2-ネットワークアクセス制御セキュリティ仕様)
+2. [ネットワーク・アクセス制御およびセキュリティ設計](#2-ネットワークアクセス制御およびセキュリティ設計)
    - 2.1 [デュアルレイヤー境界防御 (LAN vs Cloudflare Tunnel)](#21-デュアルレイヤー境界防御-lan-vs-cloudflare-tunnel)
    - 2.2 [Webhook トークン認証仕様 (WEBHOOK_TOKEN)](#22-webhook-トークン認証仕様-webhook_token)
    - 2.3 [Web GUI 管理者認証仕様 (ADMIN_PASSWORD)](#23-web-gui-管理者認証仕様-admin_password)
-   - 2.4 [IPv6 直打ち露出防止仕様 (ループバックバインド)](#24-ipv6-直打ち露出防止仕様-ループバックバインド)
-   - 2.5 [クライアント判定＆IPエイリアス・重複排除 (Deduplication)](#25-クライアント判定ipエイリアス重複排除-deduplication)
-3. [宛先解決マクロ＆マルチプラットフォーム同期エンジン](#3-宛先解決マクロマルチプラットフォーム同期エンジン)
+   - 2.4 [IPv6 ループバックバインド仕様](#24-ipv6-ループバックバインド仕様)
+   - 2.5 [クライアント判定・IPエイリアス・重複排除 (Deduplication)](#25-クライアント判定ipエイリアス重複排除-deduplication)
+3. [宛先解決マクロとスピーカー制御仕様](#3-宛先解決マクロとスピーカー制御仕様)
    - 3.1 [ターゲット指定記法＆マクロ一覧](#31-ターゲット指定記法マクロ一覧)
    - 3.2 [スピーカー種別の自動判別と解決アルゴリズム](#32-スピーカー種別の自動判別と解決アルゴリズム)
    - 3.3 [マルチプラットフォーム音ズレ補正エンジン (Sync Engine)](#33-マルチプラットフォーム音ズレ補正エンジン-sync-engine)
-4. [音声合成 (TTS)＆オーディオ処理仕様](#4-音声合成-ttsオーディオ処理仕様)
+4. [音声合成 (TTS) とオーディオパイプライン仕様](#4-音声合成-tts-とオーディオパイプライン仕様)
    - 4.1 [Microsoft Edge Neural TTS パラメータ](#41-microsoft-edge-neural-tts-パラメータ)
-   - 4.2 [チャイム音声結合 (FFmpeg / バイト連結フォールバック)](#42-チャイム音声結合-ffmpeg--バイト連結フォールバック)
-   - 4.3 [音声キャッシュ管理 (MD5・LRU・目標容量)](#43-音声キャッシュ管理-md5lru目標容量)
+   - 4.2 [チャイム音声結合 (FFmpeg / バイト連結)](#42-チャイム音声結合-ffmpeg--バイト連結)
+   - 4.3 [音声キャッシュ管理 (MD5・LRU・容量制限)](#43-音声キャッシュ管理-md5lru容量制限)
    - 4.4 [時間帯別自動音量調整 (Auto Volume)](#44-時間帯別自動音量調整-auto-volume)
-5. [おやすみ・会議モード (DND) アーキテクチャ](#5-おやすみ会議モード-dnd-アーキテクチャ)
+5. [おやすみ・会議モード (DND) 仕様](#5-おやすみ会議モード-dnd-仕様)
    - 5.1 [DND 優先度判定パイプライン](#51-dnd-優先度判定パイプライン)
    - 5.2 [3つの抑制動作モード (Skip / Whisper / Queue)](#52-3つの抑制動作モード-skip--whisper--queue)
    - 5.3 [保留キューの永続化 (WAL) と起動時安全復元](#53-保留キューの永続化-wal-と起動時安全復元)
    - 5.4 [保留メッセージの AI 自動要約・キャッチアップ](#54-保留メッセージの-ai-自動要約キャッチアップ)
-6. [緊急速報・防災＆天気予報システム (Disaster Manager)](#6-緊急速報防災天気予報システム-disaster-manager)
-   - 6.1 [P2P地震情報 WebSocket 常時接続 (EEW / 震度速報)](#61-p2p地震情報-websocket-常時接続-eew--震度速報)
+6. [緊急速報・防災情報および天気予報連携仕様](#6-緊急速報防災情報および天気予報連携仕様)
+   - 6.1 [P2P地震情報 WebSocket 連携 (EEW / 震度速報)](#61-p2p地震情報-websocket-連携-eew--震度速報)
    - 6.2 [気象庁 防災気象情報 API 差分監視 (警報・特別警報)](#62-気象庁-防災気象情報-api-差分監視-警報特別警報)
-   - 6.3 [気象庁 天気予報 API 連携 (毎朝のまとめへの自動注入)](#63-気象庁-天気予報-api-連携-毎朝のまとめへの自動注入)
+   - 6.3 [気象庁 天気予報 API 連携 (朝のまとめへの自動注入)](#63-気象庁-天気予報-api-連携-朝のまとめへの自動注入)
    - 6.4 [通知先スピーカー制御と Urgent モード](#64-通知先スピーカー制御と-urgent-モード)
-7. [AI 連携・要約エンジン (AI Manager)](#7-ai-連携要約エンジン-ai-manager)
-   - 7.1 [マルチプロバイダー対応](#71-マルチプロバイダー対応)
-   - 7.2 [利用可能モデルの自動ディスカバリー](#72-利用可能モデルの自動ディスカバリー)
+7. [AI 連携エンジン仕様 (AI Service)](#7-ai-連携エンジン仕様-ai-service)
+   - 7.1 [対応プロバイダー (Google Gemini / OpenAI / ローカル LLM)](#71-対応プロバイダー-google-gemini--openai--ローカル-llm)
+   - 7.2 [モデル自動ディスカバリーと耐障害フォールバック (503 / 429 耐性)](#72-モデル自動ディスカバリーと耐障害フォールバック-503--429-耐性)
    - 7.3 [朝の予定まとめ・コンテキスト注入](#73-朝の予定まとめコンテキスト注入)
-8. [完全 REST API リファレンス](#8-完全-rest-api-リファレンス)
-   - 8.1 [発声・Webhook エンドポイント](#81-発声webhook-エンドポイント)
-   - 8.2 [認証・セッション エンドポイント](#82-認証セッション-エンドポイント)
-   - 8.3 [発言履歴・キュー管理 エンドポイント](#83-発言履歴キュー管理-エンドポイント)
-   - 8.4 [デバイス・スピーカー エンドポイント](#84-デバイススピーカー-エンドポイント)
-   - 8.5 [スケジュール管理 エンドポイント](#85-スケジュール管理-エンドポイント)
-   - 8.6 [Google カレンダー連携 エンドポイント](#86-google-カレンダー連携-エンドポイント)
-   - 8.7 [おやすみ・会議モード (DND) エンドポイント](#87-おやすみ会議モード-dnd-エンドポイント)
-   - 8.8 [防災・緊急速報＆天気 エンドポイント](#88-防災緊急速報天気-エンドポイント)
-   - 8.9 [AI 連携 エンドポイント](#89-ai-連携-エンドポイント)
-   - 8.10 [システム設定＆同期 エンドポイント](#810-システム設定同期-エンドポイント)
-   - 8.11 [ハードウェア固有連携 (Alexa / HomePod) エンドポイント](#811-ハードウェア固有連携-alexa--homepod-エンドポイント)
-   - 8.12 [ONVIF カメラ＆DLNA スピーカー連携 エンドポイント](#812-onvif-カメラdlna-スピーカー連携-エンドポイント)
-9. [ハードウェア・プロトコル詳細仕様 (ONVIF & DLNA)](#9-ハードウェアプロトコル詳細仕様-onvif--dlna)
-   - 9.1 [ONVIF カメラ双方向音声 (Two-Way Audio / Profile T) アーキテクチャ](#91-onvif-カメラ双方向音声-two-way-audio--profile-t-アーキテクチャ)
-   - 9.2 [DLNA / UPnP ネットワークオーディオ (MediaRenderer / AVTransport) アーキテクチャ](#92-dlna--upnp-ネットワークオーディオ-mediarenderer--avtransport-アーキテクチャ)
-10. [ファイル構成と永続化ディレクトリ](#10-ファイル構成と永続化ディレクトリ)
-11. [次世代 Python (FastAPI) アーキテクチャ設計書 (リファクタリング計画)](#11-次世代-python-fastapi-アーキテクチャ設計書-リファクタリング計画)
+8. [各種スマートスピーカー・音響機器の接続仕様](#8-各種スマートスピーカー音響機器の接続仕様)
+   - 8.1 [Google Home / Nest (Google Cast)](#81-google-home--nest-google-cast)
+   - 8.2 [Amazon Echo / Alexa (Remote Control & Atnrトークン)](#82-amazon-echo--alexa-remote-control--atnrトークン)
+   - 8.3 [Apple HomePod (AirPlay 2 / pyatv)](#83-apple-homepod-airplay-2--pyatv)
+   - 8.4 [ONVIF ネットワークカメラ (Two-Way Audio / Profile T)](#84-onvif-ネットワークカメラ-two-way-audio--profile-t)
+   - 8.5 [DLNA / UPnP ネットワークオーディオ (MediaRenderer)](#85-dlna--upnp-ネットワークオーディオ-mediarenderer)
+9. [Apple HomeKit / Homebridge プラグイン仕様 (`homebridge-voicehub`)](#9-apple-homekit--homebridge-プラグイン仕様-homebridge-voicehub)
+   - 9.1 [プラグイン概要とアーキテクチャ](#91-プラグイン概要とアーキテクチャ)
+   - 9.2 [提供アクセサリ仕様](#92-提供アクセサリ仕様)
+   - 9.3 [設定スキーマ (`config.json`)](#93-設定スキーマ-configjson)
+   - 9.4 [セットアップ手順](#94-セットアップ手順)
+10. [MCP (Model Context Protocol) サーバー仕様](#10-mcp-model-context-protocol-サーバー仕様)
+    - 10.1 [アーキテクチャとエンドポイント](#101-アーキテクチャとエンドポイント)
+    - 10.2 [提供ツール一覧](#102-提供ツール一覧)
+    - 10.3 [AI アシスタント設定例 (Claude Desktop / Cursor / Cline)](#103-ai-アシスタント設定例-claude-desktop--cursor--cline)
+11. [マルチ MQTT ブローカー ＆ Home Assistant MQTT Discovery 仕様](#11-マルチ-mqtt-ブローカー--home-assistant-mqtt-discovery-仕様)
+    - 11.1 [マルチブローカー接続アーキテクチャ](#111-マルチブローカー接続アーキテクチャ)
+    - 11.2 [トピック設計とメッセージ仕様](#112-トピック設計とメッセージ仕様)
+    - 11.3 [Home Assistant MQTT Discovery 自動エンティティ仕様](#113-home-assistant-mqtt-discovery-自動エンティティ仕様)
+12. [Web GUI インターフェース仕様](#12-web-gui-インターフェース仕様)
+    - 12.1 [macOS 風 2カラム縦型設定ナビゲーション](#121-macos-風-2カラム縦型設定ナビゲーション)
+    - 12.2 [発言履歴 (リアルタイム記録・再発言・試聴)](#122-発言履歴-リアルタイム記録再発言試聴)
+    - 12.3 [Webhook コマンドビルダー ＆ プラグイン解説書モーダル](#123-webhook-コマンドビルダー--プラグイン解説書モーダル)
+13. [完全 REST API リファレンス](#13-完全-rest-api-リファレンス)
+14. [ファイル構成と永続化ディレクトリ](#14-ファイル構成と永続化ディレクトリ)
+15. [システム内部アーキテクチャ詳細 (FastAPI モジュール仕様)](#15-システム内部アーキテクチャ詳細-fastapi-モジュール仕様)
 
 ---
 
 ## 1. システムアーキテクチャ概要
 
-Smart Home Speaker Voice Hub は、規格やプロトコルが全く異なる 5大スマートスピーカー・音響機器（**Google Home / Cast**、**Amazon Echo / Alexa**、**Apple HomePod / AirPlay 2**、**ONVIF ネットワークカメラ**、**DLNA / UPnP MediaRenderer**）を統一抽象化し、高品質な日本語音声合成（Microsoft Edge TTS）を宅内のあらゆる部屋に遅延なくアナウンスするための音声プラットフォームです。
+Smart Home Speaker Voice Hub は、規格の異なる 5 つのスマートスピーカー・音響機器（**Google Home / Cast**、**Amazon Echo / Alexa**、**Apple HomePod / AirPlay 2**、**ONVIF ネットワークカメラ**、**DLNA / UPnP MediaRenderer**）を単一の抽象レイヤーで統合し、日本語音声（Microsoft Edge TTS）を宅内のスピーカーへ配信する音声プラットフォームです。
 
-```
-[外部 Webhook / IFTTT / Home Assistant]   [ブラウザ Web GUI]   [P2P地震速報 WS / 気象庁 API]
-                      │                           │                        │
-                      ▼                           ▼                        ▼
-        ┌────────────────────────────────────────────────────────────────────────┐
-        │                 Smart Home Speaker Voice Hub Core Engine               │
-        │                                                                        │
-        │  ┌───────────────────────┐  ┌───────────────────────────────────────┐  │
-        │  │ Security Perimeter    │  │ Deduplication & Priority Filter       │  │
-        │  │ (Tunnel / Auth / IPv6)│  │ (DND / Meeting Keywords / Urgent)     │  │
-        │  └───────────────────────┘  └───────────────────────────────────────┘  │
-        │                                                                        │
-        │  ┌───────────────────────┐  ┌───────────────────────────────────────┐  │
-        │  │ Edge TTS + Chime Mix  │  │ WAL Persistent Queue (Disk-backed)    │  │
-        │  │ (LRU Caching & Probe) │  │ (Webhook Queue & DND Recovery)        │  │
-        │  └───────────────────────┘  └───────────────────────────────────────┘  │
-        │                                                                        │
-        │  ┌──────────────────────────────────────────────────────────────────┐  │
-        │  │       Cross-Platform Sync Engine (EMA Delay Compensation)        │  │
-        │  └──────────────────────────────────────────────────────────────────┘  │
-        └───┬──────────────────┬──────────────────┬──────────────┬───────────────┘
-            │                  │                  │              │               │
-            ▼                  ▼                  ▼              ▼               ▼
-    [ Google Cast ]     [ Amazon Alexa ]   [ Apple HomePod ] [ ONVIF Camera ] [ DLNA / UPnP ]
-   (castv2 / Bonjour)  (Remote Control)   (pyatv / AirPlay)  (go2rtc / Profile T) (SSDP / AVTransport)
+バックエンドは **Python 3.14 + FastAPI** による完全非同期（`async/await`）アーキテクチャで構築されており、高速な応答性と高い並行処理性能を備えています。
+
+```text
+[外部 Webhook / IFTTT]    [ブラウザ Web GUI]    [HomeKit / Siri]    [MCP クライアント]    [MQTT ブローカー]
+          │                       │                    │                    │                   │
+          ▼                       ▼                    ▼                    ▼                   ▼
+    ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+    │                        FastAPI Core Engine (Python 3.14 フル非同期)                         │
+    │                                                                                             │
+    │  ┌───────────────────────┐  ┌───────────────────────────────────────┐  ┌─────────────────┐  │
+    │  │ Security Perimeter    │  │ Deduplication & Priority Filter       │  │ MCP Server      │  │
+    │  │ (Tunnel / Auth / IPv6)│  │ (DND / Meeting Keywords / Urgent)     │  │ (SSE / Tools)   │  │
+    │  └───────────────────────┘  └───────────────────────────────────────┘  └─────────────────┘  │
+    │                                                                                             │
+    │  ┌───────────────────────┐  ┌───────────────────────────────────────┐  ┌─────────────────┐  │
+    │  │ Edge TTS + Chime Mix  │  │ WAL Persistent Queue (Disk-backed)    │  │ Multi MQTT Hub  │  │
+    │  │ (LRU Caching & Probe) │  │ (Webhook Queue & DND Recovery)        │  │ (HA Discovery)  │  │
+    │  └───────────────────────┘  └───────────────────────────────────────┘  └─────────────────┘  │
+    │                                                                                             │
+    │  ┌───────────────────────────────────────────────────────────────────────────────────────┐  │
+    │  │                  Cross-Platform Sync Engine (EMA Delay Compensation)                  │  │
+    │  └───────────────────────────────────────────────────────────────────────────────────────┘  │
+    └───┬──────────────────┬──────────────────┬──────────────┬───────────────┬────────────────────┘
+        │                  │                  │              │               │
+        ▼                  ▼                  ▼              ▼               ▼
+ [ Google Cast ]    [ Amazon Alexa ]   [ Apple HomePod ] [ ONVIF Camera ] [ DLNA / UPnP ]
+(pychromecast)     (Remote Control)   (pyatv / AirPlay) (go2rtc / Profile T) (async_upnp_client)
 ```
 
 ---
 
-## 2. ネットワーク＆アクセス制御・セキュリティ仕様
+## 2. ネットワーク・アクセス制御およびセキュリティ設計
 
-外部サービス（IFTTT、Slack、Home Assistant など）からの Webhook 受信と、家庭内 LAN からの安全な Web GUI 運用を両立するため、多重の防御境界（Perimeter Security）が設計されています。
+外部サービス（IFTTT、Slack、Home Assistant 等）からの Webhook 受信と、家庭内 LAN からの安全な Web GUI 運用を両立するため、多重の防御境界（Perimeter Security）を設けています。
 
 ### 2.1 デュアルレイヤー境界防御 (LAN vs Cloudflare Tunnel)
 
-Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `webhook.example.com`）を公開している場合、サーバー内部でリクエストの進入経路を厳格に判定します。
+Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `voicehub.example.com`）を公開している場合、サーバー内部でリクエストの進入経路を厳格に判定します。
 
-* **進入経路の判定基準 (`isTunnelRequest`)**:
+* **進入経路の判定基準 (`is_tunnel_request`)**:
   - HTTP ヘッダーに `CF-Ray`、`CF-Connecting-IP`、`CF-IPCountry` のいずれかが含まれているか
   - HTTP `Host` ヘッダーが環境変数 `TUNNEL_DOMAIN` と一致するか
 * **アクセスポリシー**:
-  - **Tunnel 経由のリクエスト**: **`/api/say`** および **`/api/webhook`** のみアクセスを許可。
+  - **Tunnel 経由のリクエスト**: **`/api/say`**、**`/api/webhook`**、および **`/mcp/sse`, `/mcp/messages`** のみアクセスを許可。
   - Web GUI（`/`, `index.html`, `app.js`）および管理系 API（`/api/settings`, `/api/devices`, `/api/history` 等）は **`403 Forbidden`** で即座に遮断されます。
   - これにより、万が一 Tunnel URL が外部に知られた場合でも、設定変更・発言履歴閲覧・認証情報の漏洩が構造的に防止されます。
 
@@ -126,33 +136,33 @@ Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `we
   - **セッション Cookie 方式 (`auth_token`)**: `/api/auth/login` でパスワードを送信すると、暗号学的に安全なランダムトークン（SHA-256）が発行され、HttpOnly Cookie として保持されます（有効期限: 30日間）。
   - **ダイレクトヘッダー方式 (外部自動化用)**: `X-Admin-Password: <パスワード>` または `Authorization: Bearer <パスワード>` を送信することで、スクリプトからも全管理 API を呼び出し可能です。
 
-### 2.4 IPv6 直打ち露出防止仕様 (ループバックバインド)
+### 2.4 IPv6 ループバックバインド仕様
 
 一部の家庭用ルーター（IPv6 IPoE / NGN環境など）では、外部からの IPv6 パケットがルーターのポートフォワーディングを経由せずサーバーに直接到達するリスクがあります。
 本システムではネットワークバインドを厳密に分離しています：
 
 * **IPv4**: `0.0.0.0:8080` で待ち受け（宅内 LAN からの Web GUI や API アクセスを許可）。
 * **IPv6**: **`[::1]:8080` (ループバック専用)** で待ち受け。
-* これにより、外部のグローバル IPv6 アドレス直打ちによる不正アクセスを完全に遮断しつつ、ローカルPCからの `localhost`（::1）名前解決は正常に受け付けます。
+* これにより、外部のグローバル IPv6 アドレス直打ちによる不正アクセスを遮断しつつ、ローカルPCからの `localhost`（::1）名前解決は正常に受け付けます。
 
-### 2.5 クライアント判定＆IPエイリアス・重複排除 (Deduplication)
+### 2.5 クライアント判定・IPエイリアス・重複排除 (Deduplication)
 
 * **クライアント検出**: リクエストの `from`, `client`, `sender` パラメータ、IP エイリアス辞書（設定画面で IP ごとに「玄関インターホン」「Home Assistant」等の名前を付与可能）、および User-Agent（IFTTT, Slack, Discord 等）から送信元を自動同定し、履歴画面に色付きバッジで記録します。
 * **重複排除エンジン (`deduplication`)**:
-  - 人感センサーやスマートカメラの連続検知による連呼スパムを防止します。
+  - 人感センサーやスマートカメラの連続検知による連呼を防止します。
   - 同一送信元から指定秒数（`cooldownSeconds`: デフォルト30秒）以内に完全に同一のテキストが送信された場合、発声をスキップして `200 OK`（`deduplicated: true`）を返却します。
 
 ---
 
-## 3. 宛先解決マクロ＆マルチプラットフォーム同期エンジン
+## 3. 宛先解決マクロとスピーカー制御仕様
 
 ### 3.1 ターゲット指定記法＆マクロ一覧
 
-発声 API（`/api/say`）の `devices` または `targets` には、単一のデバイス名や IP だけでなく、高度な短縮マクロやカスタムグループを指定できます。
+発声 API（`/api/say`）の `devices` または `targets` には、単一のデバイス名や IP だけでなく、短縮マクロやカスタムグループを指定できます。
 
 | 指定文字列 | 対象スピーカー・動作 |
 |---|---|
-| `ALL` または `*` | **家中すべてのスピーカー**。Google Cast全体グループ、全室Echo、全室HomePod、登録済みONVIFカメラ、DLNAレンダラーを同時に解決し、一斉発声。 |
+| `ALL` または `*` | **家中すべてのスピーカー**。Google Cast全体グループ、全室Echo、全室HomePod、登録済みONVIFカメラ、DLNAレンダラーを一斉に解決。 |
 | `GH:ALL` / `GOOGLE:ALL` | 宅内のすべての Google Home / Nest デバイス（全体 Cast グループ優先）。 |
 | `AL:ALL` / `ALEXA:ALL` | 宅内のすべての Amazon Echo デバイス（Echo全体グループ優先）。 |
 | `HP:ALL` / `HOMEPOD:ALL` | 宅内のすべての Apple HomePod デバイス。 |
@@ -169,39 +179,37 @@ Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `we
 
 ### 3.2 スピーカー種別の自動判別と解決アルゴリズム
 
-`speakToMultipleDevices(text, targetList, options)` は以下の優先順序でデバイスを特定・集約します：
+スピーカーの解決は以下の優先順序で行われます：
 
 1. **マクロ・グループの展開**: `ALL`, `CAM:ALL`, `DLNA:ALL`, `1F` などを構成端末の配列へ展開。
 2. **Google Cast グループ集約 (`preferNativeGroups`)**:
-   - 複数の Google Home を個別指定して同時に鳴らすと、Wi-Fi の揺らぎによってエコー（輪唱）が発生します。
-   - `ALL` や全体が指定された場合、個別の IP をすべて破棄し、Google Home アプリ等で作成された **Cast グループ（ポート 32xxx 等）** 1つに集約して送信します。これにより Google Cast プロトコルのネイティブ同期が働き、**ズレ 0ms の完全同期** が実現します。
+   - 複数の Google Home を個別指定して同時に鳴らすと、Wi-Fi の揺らぎによって輪唱（エコー）が発生します。
+   - `ALL` や全体が指定された場合、個別の IP をまとめ、Google Home アプリ等で作成された **Cast グループ（ポート 32xxx 等）** 1つに集約して送信します。これにより Google Cast プロトコルのネイティブ同期が働き、エコーのない綺麗な同期再生が行われます。
 3. **プロトコル別の仕分け**:
-   - **Google Cast**: `type === 'google'` (Avahi / castv2)
-   - **Amazon Alexa**: `type === 'alexa'` (Alexa Remote Control)
-   - **Apple HomePod**: `type === 'homepod'` (pyatv AirPlay 2)
-   - **ONVIF Camera**: `type === 'onvif'` (go2rtc Two-Way Audio / Profile T)
-   - **DLNA Renderer**: `type === 'dlna'` (UPnP AVTransport / RenderingControl)
+   - **Google Cast**: `type: google` (pychromecast)
+   - **Amazon Alexa**: `type: alexa` (Alexa Remote Control)
+   - **Apple HomePod**: `type: homepod` (pyatv AirPlay 2)
+   - **ONVIF Camera**: `type: onvif` (go2rtc Two-Way Audio / Profile T)
+   - **DLNA Renderer**: `type: dlna` (UPnP AVTransport / RenderingControl)
 4. **重複排除**: 同一の IP やストリーミング先が複数回解決された場合、自動的に単一の呼び出しにまとめます。
-5. **UI 表示優先順位 (Category Order)**:
-   - 1: Group GH → 2: Group Alexa → 3: Group HomePod → 4: 単体 GH → 5: 単体 Alexa → 6: 単体 HomePod → 7: 単体 DLNA → 8: 単体 ONVIF
 
 ### 3.3 マルチプラットフォーム音ズレ補正エンジン (Sync Engine)
 
-Google Home、Amazon Echo、Apple HomePod は、通信プロトコル（Castv2, Alexa クラウド経由, AirPlay 2）の構造上、発声開始までに要する内部レイテンシが異なります。
+Google Home、Amazon Echo、Apple HomePod は、通信プロトコル（Castv2、Alexa クラウド経由、AirPlay 2）の構造上、発声開始までに要する内部レイテンシが異なります。
 
 * **オフセット遅延制御 (`alexaDelayMs`, `homepodDelayMs`, `googleDelayMs`)**:
-  - クラウド経由で最もレイテンシの大きい Alexa に合わせ、応答が速い Google Home や HomePod の再生開始を意図的にミリ秒単位でディレイ（待機）させます。
+  - クラウド経由でレイテンシが生じる Alexa に合わせ、応答の速い Google Home や HomePod の再生開始を意図的にミリ秒単位でディレイ（待機）させます。
 * **動的自動学習 (`dynamicAutoAdjust`)**:
   - 発声時の RTT（ラウンドトリップタイム）を各プラットフォームごとに計測。
-  - **指数移動平均 (EMA / $\alpha = 0.25$)** を用いて直近のネットワークジッターを学習し、最適な遅延オフセットを自動計算・永続化します。
+  - **指数移動平均 (EMA / $\alpha = 0.25$)** を用いて直近のネットワーク揺らぎを学習し、最適な遅延オフセットを自動計算・永続化します。
 
 ---
 
-## 4. 音声合成 (TTS)＆オーディオ処理仕様
+## 4. 音声合成 (TTS) とオーディオパイプライン仕様
 
 ### 4.1 Microsoft Edge Neural TTS パラメータ
 
-本システムは、Microsoft Edge の高品位な Neural 音声エンジン（SSML 対応）を内蔵しています。
+Microsoft Edge の Neural 音声エンジン（SSML 対応）を採用しています。
 
 * **標準ボイス (`voice`)**:
   - `ja-JP-NanamiNeural`: 七海（女性・標準アナウンス、透明感のある自然な声調）
@@ -211,28 +219,28 @@ Google Home、Amazon Echo、Apple HomePod は、通信プロトコル（Castv2, 
   - `ja-JP-MayuNeural`: 真夕（女性・明るく元気なトーン）
   - `ja-JP-NaokiNeural`: 直樹（男性・ニュース・案内放送調）
   - `ja-JP-ShioriNeural`: 詩織（女性・ニュース・案内放送調）
-* **音響補正パラメータ**:
+* **音響パラメータ**:
   - **話速 (`rate`)**: `+0%` (標準), `+20%` (高速), `-10%` (低速)
   - **音高 (`pitch`)**: `+0Hz` (標準), `+50Hz` (高め), `-30Hz` (低め)
   - **音量ゲイン (`volume`)**: `+0%` (標準), `+20%`, `-10%`
 
-### 4.2 チャイム音声結合 (FFmpeg / バイト連結フォールバック)
+### 4.2 チャイム音声結合 (FFmpeg / バイト連結)
 
-アナウンスの冒頭にピンポン音を鳴らして注意を惹くため、音声合成時にチャイムの結合が行われます。
+アナウンスの冒頭にチャイム音を鳴らして注意を惹くため、音声合成時にチャイムの結合が行われます。
 
 * **チャイム種別 (`chime`)**:
-  - `dingdong`: 標準のピンポン音（`/public/sound/dingdong.mp3`）
+  - `dingdong`: ピンポン音（`/public/sound/dingdong.mp3`）
   - `bell`: ベル音（`/public/sound/bell.mp3`）
   - `none`: チャイムなし（音声のみ即座に読み上げ）
-* **結合アルゴリズム**:
-  - システム内に `ffmpeg` が存在する場合、`concat` フィルターを用いてサンプリングレート・ビットレートを 128kbps MP3 として完全に再エンコード結合します（音割れやクリックノイズなし）。
-  - `ffmpeg` が見つからない場合は、MP3 フレームの純粋バイナリバッファ連結に安全フォールバックします。
-* **再生尺（Duration）の正確な計測**:
-  - 後続処理や同期エンジンが完了を把握できるよう、`ffprobe` を用いてミリ秒精度の音声長を計測します（失敗時は文字数に基づく計算式 `text.length / 5.2 + chime` で推定）。
+* **結合処理**:
+  - システム内の `ffmpeg` を用いて、サンプリングレート・ビットレートを 128kbps MP3 として再エンコード結合します（音割れやノイズを防止）。
+  - `ffmpeg` が見つからない場合は、MP3 フレームのバイナリ連結にフォールバックします。
+* **再生尺（Duration）の計測**:
+  - 後続処理や同期エンジンが完了を把握できるよう、`ffprobe` を用いてミリ秒精度の音声長を計測します（失敗時は文字数に基づく計算式で推定）。
 
-### 4.3 音声キャッシュ管理 (MD5・LRU・目標容量)
+### 4.3 音声キャッシュ管理 (MD5・LRU・容量制限)
 
-生成された音声ファイルは永続キャッシュディレクトリ（Docker ボリューム `smart_speaker_cache` / `/app/public/voice`）に保存されます。
+生成された音声ファイルは永続キャッシュディレクトリ（Docker ボリューム `smart_speaker_cache` / `/public/voice`）に保存されます。
 
 * **キャッシュキー**:
   `MD5(text + "_" + voice + "_" + rate + "_" + pitch + "_" + volume + "_" + chimeType)`
@@ -244,23 +252,23 @@ Google Home、Amazon Echo、Apple HomePod は、通信プロトコル（Castv2, 
 
 ### 4.4 時間帯別自動音量調整 (Auto Volume)
 
-朝の起床時間帯、昼間の活動時間帯、深夜の就寝時間帯など、時刻に応じてスピーカーの音量を自動追従させる機能です。
+朝の起床時間帯、昼間の活動時間帯、深夜の就寝時間帯など、時刻に応じてスピーカーの音量を自動調整する機能です。
 
 * **日跨ぎ対応ルール**:
   - 例: `23:00` 〜 `07:00` を音量 `25%`、`07:00` 〜 `09:00` を `60%`、`09:00` 〜 `18:00` を `70%` など。
-* API 呼び出し時に個別の `volumeLevel` が明示されていない場合、このカーブに基づいた音量が Cast / Echo / HomePod へ自動適用されます。
+* API 呼び出し時に個別の `volumeLevel` が指定されていない場合、このカーブに基づいた音量が各スピーカーへ自動適用されます。
 
 ---
 
-## 5. おやすみ・会議モード (DND) アーキテクチャ
+## 5. おやすみ・会議モード (DND) 仕様
 
-仕事中のオンライン会議や深夜の就寝中に突然スマートスピーカーが大声で喋り出すのを防ぐためのインテリジェント・サイレント制御機構です。
+在宅勤務のオンライン会議中や就寝中にスピーカーが突然大声で喋り出すのを防ぐための機構です。
 
 ### 5.1 DND 優先度判定パイプライン
 
-発声リクエストが届いた際、以下の優先度ツリーに沿ってミリ秒単位で発声可否が判定されます：
+発声リクエストが届いた際、以下の優先度ツリーに沿って判定されます：
 
-```
+```text
 [発声リクエスト受信]
         │
         ├─► ① 緊急バイパス判定 (urgent === true または bypassDnd === true)
@@ -283,14 +291,12 @@ Google Home、Amazon Echo、Apple HomePod は、通信プロトコル（Castv2, 
 
 ### 5.2 3つの抑制動作モード (Skip / Whisper / Queue)
 
-DND 発動時の振る舞いを設定画面で自由に選択できます：
-
-1. **`skip` (完全スキップ)**:
-   - 一切音を鳴らさず破棄します。発言履歴および DND 履歴に「スキップされた理由」が記録されます。
+1. **`skip` (スキップ)**:
+   - 音を鳴らさずに破棄します。発言履歴に「スキップされた理由」が記録されます。
 2. **`whisper` (囁き・極小音量モード)**:
    - 完全に無音にはせず、指定した極小音量（デフォルト `10%`）で控えめに発声します。
 3. **`queue` (保留キューモード)**:
-   - メッセージをメモリおよびディスク上の保留キューに格納。会議や DND が解除された瞬間にまとめて自動再生します。
+   - メッセージを保留キューに格納。会議や DND が解除されたタイミングでまとめて自動再生します。
 
 ### 5.3 保留キューの永続化 (WAL) と起動時安全復元
 
@@ -301,553 +307,440 @@ DND 発動時の振る舞いを設定画面で自由に選択できます：
 
 ### 5.4 保留メッセージの AI 自動要約・キャッチアップ
 
-長時間の会議や深夜が明けた際、保留されていた大量のアナウンスが1件ずつ連続して再生されると煩わしくなります。
-
-* **閾値判定 (`aiSummaryThreshold`)**:
-  - 保留件数が設定値（デフォルト 2件以上）に達している場合、個別の音声を鳴らす代わりに AI（Gemini / OpenAI 等）を呼び出します。
-* **自然な要約アナウンス**:
-  - 例: *「お疲れ様です！不在の間に2件の通知がありました。15時に宅配便が届いたのと、お風呂が沸いたお知らせです。」*
-  - このように1つの自然な音声メッセージに要約してスマートスピーカーから読み上げられます。
+保留件数が設定値（デフォルト 2件以上）に達している場合、個別の音声を連続して鳴らす代わりに AI（Gemini / OpenAI 等）を呼び出し、1つの自然な音声メッセージに要約して読み上げます。
 
 ---
 
-## 6. 緊急速報・防災＆天気予報システム (Disaster Manager)
+## 6. 緊急速報・防災情報および天気予報連携仕様
 
-### 6.1 P2P地震情報 WebSocket 常時接続 (EEW / 震度速報)
+### 6.1 P2P地震情報 WebSocket 連携 (EEW / 震度速報)
 
-P2P地震情報 API（`wss://api.p2pquake.net/v2/ws`）の WebSocket に常時接続し、気象庁発表の防災速報をゼロ遅延で監視します。
+P2P地震情報 API（`wss://api.p2pquake.net/v2/ws`）の WebSocket に常時接続し、気象庁発表の防災速報を低遅延で監視します。
 
 * **緊急地震速報 (EEW / Code `556`)**:
-  - 強い揺れが予想される際にミリ秒単位で発報。
-  - **同一地震の続報連呼防止**: `issue.eventId` によるメモリ追跡を行い、第2報・第3報などの更新電文が届いても同じ地震の警報を連呼せず1回のみ発報。
-  - **取消報（誤報・キャンセル）の自動検知とアナウンス**: 気象庁から取消報（`cancelled: true`）を受信した場合、発報済みイベントであれば「先ほどの緊急地震速報は取り消されました。誤報、または観測値の修正によるものです。」と自動アナウンスして安心を伝達。未発報地域の場合は不要な混乱を防ぐため自動スキップ。
-  - 発報音量（50〜100%）および Urgent モード（DND貫通）の独立設定。
-  - 対象地域が自地域に含まれるかを自動判定（全国通知も可能）。
+  - 強い揺れが予想される際に即時発報。
+  - **続報連呼防止**: `issue.eventId` によるメモリ追跡を行い、第2報・第3報が届いても同じ地震の警報を連呼せず1回のみ発報。
+  - **取消報の自動検知**: 気象庁から取消報（`cancelled: true`）を受信した場合、発報済みイベントであれば「先ほどの緊急地震速報は取り消されました」と自動アナウンス。
 * **地震情報・震度速報 (Code `551`)**:
   - 最低震度フィルター（震度1〜震度7）で小さな地震を無視可能。
-  - 対象範囲（「自地域のみ」または「全国」）。
-  - 重複発報防止ロジック（`time_hypocenter_maxScale` の一意キーで同一地震の複数回発話を防止）。
+  - 重複発報防止ロジック（`time_hypocenter_maxScale` の一意キー）で同一地震の複数回発話を防止。
 
 ### 6.2 気象庁 防災気象情報 API 差分監視 (警報・特別警報)
 
 気象庁の公式データエンドポイント（`https://www.jma.go.jp/bosai/warning/data/warning/{prefCode}.json`）を 5分間隔で定期ポーリング監視します。
 
 * **市区町村単位の高精度判定**:
-  - 設定された自治体コード（`class20` コード、例: 千代田区 `1310100`）の警報配列を監視。
-  - 「大雨警報」「洪水警報」「暴風警報」「特別警報」などの発表を即時検知。
+  - 自治体コード（`class20` コード、例: 千代田区 `1310100`）の警報配列を監視。
+  - 「大雨警報」「洪水警報」「暴風警報」「特別警報」などの発表を検知。
 * **警報解除時の通知**:
-  - 警報が解除された際にも「大雨警報は解除されました」とアナウンス可能（ON/OFF選択可）。
-* **差分ステートマシン**:
-  - 前回チェック時の警報セットを保持し、変化があった差分のみを抽出して発話（スパム防止）。
+  - 警報が解除された際のアナウンスにも対応（ON/OFF選択可）。
+* **差分ステートマシン**: 前回チェック時からの変化があった差分のみを抽出して発話します。
 
-### 6.3 気象庁 天気予報 API 連携 (毎朝のまとめへの自動注入)
+### 6.3 気象庁 天気予報 API 連携 (朝のまとめへの自動注入)
 
-気象庁の週間予報データ（`https://www.jma.go.jp/bosai/forecast/data/forecast/{prefCode}.json`）から、設定地域の「今日の天気」「最高気温・最低気温」「降水確率」を抽出します。
-
-* **毎朝の予定まとめ自動注入**:
-  - カレンダー連携の「朝の予定まとめ放送」において、予定を読み上げる前に本日の天気を自然な文章で組み込みます。
-* **傘・服装ワンポイントアドバイス**:
-  - 降水確率 40% 以上: *「念のため折りたたみ傘をお持ちください。」*
-  - 降水確率 70% 以上: *「本日は雨具を忘れずにお持ちください。」*
-  - 最高気温 30℃ 以上: *「熱中症対策を万全にしてお過ごしください。」*
-  - 最低気温 5℃ 以下: *「防寒対策をしっかりしてお出かけください。」*
+気象庁の週間予報データから、設定地域の「今日の天気」「最高気温・最低気温」「降水確率」を抽出します。
+毎朝の予定まとめ放送において、カレンダー予定を読み上げる前に本日の天気とワンポイントアドバイス（傘や防寒の案内）を自然な文章で組み込みます。
 
 ### 6.4 通知先スピーカー制御と Urgent モード
 
 緊急速報タブの **「📢 通知先スピーカー」** 設定により、アナウンス先を 3 つのスコープから選べます：
+1. **`all` (家中すべてのスピーカー)**: 全室の Google Home、全室 Echo、全室 HomePod を一括起動し、全室一斉放送。
+2. **`default` (標準スピーカーのみ)**: メイン端末1台のみで放送。
+3. **`specific` (個別選択)**: チェックボックスで指定した部屋・端末のみで放送。
 
-1. **`all` (家中すべてのスピーカー / 推奨)**:
-   - 全室の Google Home、全室 Echo、全室 HomePod を一括起動し、家中のどこにいても聞こえるよう最大音量で全室一斉放送。
-2. **`default` (標準スピーカーのみ)**:
-   - メイン端末1台のみで放送。
-3. **`specific` (個別選択)**:
-   - チェックボックスで指定した部屋・端末（リビング、廊下など）のみで放送。
-
-また、**Urgent モード** が有効な場合、会議中であっても DND を無視して強制的に割り込み再生されます。
+**Urgent モード** が有効な場合、会議中であっても DND を無視して強制的に割り込み再生されます。
 
 ---
 
-## 7. AI 連携・要約エンジン (AI Manager)
+## 7. AI 連携エンジン仕様 (AI Service)
 
-### 7.1 マルチプロバイダー対応
+### 7.1 対応プロバイダー (Google Gemini / OpenAI / ローカル LLM)
 
 設定画面から API Key または URL を入力するだけで、以下のプロバイダーを自由に切り替えて利用できます：
 
-* **Google Gemini API**: `gemini-2.5-flash`, `gemini-1.5-flash`, `gemini-2.0-flash` など
-* **OpenAI API**: `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo` など
+* **Google Gemini API**: `gemini-2.5-flash`, `gemini-2.5-pro` 等の現行モデル
+* **OpenAI API**: `gpt-4o`, `gpt-4o-mini`, `o3-mini` 等のモデル
 * **ローカル LLM (Ollama)**: `http://localhost:11434` 等のローカル環境（Llama 3, Qwen 等）
 * **DeepSeek API**: `deepseek-chat` など
 
-### 7.2 利用可能モデルの自動ディスカバリー
+### 7.2 モデル自動ディスカバリーと耐障害フォールバック (503 / 429 耐性)
 
-API Key を入力して接続テストを実行すると、プロバイダーの利用可能モデル一覧 API を叩いて現在のアカウントで有効なモデル群を自動取得し、UI のドロップダウンに動的反映します。
+* **モデル自動正規化**:
+  設定ファイル内に過去の廃止モデルが残っていた場合、起動時および設定保存時に現行推奨モデル（`gemini-2.5-flash` 等）へ自動的に自己修復・正規化されます。
+* **動的ディスカバリー**:
+  設定画面の「モデル更新」ボタンを押すと、プロバイダーの有効モデル一覧 API を叩いて利用可能な最新モデルを動的取得します。
+* **503 / 429 / 404 耐性フォールバック**:
+  外部 AI API が一時的に利用できない場合（503 過負荷やレート制限等）でも、エラーで処理を止めず、ルールベースによる定型要約テキストを自動生成してアナウンスを継続します。
 
 ### 7.3 朝の予定まとめ・コンテキスト注入
 
 毎朝の予定放送時、AI に以下のコンテキストを自動提供してプロンプトを構築します：
-
 1. 現在時刻・日付・曜日
 2. カレンダーから取得した当日の予定一覧（時刻、タイトル、場所）
 3. 気象庁から取得した本日の天気・最高/最低気温・降水確率
-4. ユーザーが指定した追加プロンプト（例: 「明るく元気な敬語で」「子供向けの口調で」など）
+4. ユーザーが指定した追加プロンプト（例: 「落ち着いた丁寧な敬語で」「簡潔に要点のみ」など）
 
 ---
 
-## 8. 完全 REST API リファレンス
+## 8. 各種スマートスピーカー・音響機器の接続仕様
+
+### 8.1 Google Home / Nest (Google Cast)
+- **プロトコル**: Google Cast (castv2 / Avahi mDNS 探索)
+- **ライブラリ**: `pychromecast` (Python ネイティブ実装)
+- **特徴**: Google Home アプリで作成された「スピーカーグループ」への送信に対応しており、エコーのない同期再生が可能です。
+
+### 8.2 Amazon Echo / Alexa (Remote Control & Atnrトークン)
+- **プロトコル**: Amazon Alexa Remote Control (HTTPS / Cookie 認証)
+- **連携方法**:
+  1. **ブラウザプロキシ連携 (推奨)**: Web GUI の「Amazon ログインを開始」から、手元のブラウザで Amazon アカウントにログインするだけで連携完了。
+  2. **リフレッシュトークン (`Atnr|...`) 手動登録**:
+     ターミナルで `npx alexa-cookie2` を実行して取得した `Refresh Token: Atnr|...` を、Web GUI または `.my.env` (`REFRESH_TOKEN`) に登録して運用することも可能です。
+
+### 8.3 Apple HomePod (AirPlay 2 / pyatv)
+- **プロトコル**: Apple AirPlay 2 / RAOP (Bonjour / mDNS 探索)
+- **ライブラリ**: `pyatv`
+- **ネットワーク要件**:
+  - 本サーバー（Docker）と Apple HomePod は、必ず**同一ローカルネットワーク（同じLAN / Wi-Fi、同一サブネット）**に接続されている必要があります。
+  - Docker は `network_mode: host` を推奨します。ルーターのプライバシーセパレータや別VLANでセグメントが跨がっている場合、mDNS が届かず探索できません。
+
+### 8.4 ONVIF ネットワークカメラ (Two-Way Audio / Profile T)
+- **プロトコル**: ONVIF Profile T (WS-Discovery, UDP 3702, go2rtc 経由 RTSP バックチャンネル)
+- **コーデック**: G.711 PCMU (8kHz 64kbps)
+- **連携方法**:
+  Web GUI の「ONVIF / DLNA」タブで「デバイスをスキャン」を実行し、検出された Profile T 対応カメラを登録します。発声時は FFmpeg 経由でカメラのスピーカーへ音声が送信されます。
+
+### 8.5 DLNA / UPnP ネットワークオーディオ (MediaRenderer)
+- **プロトコル**: UPnP AVTransport / RenderingControl (SSDP, UDP 1900, SOAP)
+- **対応機器**: Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、foobar2000 (UPnP) 等
+- **連携方法**:
+  Web GUI の「ONVIF / DLNA」タブでスキャンすると自動検出されます。認証不要でそのまま登録・利用可能です。
+
+---
+
+## 9. Apple HomeKit / Homebridge プラグイン仕様 (`homebridge-voicehub`)
+
+Homebridge をご利用のご家庭向けに、VoiceHub 専用の公式準拠プラグイン **`homebridge-voicehub`** を同梱しています。
+
+### 9.1 プラグイン概要とアーキテクチャ
+- **ディレクトリ**: `plugins/homebridge-voicehub/`
+- **種別**: Dynamic Platform Plugin (`VoiceHubPlatform`)
+- **設計**: 外部ライブラリへの依存が一切ない**ゼロ依存（Zero Dependencies）**構成。Node.js 18+ のネイティブ `fetch` を使用し、極めて軽量かつ堅牢に動作します。
+
+### 9.2 提供アクセサリ仕様
+1. **📢 プリセット発話プッシュスイッチ (`VoiceHubPresetSwitch`)**:
+   - 「ご飯できたよ」「お風呂が沸いたよ」などの定型メッセージをスイッチ化。
+   - Siri から「『ご飯できたよ』をつけて」と指示すると、VoiceHub API を呼び出して指定スピーカーから発声し、実行後自動で OFF に戻ります。
+2. **🌙 会議・おやすみモード (DND) スイッチ (`VoiceHubDndSwitch`)**:
+   - VoiceHub の DND 状態と完全連動。
+   - Apple ホームの「おやすみ」シーンやオートメーションから DND を ON / OFF できます。
+3. **🔊 スピーカー音量スライダー (`VoiceHubSpeakerAccessory`)**:
+   - 各スピーカーを照明アクセサリ（明度スライダー方式）としてマッピング。
+   - 「リビングの音量を 50% にして」といった Siri からの音量操作が可能です。
+
+### 9.3 設定スキーマ (`config.json`)
+
+```json
+{
+  "platforms": [
+    {
+      "platform": "VoiceHubPlatform",
+      "name": "VoiceHub",
+      "host": "http://127.0.0.1:8080",
+      "webhookToken": "YOUR_OPTIONAL_TOKEN",
+      "enableDndSwitch": true,
+      "autoDiscoverSpeakers": true,
+      "volumeAsLightbulb": true,
+      "pollInterval": 30,
+      "presets": [
+        {
+          "name": "ご飯できたよ",
+          "text": "ご飯ができました。リビングに集まってください。",
+          "target": "ALL",
+          "volume": 70
+        },
+        {
+          "name": "お風呂が沸いたよ",
+          "text": "お風呂が沸き上がりました。",
+          "target": "ALL",
+          "volume": 60
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 9.4 セットアップ手順
+
+```bash
+cd plugins/homebridge-voicehub
+npm install    # または bun install
+npm run build  # または bun run build
+npm link
+```
+または Homebridge Config UI X のプラグイン画面から `homebridge-voicehub` を検索してインストールします。
+
+---
+
+## 10. MCP (Model Context Protocol) サーバー仕様
+
+Claude Desktop、Cursor、Cline などの AI アシスタントから直接スマートスピーカーを操作できる、FastAPI ネイティブの **MCP (Model Context Protocol) サーバー** を標準搭載しています。
+
+### 10.1 アーキテクチャとエンドポイント
+- **プロトコル**: MCP 2024-11-05 (JSON-RPC 2.0 over Server-Sent Events)
+- **エンドポイント**:
+  - `GET /mcp/sse`: クライアント接続用の SSE ストリーム。
+  - `POST /mcp/messages`: JSON-RPC 2.0 リクエスト受付エンドポイント。
+- **セキュリティ**:
+  - `WEBHOOK_TOKEN` が設定されている場合、`Authorization: Bearer <WEBHOOK_TOKEN>` ヘッダーによる認証が行われます。
+  - Cloudflare Tunnel 経由での外部接続時も、このエンドポイントへのアクセスが安全に許可されます。
+
+### 10.2 提供ツール一覧
+
+| ツール名 | 説明 | 主要引数 |
+|---|---|---|
+| `say_message` | 指定したスピーカーへメッセージを発話 | `text` (必須), `targets`, `voice`, `rate`, `pitch`, `chime`, `volumeLevel`, `urgent` |
+| `list_speakers` | 利用可能な全スピーカー・グループの一覧を取得 | なし |
+| `get_status` | システム状態（DND状態、保留件数、デフォルト端末等）を取得 | なし |
+| `set_dnd` | おやすみ・会議モード (DND) の有効化・解除 | `enabled` (必須), `duration` (分単位), `reason` |
+| `get_history` | 直近の発言履歴ログ（直近 N 件）を取得 | `limit` (デフォルト 10) |
+
+### 10.3 AI アシスタント設定例 (Claude Desktop / Cursor / Cline)
+
+`claude_desktop_config.json` 等に以下を追加します：
+
+```json
+{
+  "mcpServers": {
+    "voicehub": {
+      "url": "http://127.0.0.1:8080/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_OPTIONAL_TOKEN"
+      }
+    }
+  }
+}
+```
+*(外部の Tunnel 経由で接続する場合は `https://<your-tunnel-domain>/mcp/sse` を指定します)*
+
+---
+
+## 11. マルチ MQTT ブローカー ＆ Home Assistant MQTT Discovery 仕様
+
+Node-RED、Home Assistant、n8n などのホームオートメーションと連携するため、複数の MQTT ブローカーへ同時並行接続できるマルチ MQTT クライアントを内蔵しています。
+
+### 11.1 マルチブローカー接続アーキテクチャ
+- **ライブラリ**: `aiomqtt` (フル非同期 MQTT 3.1.1 / 5.0 クライアント)
+- **機能**:
+  - 複数のブローカー（例: 自宅 LAN の Mosquitto + クラウドブローカー）を同時に登録可能。
+  - MQTTS (TLS 暗号化)、ユーザー名・パスワード認証対応。
+  - 切断時の自動指数バックオフ再接続。
+
+### 11.2 トピック設計とメッセージ仕様
+
+| トピック | 種別 | 説明・ペイロード例 |
+|---|---|---|
+| `voicehub/say` | Subscribe (受信) | 発声コマンドの受付。JSON: `{"text": "こんにちは", "devices": ["ALL"]}` またはテキスト直打ち |
+| `voicehub/dnd/set` | Subscribe (受信) | DND 切替コマンド。`ON`, `OFF`, `30`, `60`, `120` |
+| `voicehub/status` | Publish (送信) | 定期ステータス発行。JSON: `{"status": "online", "dnd": false, "queued": 0}` |
+| `voicehub/availability` | LWT (遺言) | 接続状態。`online` / `offline` |
+
+### 11.3 Home Assistant MQTT Discovery 自動エンティティ仕様
+設定画面で「Home Assistant Discovery」を有効にすると、`homeassistant/<component>/voicehub/.../config` トピックへ Discovery メッセージを自動発行し、Home Assistant 側に以下のエンティティが自動生成されます：
+- **テキスト入力 (`text`)**: 発話テキスト送信フォーム
+- **スイッチ (`switch`)**: 会議・おやすみモード (DND) 切替スイッチ
+- **セレクト (`select`)**: 送信先スピーカー選択ボックス
+- **ナンバー (`number`)**: スピーカー音量スライダー
+- **センサー (`sensor`)**: 直近の発言内容、DND 状態センサー
+
+---
+
+## 12. Web GUI インターフェース仕様
+
+### 12.1 macOS 風 2カラム縦型設定ナビゲーション
+Web GUI の「拡張・システム設定」は、macOS や Home Assistant の設定画面に準拠した 2カラム構成を採用しています。
+- **左カラム**: カテゴリ別（基本・音声、外部連携・API、システム・高度な設定）にグループ分けされたナビゲーションメニュー。
+- **右カラム**: 選択されたカテゴリの設定カードがスムーズに切り替わります。
+
+### 12.2 発言履歴 (リアルタイム記録・再発言・試聴)
+直近 100 件の発言をリアルタイムで自動記録します。
+- 送信元（Web UI、定期スケジュール、カレンダー連携、外部 API 等）を色付きバッジで視認可能。
+- 履歴カードから「再発言」「ブラウザ試聴」「テキストコピー」をワンクリックで実行できます。
+
+### 12.3 Webhook コマンドビルダー ＆ プラグイン解説書モーダル
+- **Webhook コマンドビルダー**:
+  画面上でスピーカーやメッセージを入力するだけで、cURL や IFTTT 向けの呼び出し設定が自動生成され、ワンクリックでコピーできます。
+- **プラグイン解説書モーダル**:
+  Web 画面右上の「📖 プラグイン解説書を見る」ボタンから、いつでも Homebridge プラグインの導入手順や設定 JSON 例を確認・コピーできます。
+
+---
+
+## 13. 完全 REST API リファレンス
 
 すべての API は JSON 形式をサポートしています。
 
-### 8.1 発声・Webhook エンドポイント
+### 13.1 発声・Webhook API
+- **`POST /api/say`** / **`GET /api/say`**: スピーカーへの発話実行
+- **`POST /api/webhook`** / **`GET /api/webhook`**: 外部 Webhook 経由の発話実行
+- **`POST /api/tts`**: 音声合成ファイル（MP3）の直接生成・ダウンロード
 
-#### `POST /api/say` または `GET /api/say`
-#### `POST /api/webhook` または `GET /api/webhook`
+### 13.2 認証 API
+- **`GET /api/auth/status`**: 認証設定状態およびログイン状態の取得
+- **`POST /api/auth/login`**: 管理者パスワードによるログイン (Cookie 発行)
+- **`POST /api/auth/logout`**: ログアウト処理
 
-スピーカーにメッセージを発話させます。
+### 13.3 履歴・キュー API
+- **`GET /api/history`**: 直近 100 件の発言ログ取得
+- **`DELETE /api/history`**: 発言履歴ログのクリア
+- **`GET /api/queue`**: 処理待ち Webhook キュー一覧の取得
 
-* **認証**: `WEBHOOK_TOKEN` が設定されている場合、必須（外部アクセス時）。
-* **リクエストパラメータ (JSON Body または URL Query)**:
+### 13.4 デバイス・スピーカー API
+- **`GET /api/devices`**: 検出された全スピーカー・グループ一覧の取得
+- **`POST /api/devices/default`**: デフォルトスピーカー IP の変更
 
-| パラメータ | 型 | 既定値 | 説明 |
-|---|---|---|---|
-| `text` | string | (必須) | 発話させる日本語テキスト。 |
-| `devices` / `targets` | array \| string | `['default']` | 送信先スピーカー名、IP、マクロ（`ALL`, `GH:ALL`, `AL:ALL`, `HP:ALL`, グループ名等）。配列またはカンマ区切り文字列。 |
-| `voice` | string | 設定値 | Edge TTS 音声モデル (`ja-JP-NanamiNeural`, `ja-JP-KeitaNeural` 等)。 |
-| `rate` | string | `+0%` | 話速 (`+20%`, `-10%` 等)。 |
-| `pitch` | string | `+0Hz` | 音高 (`+50Hz`, `-30Hz` 等)。 |
-| `volume` | string | `+0%` | Edge TTS 内部ボリュームゲイン。 |
-| `volumeLevel` | number | 自動音量 | Google Cast / Echo 音量 (Cast: 0.0〜1.0 または 0〜100)。 |
-| `chime` | string | 設定値 | チャイム種別 (`dingdong`, `bell`, `none`)。 |
-| `urgent` / `bypassDnd` | boolean | `false` | `true` の場合、DND や会議中ミュートを強制貫通して即時発声。 |
-| `async` | boolean | Webhook時は `true` | `true` の場合、即座に受付完了を返却してバックグラウンドでキュー処理。 |
-| `wait` / `sync` | boolean | `false` | `true` の場合、音声再生の完了まで HTTP レスポンスを待機。 |
-| `from` / `client` | string | `null` | 呼び出し元サービス名（履歴画面で識別バッジ表示）。 |
-| `token` | string | `null` | 認証用トークン（ヘッダーで送れない場合）。 |
+### 13.5 スケジュール API
+- **`GET /api/schedules`**: スケジュール一覧の取得
+- **`POST /api/schedules`**: スケジュールの新規登録
+- **`PUT /api/schedules/{id}`**: スケジュールの更新
+- **`DELETE /api/schedules/{id}`**: スケジュールの削除
+- **`POST /api/schedules/{id}/toggle`**: 有効/無効の切り替え
+- **`POST /api/schedules/{id}/run`**: スケジュールのテスト実行
 
-* **非同期レスポンス例 (`200 OK`)**:
-```json
-{
-  "success": true,
-  "status": "accepted",
-  "async": true,
-  "jobId": "job_1729051234567_abc123",
-  "message": "発声リクエストを受付け、永続化キューに安全に保存しました（順次処理中）",
-  "text": "ご飯ができましたよ！",
-  "targets": ["192.168.11.97"]
-}
-```
+### 13.6 カレンダー連携 API
+- **`GET /api/calendar/events`**: 同期済み予定一覧の取得
+- **`POST /api/calendar/sync`**: Google カレンダー即時再同期
+- **`POST /api/calendar/summary`**: 朝の予定まとめ発声テスト
 
-* **同期レスポンス例 (`wait=true`, `200 OK`)**:
-```json
-{
-  "success": true,
-  "count": 1,
-  "results": [
-    { "target": "192.168.11.97", "status": "played", "type": "google" }
-  ],
-  "audio": {
-    "filename": "speech_e6d947...mp3",
-    "duration": 3.8
-  }
-}
-```
+### 13.7 おやすみ・会議モード (DND) API
+- **`GET /api/dnd/status`**: 現在の DND 状態・保留件数の取得
+- **`POST /api/dnd/quick`**: ワンタップ即時ミュートのオン/オフ
+- **`GET /api/dnd/history`**: DND 抑制記録ログの取得
+- **`DELETE /api/dnd/history`**: DND ログのクリア
 
----
+### 13.8 防災・緊急速報 API
+- **`GET /api/disaster/settings`**: 防災・気象設定の取得
+- **`PUT /api/disaster/settings`**: 防災・気象設定の更新
+- **`GET /api/disaster/areas`**: 地域マスター一覧の取得
+- **`GET /api/disaster/weather`**: 設定地域の最新天気・アドバイスの取得
+- **`GET /api/disaster/status`**: WebSocket 接続状態および現在の警報取得
+- **`POST /api/disaster/test`**: シミュレーションテスト発報
 
-### 8.2 認証・セッション エンドポイント
+### 13.9 AI 連携 API
+- **`GET /api/ai/status`**: AI 連携状態の取得
+- **`POST /api/ai/test`**: API Key の疎通検証
+- **`GET /api/ai/models`**: 利用可能モデル一覧の動的取得
+- **`POST /api/ai/summarize-test`**: 保留メッセージ要約テスト試聴
+- **`POST /api/ai/calendar-test`**: カレンダー朝サマリー要約テスト試聴
 
-#### `GET /api/auth/status`
-現在の管理者パスワード設定状況およびログイン状態を返却します。
-```json
-{
-  "required": true,
-  "authenticated": false
-}
-```
+### 13.10 システム設定 API
+- **`GET /api/settings`**: システム全体設定の取得
+- **`PUT /api/settings`**: システム全体設定の更新
+- **`POST /api/settings/sync-test`**: スピーカー間音ズレ同期テスト
 
-#### `POST /api/auth/login`
-管理者パスワードでログインし、セッション Cookie を発行します。
-* Request: `{"password": "管理者パスワード"}`
-* Response (`200 OK`): `{"success": true}`
+### 13.11 ハードウェア固有 API
+- **`GET /api/alexa/status`**: Alexa 連携状態の取得
+- **`POST /api/alexa/auth/start`**: Alexa プロキシログイン開始
+- **`POST /api/alexa/auth/stop`**: Alexa プロキシログイン停止
+- **`POST /api/alexa/token`**: リフレッシュトークン直接登録
+- **`POST /api/alexa/logout`**: Alexa 連携解除
+- **`GET /api/homepod/status`**: HomePod デバイス一覧取得
+- **`POST /api/homepod/scan`**: HomePod 即時 mDNS 再スキャン
+- **`POST /api/onvif/scan`**: ONVIF カメラ ＆ DLNA スピーカー自動探索
+- **`POST /api/onvif/register`**: ONVIF / DLNA デバイスの登録・変更・解除
+- **`POST /api/onvif/test`**: ONVIF / DLNA テスト発声
+- **`POST /api/onvif/default-auth`**: カメラ共通デフォルト認証情報の保存
 
-#### `POST /api/auth/logout`
-セッションを無効化してログアウトします。
-
----
-
-### 8.3 発言履歴・キュー管理 エンドポイント
-
-#### `GET /api/history`
-直近 100 件の発言ログ一覧を取得します。
-```json
-[
-  {
-    "id": "hist_1729051234567",
-    "text": "おはようございます",
-    "targets": ["ALL"],
-    "voice": "ja-JP-NanamiNeural",
-    "source": "schedule",
-    "sourceLabel": "定期スケジュール",
-    "clientName": "朝の挨拶",
-    "clientIp": "127.0.0.1",
-    "status": "success",
-    "timestamp": 1729051234567
-  }
-]
-```
-
-#### `DELETE /api/history`
-発言履歴ログを全件クリアします。
-
-#### `GET /api/queue`
-現在処理待ちの永続化 Webhook キュー一覧を取得します。
+### 13.12 MQTT API
+- **`GET /api/mqtt/status`**: 全 MQTT ブローカーの接続状態取得
+- **`POST /api/mqtt/test`**: 指定ブローカーへの接続テスト
+- **`POST /api/mqtt/reconnect`**: 全ブローカーの再接続
 
 ---
 
-### 8.4 デバイス・スピーカー エンドポイント
-
-#### `GET /api/devices`
-宅内ネットワークで検出されたすべてのスピーカー（Google Cast, Alexa, HomePod, 各グループ）の一覧を取得します。
-```json
-{
-  "devices": [
-    {
-      "id": "group_32094_192_168_11_85",
-      "name": "ALL",
-      "ip": "192.168.11.85:32094",
-      "type": "google",
-      "isGroup": true
-    },
-    {
-      "id": "alexa_ALL",
-      "name": "全室 Echo",
-      "ip": "alexa:ALL",
-      "type": "alexa",
-      "isGroup": true
-    },
-    {
-      "id": "dev_192_168_11_97",
-      "name": "部屋",
-      "ip": "192.168.11.97",
-      "type": "google",
-      "isDefault": true
-    }
-  ],
-  "defaultIp": "192.168.11.97"
-}
-```
-
-#### `POST /api/devices/default`
-標準（デフォルト）スピーカーの IP を変更します。
-* Request: `{"ip": "192.168.11.96"}`
-
----
-
-### 8.5 スケジュール管理 エンドポイント
-
-* `GET /api/schedules` - スケジュール一覧の取得
-* `POST /api/schedules` - スケジュールの新規登録
-  * Body: `{"name": "朝の挨拶", "cron": "0 7 * * *", "text": "おはようございます", "targets": ["リビング"], "voice": "ja-JP-NanamiNeural", "enabled": true}`
-* `PUT /api/schedules/:id` - スケジュールの更新
-* `DELETE /api/schedules/:id` - スケジュールの削除
-* `POST /api/schedules/:id/toggle` - 有効/無効のワンタップ切り替え
-* `POST /api/schedules/:id/run` - スケジュールの即時テスト実行
-
----
-
-### 8.6 Google カレンダー連携 エンドポイント
-
-* `GET /api/calendar/events` - 同期済みの本日・直近の予定一覧を取得
-* `POST /api/calendar/sync` - Google カレンダーからの即時再同期を実行
-* `POST /api/calendar/summary` - 朝の予定まとめ発話をテスト実行
-
----
-
-### 8.7 おやすみ・会議モード (DND) エンドポイント
-
-* `GET /api/dnd/status` - 現在の DND 発動状態（理由、解除予定時刻、保留キュー件数）を取得
-```json
-{
-  "isDnd": true,
-  "reason": "オンライン会議中 (MTG)",
-  "until": "2026-10-16T15:00:00.000Z",
-  "queuedCount": 2,
-  "action": "queue"
-}
-```
-* `POST /api/dnd/quick` - ワンタップ即時ミュートのオン/オフ
-  * Request: `{"action": "set", "duration": "60", "reason": "集中作業中"}` （duration: `'30'`, `'60'`, `'120'`, `'indefinite'` / 解除時は `{"action": "clear"}`）
-* `GET /api/dnd/history` - DND による抑制・保留・囁きの記録ログを取得
-* `DELETE /api/dnd/history` - DND 記録ログをクリア
-
----
-
-### 8.8 防災・緊急速報＆天気 エンドポイント
-
-* `GET /api/disaster/settings` - 防災・気象・天気設定の取得
-* `PUT /api/disaster/settings` - 防災・気象設定の更新（地域、EEW音量、警報レベル、通知先スピーカー等）
-* `GET /api/disaster/areas` - 都道府県マスター（47都道府県）または市区町村一覧（`?prefCode=130000`）を取得
-* `GET /api/disaster/weather` - 現在設定されている地域の最新天気予報・気温・降水確率・アドバイスを取得
-* `GET /api/disaster/status` - P2P地震情報 WebSocket の接続状態、現在の警報一覧を取得
-* `POST /api/disaster/test` - 動作シミュレーションテスト発声
-  * Request: `{"type": "eew"}` (緊急地震速報) | `{"type": "eew_cancel"}` (緊急地震速報の取消テスト) | `{"type": "quake"}` (震度速報) | `{"type": "warning"}` (気象警報) | `{"type": "weather"}` (朝の天気サマリー試聴)
-
----
-
-### 8.9 AI 連携 エンドポイント
-
-* `GET /api/ai/status` - AI 有効化状態および設定プロバイダーを取得
-* `POST /api/ai/test` - API Key 接続テスト（有効性の検証）
-* `GET /api/ai/models` - 設定された API Key で利用可能なモデル一覧を動的取得
-* `POST /api/ai/summarize-test` - DND 保留メッセージの要約シミュレーション試聴
-* `POST /api/ai/calendar-test` - カレンダー予定＋天気の朝サマリー要約テスト試聴
-
----
-
-### 8.10 システム設定＆同期 エンドポイント
-
-* `GET /api/settings` - システム全体設定（DND, カレンダー, AI, 防災, 同期エンジン, IPエイリアス, グループ）の取得
-* `PUT /api/settings` - システム全体設定の更新
-* `POST /api/settings/sync-test` - スピーカー間の音ズレ同期テスト（「ポン、ピン、パン」の同期トーンを発声し、各端末の RTT を再計測）
-
----
-
-### 8.11 ハードウェア固有連携 (Alexa / HomePod) エンドポイント
-
-* `GET /api/homepod/status` - 認識されている HomePod 一覧の取得
-* `POST /api/homepod/scan` - LAN 内の HomePod デバイスを即時 mDNS 再スキャン
-* `GET /api/alexa/status` - Amazon Echo 連携の認証状態を取得
-* `POST /api/alexa/auth/start` - ブラウザプロキシログインの開始（認証用ポートオープン）
-* `POST /api/alexa/auth/stop` - ブラウザプロキシログインの停止
-* `POST /api/alexa/token` - 手動取得したリフレッシュトークン（`Atnr|...`）の直接登録
-* `POST /api/alexa/logout` - Alexa 連携の解除
-
----
-
-### 8.12 ONVIF カメラ＆DLNA スピーカー連携 エンドポイント
-
-* `POST /api/onvif/scan` (または `/api/onvif-dlna/scan`) - LAN 内の ONVIF ネットワークカメラ（WS-Discovery）および DLNA レンダラー（SSDP）を並行自動探索
-  * **リクエストパラメータ**: `{ timeoutMs?: number, username?: string, password?: string }`
-  * **レスポンス**: 検出されたデバイス一覧（`id`, `name`, `ip`, `port`, `category`: `'onvif' | 'dlna'`, `model`, `supportsAudio`: boolean, `status`: `'ok' | 'unauthenticated' | 'unauthorized' | 'error'`, `isRegistered`: boolean）
-* `POST /api/onvif/register` - ONVIF カメラまたは DLNA スピーカーの連携登録・設定変更・登録解除
-  * **リクエストパラメータ**:
-    * 登録・更新: `{ id, name, ip, port, model, type: 'onvif' | 'dlna', username?: string, password?: string, controlUrl?: string, renderingControlUrl?: string }`
-    * 削除（連携解除）: `{ ip, delete: true }` または `{ id, delete: true }`
-  * **レスポンス**: `{ success: true, registeredDevices: [...] }`
-* `POST /api/onvif/test` - 対象カメラまたは DLNA スピーカーに対する即時テスト発声
-  * **リクエストパラメータ**: `{ ip: string, text?: string, voice?: string, volumeLevel?: number }`
-  * **レスポンス**: `{ success: true, message: "Playback started" }`
-* `POST /api/onvif/default-auth` - カメラ共通のデフォルト認証情報の保存
-  * **リクエストパラメータ**: `{ defaultUsername: string, defaultPassword?: string }`
-  * **レスポンス**: `{ success: true }`
-
----
-
-## 9. ハードウェア・プロトコル詳細仕様 (ONVIF & DLNA)
-
-### 9.1 ONVIF カメラ双方向音声 (Two-Way Audio / Profile T) アーキテクチャ
-
-防犯ネットワークカメラ（Reolink E1 Pro、TP-Link Tapo 等）の内蔵スピーカーを「キャスト先スマートスピーカー」として活用するための技術仕様です。
-
-#### 1. デバイス探索 (WS-Discovery)
-- **プロトコル**: UDP 3702, SOAP 1.2 Probe Envelope
-- **宛先**: マルチキャスト `239.255.255.250:3702` および ブロードキャスト `255.255.255.255:3702`
-- **探索対象 Types**: `dn:NetworkVideoTransmitter tds:Device`
-- **情報抽出**:
-  - `XAddrs`: カメラの ONVIF デバイスサービス URL（例: `http://192.168.11.203:8000/onvif/device_service`）
-  - `Scopes`: ハードウェアモデル名 (`hardware/...`)、ユーザー設定のカメラ名 (`odm:name:...` や `name/...`)、および **Profile T 対応フラグ (`Profile/T`)** を未認証のまま事前抽出。
-
-#### 2. ONVIF WS-Security 認証仕様
-カメラの詳細情報取得および SOAP 通信時には、ONVIF 仕様準拠の `UsernameToken (PasswordDigest)` ヘッダーを生成して送信します。
-```text
-Nonce = Base64(16バイト暗号乱数)
-Created = YYYY-MM-DDTHH:mm:ssZ (ミリ秒なしUTC)
-PasswordDigest = Base64( SHA-1( NonceBytes + ASCII(Created) + ASCII(Password) ) )
-```
-
-#### 3. Profile T（双方向音声バックチャンネル）判定アルゴリズム
-- カメラがスピーカー出力に対応しているかは、ONVIF Profile T（または Audio Backchannel）をサポートしているかで厳密に判定されます。
-- `tds:GetScopes` SOAP 呼び出しにより、Scope 一覧に `onvif://www.onvif.org/Profile/T` が含まれる端末を `supportsAudio: true`（スピーカー対応）として認識します。
-
-#### 4. ストリーミング転送基盤 (go2rtc 連携)
-Reolink や Tapo などのカメラは、通常の RTSP 配信（カメラ→クライアント）とは異なり、クライアントからカメラへ音声を送り込むための特殊な RTSP プロトコル交渉（`Require: www.onvif.org/ver20/backchannel`）を要求します。
-- **プロデューサー登録 (PUT)**:
-  - `PUT /api/streams?name=onvif_<ip>&src=<RTSP_URL>&src=<ONVIF_URL>`
-  - go2rtc に対して RTSP 映像ソースと ONVIF メディアソースの 2つをまとめて定義。
-- **バックチャンネルプッシュ (POST)**:
-  - `POST /api/streams?dst=onvif_<ip>&src=ffmpeg:<Audio_URL>#audio=pcmu#input=file`
-  - Voice Hub で生成・ホストしている音声ファイル（MP3）を、FFmpeg パイプライン経由で `PCMU (G.711u)` コーデックにリアルタイム変換してカメラへ送信。
-- **セッション安全解放**:
-  - 音声再生の尺（Duration + 1.5秒余裕）経過後に `POST /api/streams?dst=onvif_<ip>&src=` を送信し、カメラ側の RTSP 双方向セッションを切断。
-
-#### 5. FFmpeg 音量事前ゲイン調整キャッシュ
-カメラ側でハードウェア音量変更 API をサポートしていない場合でも柔軟に対応できるよう、ソフトウェアゲイン調整エンジンを備えています。
-- 指定された音量（`volumeLevel: 0.0〜1.0` またはパーセント）に基づき、FFmpeg でゲインを事前調整した専用キャッシュファイル（例: `reolink_test_vol30.mp3`）を動的生成してストリーミング配信します。
-
----
-
-### 9.2 DLNA / UPnP ネットワークオーディオ (MediaRenderer / AVTransport) アーキテクチャ
-
-Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、foobar2000 等の DLNA / UPnP 対応機器を、完全なゼロコンフィグ（認証不要）でスピーカーとして統合する技術仕様です。
-
-#### 1. デバイス探索 (SSDP)
-- **プロトコル**: UDP 1900, SSDP (Simple Service Discovery Protocol)
-- **宛先**: マルチキャスト `239.255.255.250:1900`
-- **送信パケット**:
-  ```http
-  M-SEARCH * HTTP/1.1
-  HOST: 239.255.255.250:1900
-  MAN: "ssdp:discover"
-  MX: 2
-  ST: urn:schemas-upnp-org:device:MediaRenderer:1
-  ```
-- **応答処理**:
-  - 応答ヘッダーの `LOCATION`（例: `http://192.168.11.158:1426/`）を取得。
-  - XML ディスクリプション（SCPD）を非同期取得し、以下を抽出・保持：
-    - `friendlyName`: デバイス名（例: `foobar2000 Renderer (shuns) [MASTEROMEN2025]`）
-    - `modelName`: 機種名
-    - `UDN`: 一意なデバイス識別子（UUID）
-    - `urn:schemas-upnp-org:service:AVTransport:1` の `controlURL`
-    - `urn:schemas-upnp-org:service:RenderingControl:1` の `controlURL`
-
-#### 2. AVTransport 音声再生制御 (SOAP)
-DLNA レンダラーへ Voice Hub でホスト中の MP3 音声 URL を指定し、ストリーミング再生させます。
-1. **SetAVTransportURI**:
-   - **SOAPAction**: `"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI"`
-   - **Body**:
-     ```xml
-     <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
-       <InstanceID>0</InstanceID>
-       <CurrentURI>http://<VOICE_HUB_IP>:8080/voice/speech_<MD5>.mp3</CurrentURI>
-       <CurrentURIMetaData></CurrentURIMetaData>
-     </u:SetAVTransportURI>
-     ```
-2. **Play**:
-   - **SOAPAction**: `"urn:schemas-upnp-org:service:AVTransport:1#Play"`
-   - **Body**:
-     ```xml
-     <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
-       <InstanceID>0</InstanceID>
-       <Speed>1</Speed>
-     </u:Play>
-     ```
-
-#### 3. RenderingControl 音量制御 (SOAP)
-- **音量取得 (GetVolume)**:
-  - **SOAPAction**: `"urn:schemas-upnp-org:service:RenderingControl:1#GetVolume"`
-  - **Body**: `<InstanceID>0</InstanceID><Channel>Master</Channel>`
-  - **レスポンス**: `<CurrentVolume>0〜100</CurrentVolume>`
-- **音量設定 (SetVolume)**:
-  - **SOAPAction**: `"urn:schemas-upnp-org:service:RenderingControl:1#SetVolume"`
-  - **Body**: `<InstanceID>0</InstanceID><Channel>Master</Channel><DesiredVolume>0〜100</DesiredVolume>`
-  - 発声パラメータで音量が指定されている場合、発声直前に指定音量へセットします。
-
----
-
-## 10. ファイル構成と永続化ディレクトリ
-
-Docker コンテナ運用時、以下のディレクトリ構造でデータが永続化されます：
+## 14. ファイル構成と永続化ディレクトリ
 
 ```text
 /root/google-home-voicetext-docker/
 ├── .my.env                     # 環境設定ファイル (秘密情報・ポート等)
 ├── .my.env.sample              # 環境設定サンプル
-├── docker-compose.yml          # Docker Compose 定義 (Voice Hub + go2rtc)
-├── Dockerfile                  # マルチステージビルド定義 (Node + Python + pyatv)
-├── Manual.md                   # 本詳細仕様書 (仕様・API・アーキテクチャ)
-├── README.md                   # 簡易概要・導入ガイド
+├── docker-compose.yml          # Docker Compose 定義
+├── Dockerfile                  # Python 3.14 + go2rtc 同梱ビルド定義
+├── Manual.md                   # 本総合技術仕様書
+├── README.md                   # 一般向け概要・導入ガイド
 │
 ├── data/                       # [Named Volume: smart_speaker_data]
-│   ├── settings.json           # システム設定 (DND, 防災, AI, デバイスグループ, ONVIF/DLNA登録情報)
+│   ├── settings.json           # システム全体設定 (DND, 防災, AI, デバイス, MQTT等)
 │   ├── schedules.json          # 定期スケジュール定義
 │   ├── dnd_queue.json          # DND 保留メッセージキュー (WAL)
-│   ├── webhook_queue.json      # Webhook 非同期永続化キュー (WAL)
+│   ├── webhook_queue.json      # Webhook 非同期キュー (WAL)
 │   ├── homepod_devices.json    # HomePod スキャンキャッシュ
-│   └── .alexa.cookie           # Alexa 認証クッキー・トークン
+│   └── .alexa.cookie           # Alexa 認証トークン
 │
-├── public/
+├── public/                     # Web フロントエンド静的配信
 │   ├── index.html              # Web GUI Single Page Application
-│   ├── app.js                  # Web GUI フロントエンドロジック
-│   ├── style.css               # グラスモーフィズムUI スタイル定義
+│   ├── app.js                  # フロントエンドロジック
+│   ├── style.css               # グラスモーフィズム UI スタイル定義
 │   ├── sound/                  # チャイム音源 (dingdong.mp3, bell.mp3)
-│   └── voice/                  # [Named Volume: smart_speaker_cache]
-│       └── speech_<MD5>.mp3    # 生成された Edge TTS 音声キャッシュファイル
+│   ├── plugins/                # 配布用プラグイン静的公開ファイル
+│   └── voice/                  # [Named Volume: smart_speaker_cache] 生成音声キャッシュ
 │
 ├── app/                        # バックエンド実装 (Python 3.14 + FastAPI)
-│   ├── main.py                 # FastAPI エントリーポイント、Lifespan、ミドルウェア
-│   ├── config.py               # 環境変数・パス設定
-│   ├── core/                   # セキュリティ、ロギング、基盤モジュール
-│   ├── routers/                # REST API / SSE / MQTT / MCP ルーター群
-│   └── services/               # TTS、Cast、Alexa、HomePod、ONVIF/DLNA、DND、MQTT、MCP等のサービス群
+│   ├── main.py                 # FastAPI エントリーポイント、ライフスパン、ミドルウェア
+│   ├── config.py               # Pydantic Settings による環境設定管理
+│   ├── core/                   # 境界防御、認証、ロギング、重複排除基盤
+│   ├── routers/                # REST API / SSE / MCP ルーター群
+│   └── services/               # TTS、Cast、Alexa、HomePod、ONVIF/DLNA、DND、MQTT、MCP等の各サービス
+│
+├── plugins/
+│   └── homebridge-voicehub/    # Homebridge 公式準拠プラットフォームプラグイン
+│       ├── package.json
+│       ├── tsconfig.json
+│       ├── config.schema.json
+│       ├── README.md
+│       └── src/
 │
 └── bin/
-    ├── alexa_remote_control.sh # Alexa 制御シェルスクリプト
-    ├── homepod_scan.py         # pyatv スキャン・AirPlay2 ストリーミング実行スクリプト
-    └── homepod_stream.py       # HomePod 配信ヘルパースクリプト
+    └── alexa_remote_control.sh # Alexa 制御補助スクリプト
 ```
 
 ---
 
-## 11. 次世代 Python (FastAPI) アーキテクチャ設計書 (リファクタリング計画)
+## 15. システム内部アーキテクチャ詳細 (FastAPI モジュール仕様)
 
-今後の **Bluetooth (bleak)** および **Matter (python-matter-server)** への拡張、並びにシステム全体の堅牢性・単一言語統一を見据えた、Python への完全リファクタリング設計書です。
+本システムは、すべての処理が非同期イベントループ（`asyncio`）上で効率的に動作するようモジュール設計されています。
 
-### 11.1 技術スタック選定
-- **ベースイメージ**: `python:3.14-slim` (Debian ベース、イメージサイズ約 350MB)
-- **Web フレームワーク**: **FastAPI** + **Uvicorn** (フル非同期 `async/await`、高速ルーティング、OpenAPI 自動生成)
-- **主要スマートホームライブラリ**:
-  - **Google Cast**: `pychromecast` (Home Assistant 公式採用。castv2 より圧倒的に安定したネイティブ実装)
-  - **Apple HomePod**: `pyatv` (AirPlay 2 / RAOP のデファクトスタンダード。Python ネイティブ直結)
-  - **DLNA / UPnP**: `async_upnp_client` (Home Assistant 標準の非同期 UPnP / AVTransport クライアント)
-  - **Amazon Alexa**: `alexapy` または現行スクリプト統合
-  - **音声合成**: `edge-tts` (Python 公式パッケージ、ストリーミング合成対応)
-  - **カメラ音声プッシュ**: `go2rtc` バイナリ（コンテナ内同梱）への `httpx` 非同期 HTTP リクエスト
-  - **将来拡張**: `bleak` (Bluetooth BLE/Audio), `python-matter-server` (Matter)
+### 15.1 コアモジュール (`app/core/`)
+- **`security.py`**:
+  Cloudflare Tunnel 判定、管理者セッション Cookie 検証、Webhook Bearer トークン認証を担当。
+- **`deduplication.py`**:
+  メモリ内キャッシュを用いた連呼防止エンジン。同一クライアントからの同一テキストをクールダウン秒数判定して重複排除。
+- **`sync_engine.py`**:
+  各スピーカーの RTT 計測結果に基づき、指数移動平均（EMA）で音ズレ補正オフセットを動的に計算。
+- **`queue_manager.py`**:
+  `asyncio.Queue` とディスク上の WAL（Write-Ahead Log）ファイルを同期させ、プロセス再起動時にも未処理メッセージを安全に復元。
 
-### 11.2 モジュール構成設計 (新ディレクトリ案)
-```text
-app/
-├── main.py                     # FastAPI エントリーポイント、CORS、境界防御、ライフサイクル
-├── config.py                   # Pydantic Settings による型安全な環境変数・設定管理
-│
-├── core/
-│   ├── security.py             # Cloudflare Tunnel / トークン / Cookie 認証
-│   ├── deduplication.py        # 連呼防止・重複排除エンジン
-│   ├── sync_engine.py          # EMA ネットワーク遅延補正エンジン
-│   └── queue_manager.py        # asyncio.Queue + WAL 永続化
-│
-├── services/
-│   ├── tts_service.py          # edge-tts + ffmpeg チャイム結合 + LRU 音声キャッシュ
-│   ├── cast_service.py         # pychromecast による Google Home / Cast 再生
-│   ├── alexa_service.py        # Amazon Echo 再生
-│   ├── homepod_service.py      # pyatv による AirPlay 2 再生
-│   ├── onvif_service.py        # WS-Discovery + WS-Security + go2rtc バックチャネルプッシュ
-│   ├── dlna_service.py         # async_upnp_client による AVTransport / RenderingControl
-│   ├── calendar_service.py     # icalendar による予定解析、直前リマインド、朝サマリー
-│   ├── disaster_service.py     # aiohttp WebSocket (P2P地震情報) + 気象庁 API 差分監視
-│   ├── ai_service.py           # google-genai / openai による DND保留メッセージ・予定要約
-│   └── dnd_service.py          # おやすみ・会議モード多層判定
-│
-├── routers/
-│   ├── speech.py               # /api/say, /api/tts
-│   ├── devices.py              # /api/devices, /api/groups
-│   ├── onvif_dlna.py           # /api/onvif/*, /api/dlna/*
-│   ├── settings.py             # /api/settings
-│   ├── history.py              # /api/history
-│   ├── calendar.py             # /api/calendar/*
-│   └── dnd.py                  # /api/dnd/*
-│
-└── static/                     # 現行の public/ (HTML/CSS/JS) をそのまま完全流用
-```
-
-### 11.3 リファクタリング移行ロードマップ
-1. **フェーズ 1: コアエンジン＆TTS・Web API 基盤**
-   - FastAPI サーバーの立ち上げ、既存 `public/` の静的配信
-   - `edge-tts` + `ffmpeg` チャイム結合エンジン、設定マネージャー（`settings.json` 互換性維持）
-2. **フェーズ 2: 5大スピーカー出力エンジンの Python 化**
-   - `pychromecast`、`pyatv`、`async_upnp_client` (DLNA)、`onvif_service` (go2rtc連携) の実装
-   - `POST /api/say` のマルチプラットフォーム同時発声・マクロ展開の実装
-3. **フェーズ 3: インテリジェント連携機能の移行**
-   - DND (会議モード/スケジュール)、Google カレンダー同期、P2P地震速報・気象庁API監視、AI要約
-4. **フェーズ 4: 1コンテナ化＆検証**
-   - `Dockerfile` を `python:3.14-slim` に移行し、go2rtc 単一バイナリを同梱して完全 1 コンテナ稼働を達成。
-
+### 15.2 サービスモジュール (`app/services/`)
+- **`tts_service.py`**:
+  `edge-tts` によるストリーミング音声合成、FFmpeg によるチャイム結合、LRU ディスクキャッシュ管理。
+- **`cast_service.py`**:
+  `pychromecast` による Google Cast デバイス・スピーカーグループの検出および再生制御。
+- **`alexa_service.py`**:
+  Amazon Echo デバイスへのアナウンス制御およびブラウザプロキシ認証管理。
+- **`homepod_service.py`**:
+  `pyatv` を用いた Apple HomePod の mDNS 探索および AirPlay 2 ストリーミング再生。
+- **`onvif_service.py`**:
+  WS-Discovery によるカメラ探索と、同梱 `go2rtc` 経由での Two-Way Audio バックチャンネルプッシュ。
+- **`dlna_service.py`**:
+  SSDP によるレンダラー探索と、UPnP AVTransport / RenderingControl SOAP 制御。
+- **`dnd_service.py`**:
+  カレンダー、スケジュール、手動タイマーの多層判定と、保留キュー・AI要約トリガーの管理。
+- **`calendar_service.py`**:
+  複数 Google カレンダー（iCal）の非同期取得・解析、直前リマインドおよび朝サマリー生成。
+- **`disaster_service.py`**:
+  P2P地震情報 WebSocket の常時接続管理、気象庁 API のポーリング監視と差分判定。
+- **`ai_service.py`**:
+  Gemini / OpenAI API との通信、モデル自動ディスカバリー、503 耐性フェイルオーバー。
+- **`mqtt_service.py`**:
+  `aiomqtt` による複数ブローカーへの同時接続、トピック購読・発行、および Home Assistant MQTT Discovery 自動管理。
+- **`mcp_service.py`**:
+  JSON-RPC 2.0 メッセージの解釈、SSE 接続管理、および各ツール（`say_message` 等）のディスパッチ処理。

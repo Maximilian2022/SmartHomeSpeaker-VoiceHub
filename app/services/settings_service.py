@@ -147,13 +147,73 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "publishEvents": True,
         "tls": False,
         "haDiscoveryEnabled": True,
-        "haDiscoveryPrefix": "homeassistant"
+        "haDiscoveryPrefix": "homeassistant",
+        "brokers": []
     }
 }
 
 class SettingsManager:
     def __init__(self):
         self.settings = self._load()
+
+    def _normalize_mqtt(self, data: Dict[str, Any]):
+        """単一ブローカー設定とマルチブローカー (brokers 配列) の相互自動同期・マイグレーション"""
+        if "mqtt" not in data or not isinstance(data["mqtt"], dict):
+            return
+
+        m = data["mqtt"]
+        brokers = m.get("brokers")
+        if not brokers or not isinstance(brokers, list) or len(brokers) == 0:
+            # 既存の単一ブローカー設定を brokers[0] に変換
+            single_broker = (m.get("broker") or "").strip()
+            if single_broker:
+                m["brokers"] = [{
+                    "id": "default",
+                    "name": "メインブローカー",
+                    "enabled": bool(m.get("enabled", True)),
+                    "broker": single_broker,
+                    "port": int(m.get("port") or 1883),
+                    "username": m.get("username") or "",
+                    "password": m.get("password") or "",
+                    "clientId": m.get("clientId") or "voice-hub",
+                    "keepalive": int(m.get("keepalive") or 60),
+                    "baseTopic": m.get("baseTopic") or "voicehub",
+                    "defaultTarget": m.get("defaultTarget") or "",
+                    "publishEvents": bool(m.get("publishEvents", True)),
+                    "tls": bool(m.get("tls", False)),
+                    "haDiscoveryEnabled": bool(m.get("haDiscoveryEnabled", True)),
+                    "haDiscoveryPrefix": m.get("haDiscoveryPrefix") or "homeassistant"
+                }]
+            else:
+                m["brokers"] = []
+        else:
+            # brokers 配列が存在する場合、直下フィールドを brokers[0] と同期して下位互換を維持
+            first = brokers[0]
+            m["broker"] = first.get("broker", "")
+            m["port"] = first.get("port", 1883)
+            m["username"] = first.get("username", "")
+            m["password"] = first.get("password", "")
+            m["clientId"] = first.get("clientId", "voice-hub")
+            m["baseTopic"] = first.get("baseTopic", "voicehub")
+            m["defaultTarget"] = first.get("defaultTarget", "")
+            m["publishEvents"] = first.get("publishEvents", True)
+            m["tls"] = first.get("tls", False)
+            m["haDiscoveryEnabled"] = first.get("haDiscoveryEnabled", True)
+            m["haDiscoveryPrefix"] = first.get("haDiscoveryPrefix", "homeassistant")
+            master_enabled = bool(m.get("enabled", True))
+            has_active_broker = any(bool(b.get("enabled", False)) for b in brokers)
+            m["enabled"] = master_enabled and has_active_broker
+
+    def _normalize_ai(self, data: Dict[str, Any]):
+        """AI 設定内の廃止済みモデル名（Gemini 1.5 / 2.0等）の自動修復"""
+        if "ai" not in data or not isinstance(data["ai"], dict):
+            return
+        ai_conf = data["ai"]
+        model = str(ai_conf.get("geminiModel") or "").strip()
+        deprecated_patterns = ["1.5", "1.0", "2.0"]
+        if not model or any(p in model for p in deprecated_patterns):
+            ai_conf["geminiModel"] = "gemini-2.5-flash"
+
 
     def _load(self) -> Dict[str, Any]:
         if not SETTINGS_FILE.exists():
@@ -168,6 +228,8 @@ class SettingsManager:
                         merged[k] = {**merged[k], **v}
                     else:
                         merged[k] = v
+                self._normalize_mqtt(merged)
+                self._normalize_ai(merged)
                 return merged
         except Exception as e:
             print(f"[SettingsManager] Load error: {e}")
@@ -189,6 +251,8 @@ class SettingsManager:
                 self.settings[k] = {**self.settings[k], **v}
             else:
                 self.settings[k] = v
+        self._normalize_mqtt(self.settings)
+        self._normalize_ai(self.settings)
         self._save(self.settings)
         return self.settings
 

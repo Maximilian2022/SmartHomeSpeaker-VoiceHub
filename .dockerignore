@@ -30,7 +30,11 @@ logs/*.log
 test_*.mp3
 public/voice/*.mp3
 
-# Legacy Node.js
-node_modules/
+# Plugins (Homebridge etc.)
+plugins/
+
+# Legacy / Sub Node.js
+**/node_modules/
 package-lock.json
+
 

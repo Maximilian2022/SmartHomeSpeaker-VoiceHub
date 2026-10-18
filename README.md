@@ -1,223 +1,121 @@
 # Smart Home Speaker Voice Hub 🎙️
 
-Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod に加え、**ONVIF ネットワークカメラ（双方向音声スピーカー）** および **DLNA / UPnP ネットワークオーディオ（MediaRenderer）** を統合し、自然な日本語音声（Microsoft Edge TTS）でアナウンスできるスマートスピーカー音声ハブです。
+Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワークカメラ、DLNA ネットワークオーディオなど、規格の異なる家庭内のスピーカー機器をまとめて、WebhookやAI、外部APIから自然な日本語音声（Microsoft Edge TTS）でお知らせを放送できる音声ハブです。
 
-Webブラウザからの直感的な即時発言、定期スケジュール放送、Googleカレンダー予定の自動読み上げ、Webhook（外部API・IFTTT等）経由の発言に対応しています。
+日常のちょっとしたお知らせやリマインダーを、手軽に心地よく届けることを目指して作成されたツールです。
 
 > [!NOTE]
-> 本ソフトウェアは、AIコーディングアシスタント（Google Antigravity）の支援を活用して設計・実装されたオープンソースプロジェクトです。
-> 主に自分用に作成したものなので、考慮不足の点が多々あると思われます。
-> 
-> 📖 **詳細なシステム内部仕様、全REST APIリファレンス、ネットワーク境界セキュリティ、同期エンジン仕様については [Manual.md](Manual.md) をご覧ください。**
+> 本ソフトウェアは、個人の家庭内での利用を想定して開発されたオープンソースプロジェクトです。
+> 細かい技術仕様、全 REST API リファレンス、ネットワークセキュリティ設計、高度な外部連携設定等については、**[詳細仕様書 (Manual.md)](Manual.md)** にすべて記載しておりますので、あわせてご参照ください。
 
 ---
 
-## ✨ 主な機能
+## 🌿 主な特徴
 
-- **高品質な音声合成**: Edge TTSで自然な日本語音声（女性・男性の複数話者）を利用可能。
-- **5大プラットフォーム対応マルチスピーカー**:
-  - **Google Home / Nest**: Google Cast (castv2) によるキャスト再生。グループスピーカー対応。
-  - **Amazon Alexa (Echo)**: 宅内 Echo デバイスへのアナウンス発話。
-  - **Apple HomePod**: AirPlay 2 / RAOP 経由での高音質ストリーミング再生。
-  - **ONVIF ネットワークカメラ**: Reolink や Tapo 等の防犯カメラのスピーカー（Two-Way Audio / Profile T）へのアナウンス発話。
-  - **DLNA / UPnP スピーカー**: Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、foobar2000 等の DLNA MediaRenderer へのストリーミング再生。
-- **Web GUI**: 即時発言、ブラウザ試聴プレビュー、送信先スピーカーの選択、マクロ一括選択。
-- **発言履歴ログ (過去100件)**: Web UI、定期スケジュール、カレンダー連携、外部API/Webhookからの全発話履歴をリアルタイム自動記録。送信元バッジ（色分け）、ステータス、再発言・試聴・テキストコピー機能。
-- **スケジュール・カレンダー統合管理**:
-  - 定期アナウンス（毎朝の挨拶、ゴミ出しリマインダーなど）の登録・編集・管理。
-  - Google カレンダー（複数カレンダー対応）の同期、予定開始前リマインド放送や朝の予定まとめアナウンスを自動実行。
+- **いろいろなスピーカーへまとめて発声**:
+  Google Home (Nest)、Amazon Alexa (Echo)、Apple HomePod、ONVIF 対応ネットワークカメラ、DLNA / UPnP 対応オーディオ機器へ、個別に、または家中で一斉にアナウンスを再生できます。
+- **自然で聴き取りやすい日本語音声**:
+  Microsoft Edge TTS による高品質な音声合成を採用しており、落ち着いた女性音声・男性音声などを用途に合わせて選択できます。
+- **直感的な Web 画面**:
+  スマートフォンやパソコンのブラウザからメッセージを入力するだけで、その場ですぐにアナウンスを送信できます。発言前の試聴プレビューや、過去の発言履歴からの再発話も可能です。
+- **毎日の定期放送 & カレンダー連携**:
+  「朝の挨拶」や「ゴミ出しリマインダー」などの定時スケジュール放送に加え、Google カレンダーと連携して予定の直前リマインドや朝の予定まとめアナウンスを自動で行えます。
 - **おやすみ・会議モード (DND)**:
-  - 曜日・時間帯による定時ミュート（平日日中や深夜）。
-  - カレンダー予定（MTG・会議等）進行中の自動サイレント化（終日予定自動除外）。
-  - ワンタップ即時ミュート（30分/1時間/2時間/本日終了）。
-  - 動作モード選択（完全スキップ、囁き極小音量、終了後まとめアナウンスの保留キュー）。
-  - 書斎や仕事部屋のみミュートできる対象スピーカー選択。
-  - 緊急警報用バイパスフラグ (`urgent: true`)。
-- **Webhook & 外部連携**: cURL、Home Assistant、IFTTT 等から手軽に呼び出し可能。Cloudflare Tunnel による外部アクセス時の認証保護対応。
+  就寝時や在宅勤務のオンライン会議中など、静かに過ごしたい時間帯には自動でアナウンスを控えたり、会議終了後にまとめてお知らせする（AIによる要約読み上げにも対応）といった配慮が可能です。
+- **Apple HomeKit / Siri 連携**:
+  同梱の専用プラグイン（`homebridge-voicehub`）を導入いただくことで、Apple の「ホーム」アプリや Siri から「『ご飯できたよ』をつけて」と話しかけるだけで、指定の部屋や家中のスピーカーから一言アナウンスを流すことができます。
+- **手軽な外部連携 (Webhook / MQTT / MCP)**:
+  IFTTT、Home Assistant、Node-RED などの外部自動化サービスやシェルスクリプトから簡単に呼び出すことができます。
 
 ---
 
-## 🚀 起動方法
+## 🚀 はじめかた
 
-### 1. 必要要件
-- Python 3.12 以上 (または Docker / Docker Compose)
-- スピーカー端末と同じローカルネットワーク (LAN)
+最も手軽でおすすめなのは、Docker Compose を利用した起動です。
 
-### 2. 環境設定
-サンプルファイルをコピーして設定ファイルを作成します。
+### 1. 準備するもの
+- Docker および Docker Compose が動作する環境（PC、Raspberry Pi、NAS、自宅サーバー等）
+- スピーカー機器と同じ家庭内ネットワーク (LAN) への接続
+
+### 2. 設定ファイルの作成
+サンプル設定ファイルをコピーして、設定用のファイルを作成します。
 
 ```bash
 cp .my.env.sample .my.env
 ```
 
-必要に応じて `.my.env` を編集します（ポート番号変更、Webhookトークン設定など）。
+※ 通常は初期設定のままでも起動いただけます。必要に応じてポート番号やスピーカーのIPアドレス等を編集してください。
 
-### 3. 起動 (ホストで直接動かす場合)
-
-```bash
-# 依存ライブラリのインストール
-pip install -r requirements.txt
-
-# サーバー起動 (デフォルト: ポート 8080)
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8080
-```
-
-起動後、ブラウザで `http://localhost:8080` を開きます。
-
-### 4. Docker Compose で起動する場合
+### 3. 起動
+Docker Compose コマンドでバックエンドサーバーを起動します。
 
 ```bash
 docker compose up -d --build
 ```
 
-- スケジュール・設定・認証情報は永続ボリューム `smart_speaker_data` に保存されます。
-- 生成された音声キャッシュは `smart_speaker_cache` ボリュームに保持されます。
+起動が完了したら、ブラウザから以下の URL にアクセスしてください。
 
-### 5. Portainer で起動する場合 (Stacks / Git Repository)
-
-Portainer の Web GUI からリポジトリを指定してワンクリックでデプロイできます。
-
-1. Portainer にログインし、**「Stacks」** → **「Add stack」** を開きます。
-2. **Build method** で **「Repository」** を選択します。
-3. **Repository URL**: `https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub.git` を入力します。
-4. **Repository reference**: `refs/heads/main` (または `main`)
-5. **Compose path**: `docker-compose.yml` (デフォルトのまま)
-6. **Environment variables** (必要に応じて):
-   - `DEFAULT_SPEAKER_IP`: メインの Google Home の IP アドレス
-   - `WEBHOOK_TOKEN`: 外部アクセス時のセキュリティトークン
-   - `TUNNEL_TOKEN`: Cloudflare Tunnel を利用する場合のトークン
-7. **「Deploy the stack」** をクリックします。自動的に Python 3.14 環境がビルドされ、名前付きボリューム (`smart_speaker_data`, `smart_speaker_cache`) と共に起動します。
+```text
+http://<サーバーのIPアドレス>:8080
+```
+*(サーバーを動かしている端末自身で開く場合は `http://localhost:8080`)*
 
 ---
 
-## 📡 Webhook API の使い方
+## 💡 基本的な使い方
 
-外部サービス（Slack, LINE, IFTTT, Home Assistant, Zapier 等）やスクリプトからスピーカーへ発言させることができます。
-**送信元の3秒タイムアウトを防ぐため、Webhook 呼び出し時は即座に `200 OK` を返却し、音声合成・再生はバックグラウンド（非同期）で高速実行されます。**
+### 1. Web 画面からアナウンスする
+ブラウザで Web 画面を開き、メッセージ入力欄にテキストを入力して「喋らせる」ボタンを押すだけで、登録されたスピーカーから音声が流れます。
+画面上の「試聴」ボタンを押すと、スピーカーへ送信する前にブラウザ上だけで音声をテスト再生できます。
 
-### 基本的な呼び出し (JSON POST)
+### 2. 外部から呼び出す (Webhook の例)
+シェルスクリプトや自動化ツールから、以下のような簡単な cURL コマンドでアナウンスを実行できます。
 
 ```bash
 curl -X POST http://<サーバーIP>:8080/api/say \
   -H "Content-Type: application/json" \
   -d '{
-    "text": "ご飯ができましたよ！",
-    "devices": ["リビング", "部屋"]
+    "text": "ご飯ができましたよ",
+    "devices": ["ALL"]
   }'
 ```
 
-### URLクエリでの簡易呼び出し (GET 対応)
+※ Web 画面の「Webhook」メニュー内に、クリック操作だけで呼び出しコマンドを自動生成できる「Webhook コマンドビルダー」も用意されています。
 
-```bash
-curl "http://<サーバーIP>:8080/api/say?text=お風呂が沸きました&devices=リビング"
-```
+### 3. Siri や Apple ホームアプリから使う (Homebridge プラグイン)
+Homebridge をご利用のご家庭向けに、本システム専用のプラグイン **`homebridge-voicehub`** を同梱しています。
+- 「ご飯できたよ」「お風呂が沸いたよ」といった定型メッセージを Apple ホームアプリのスイッチとして登録し、Siri から音声で呼び出せます。
+- 家中のスピーカー音量を iPhone のスライダーで調整したり、おやすみモード（DND）を Apple の就寝シーンと連動させることができます。
 
-### パラメータ一覧
-
-| パラメータ | 必須 | 説明 | 例 |
-|---|---|---|---|
-| `text` | ○ | 喋らせたい文言 | `"お風呂が沸きました"` |
-| `devices` | - | 送信先スピーカー名またはIP (配列またはカンマ区切り) | `["リビング", "書斎"]` または `"リビング,書斎"` |
-| `voice` | - | 話者名 | `"ja-JP-NanamiNeural"` (女性), `"ja-JP-KeitaNeural"` (男性) |
-| `rate` | - | 話速 (パーセント) | `"+0%"`, `"+20%"` |
-| `pitch` | - | 音高 (ヘルツ) | `"+0Hz"`, `"-5Hz"` |
-| `volumeLevel`| - | Google Cast 音量 (0.0〜1.0) | `0.5` |
-| `async` | - | 非同期（即時応答）の明示指定 (デフォルト: Webhook時は true) | `true` |
-| `wait` | - | 再生完了まで待機して詳細結果を受け取る (同期モード) | `true` |
-
-> [!TIP]
-> Web GUI の「Webhook / Tunnel」タブにある **Webhook コマンドビルダー** を使うと、画面上でスピーカーやメッセージを選ぶだけで cURL や IFTTT 向けの設定が自動生成されます。
+プラグインの詳しい導入方法については、[プラグイン解説書 (plugins/homebridge-voicehub/README.md)](plugins/homebridge-voicehub/README.md) をご覧ください。
 
 ---
 
-## 📅 Google カレンダー連携 (複数カレンダー & 個別設定対応)
+## 📖 より詳しい情報・技術仕様について
 
-1. Web GUI の「カレンダー連携」タブを開きます。
-2. **「＋ カレンダーを追加」** から、Google カレンダーの「設定」>「カレンダーの統合」にある **「iCal 形式の非公開 URL」** を登録します。
-3. **カレンダーごとの個別カスタマイズ**:
-   - カレンダーごとに独立した**直前リマインド時刻**（5分前、10分前、15分前、30分前、60分前、ON/OFF）
-   - カレンダーごとに異なる**朝の予定まとめ時刻**（例: 仕事用は 08:30、プライベート用は 07:30、ON/OFF）
-   - カレンダーごとの**通知先スピーカー**（仕事用は書斎のみ、家族用は全室スピーカー等）
-   - カレンダーごとの**話者・話速・音高・音量**の個別設定
-   を自在に設定・切り替えできます。
+本システムは、ご家庭の環境に合わせて細かくカスタマイズできるよう、多様な設定項目や連携機能を備えています。
 
-※ サーバーは15分おきに自動でバックグラウンド同期します（手動即時同期も可能）。
+- **Amazon Echo / Apple HomePod / ネットワークカメラ / DLNA の詳しい連携設定**
+- **MCP (Model Context Protocol) サーバーとして AI アシスタントから操作する設定**
+- **マルチ MQTT ブローカー接続および Home Assistant MQTT Discovery 仕様**
+- **すべての REST API エンドポイント一覧とパラメータ詳細**
+- **内部アーキテクチャ、セキュリティ設計、およびデータ永続化仕様**
 
----
-
-## 🍏 Apple HomePod 連携 (AirPlay 2)
-
-宅内の Apple HomePod / HomePod mini を自動検出し、AirPlay 2 / RAOP 経由で高音質ストリーミング再生できます。
-
-> [!IMPORTANT]
-> **同一ローカルネットワーク (LAN) 接続の必須要件:**
-> 本サーバー（Docker）と Apple HomePod は、必ず**同一ローカルネットワーク（同じLAN / Wi-Fi、同一サブネット）**に接続されている必要があります。
-> - Docker コンテナを稼働させるホストは `network_mode: host` を推奨します。
-> - ルーターの「ゲスト用Wi-Fi」や「端末間通信遮断（プライバシーセパレータ）」、「別VLAN」などでセグメントが跨がっている場合、Apple AirPlay の探索プロトコルであるマルチキャストDNS（Bonjour / mDNS）が届かず、HomePod の自動認識および音声ストリーミングができません。
+これらすべての詳細については、**[詳細技術仕様書 (Manual.md)](Manual.md)** に体系的にまとめております。必要に応じてご参照ください。
 
 ---
 
-## 🗣️ Amazon Alexa (Echo) 連携 & 手動リフレッシュトークン取得
+## 📜 ライセンスと謝辞
 
-宅内の Amazon Echo デバイスと連携し、Google Home や HomePod と同時にアナウンスできます。
+本プロジェクトは **MIT License** のもとで公開されています。
 
-### 1. ブラウザプロキシによる自動ログイン (推奨)
-Web GUI の「デバイス一覧」タブにある「Amazon ログインを開始して Alexa と連携」をクリックし、画面に表示されるリンクから手元のブラウザで Amazon にログインするだけで自動連携されます。
+### 心より感謝申し上げます
+本ソフトウェアの開発にあたり、スマートホームおよび音声合成の分野で貴重な知見やオープンソースライブラリを公開してくださっている開発者・コミュニティの皆様に深く敬意を表します。
 
-### 2. 手動でリフレッシュトークン (`Atnr|...`) を取得・登録する場合
-ブラウザプロキシログインが 2段階認証（OTP）や画像認証、CAPTCHA 等でブロックされる場合は、以下の手順で手動取得・登録が可能です。
-
-1. ターミナルでコンテナ内に入り、`alexa-cookie2` を実行します:
-   ```bash
-   docker exec -it google-home-voicetext npx alexa-cookie2
-   ```
-   （またはローカルPCのターミナルで `npx alexa-cookie2` を実行）
-2. ドメイン選択で **`amazon.co.jp`** を選択し、お使いの Amazon アカウントのメールアドレスとパスワードを入力します。
-3. ログイン完了後、ターミナルのコンソール画面に以下のようなトークンが出力されます:
-   ```text
-   Refresh Token: Atnr|...（長い英数字文字列）
-   ```
-4. Web GUI の「手動でリフレッシュトークン（Atnr|...）を入力して直接登録する場合」に貼り付けて「トークンを保存」を押すか、環境設定ファイル `.my.env` に以下を追記してコンテナを再起動します:
-   ```env
-   REFRESH_TOKEN="Atnr|..."
-   ```
-
----
-
-## 📷 ONVIF ネットワークカメラ連携 (Two-Way Audio / Profile T)
-
-宅内の ONVIF Profile T 対応防犯カメラ（Reolink E1 Pro、TP-Link Tapo など）の内蔵スピーカーへ、アナウンス音声を送信できます。
-
-1. Web GUI の「ONVIF / DLNA」タブを開きます。
-2. カメラ共通の「デフォルト ONVIF ユーザー名」「パスワード」を入力して保存します。
-3. **「＋ デバイスをスキャン」** をクリックすると、WS-Discovery（UDP 3702）により宅内のカメラが自動検出されます。
-4. Profile T（双方向音声）対応のカメラを「＋ 連携登録」することで、即時発話や Webhook から `CAM:ALL` やカメラ名・IP を指定して発声できるようになります。
-5. 音声は `go2rtc` 経由で RTSP バックチャンネル（PCMU コーデック）へプッシュされ、FFmpeg による動的音量ゲイン調整キャッシュファイルが自動適用されます。
-
----
-
-## 🎵 DLNA / UPnP ネットワークオーディオ連携 (AVTransport)
-
-Bose SoundTouch、Sonos、Denon HEOS、Yamaha MusicCast、あるいは PC 上の DLNA レンダラー（foobar2000 + UPnP等）と連携し、高音質なストリーミング再生が可能です。
-
-1. Web GUI の「ONVIF / DLNA」タブで **「＋ デバイスをスキャン」** を実行します。
-2. SSDP（UDP 1900, `MediaRenderer:1`）により、宅内の DLNA レンダラーが ONVIF カメラと一緒に一覧へ自動検出されます。
-3. DLNA デバイスは認証情報（ID/パスワード）が不要なため、名前を確認してそのまま「＋ 連携登録」をクリックするだけで即座に利用可能になります。
-4. 発話時は UPnP 標準プロトコル（SOAP `AVTransport:SetAVTransportURI` および `Play`）により、Voice Hub がホストする MP3 音声がダイレクトに再生されます。`RenderingControl:SetVolume` による音量制御にも対応しています。
-
----
-
-## 📜 ライセンス & クレジット
-
-本プロジェクトは **MIT License** の下で公開されています。
-
-### 参考・利用ライブラリ
-本ソフトウェアの開発にあたり、以下の素晴らしいオープンソースプロジェクトの知見・ライブラリを活用・参考にしています。各開発者・コミュニティの皆様に感謝いたします。
-
-- **[google-home-voicetext](https://github.com/sikkimtemi/google-home-voicetext-docker)** (Taro TAKAHASHI) - オリジナルの Google Home 音声通知着想
-- **[edge-tts](https://github.com/rany2/edge-tts)** - Python Microsoft Edge 音声合成クライアント
-- **[PyChromecast](https://github.com/home-assistant-libs/pychromecast)** - Google Cast 通信プロトコル実装 (Home Assistant)
-- **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** - Amazon Echo 制御シェルスクリプト
-- **[pyatv](https://github.com/postlund/pyatv)** - Apple HomePod AirPlay2 ストリーミング
-- **[go2rtc](https://github.com/AlexxIT/go2rtc)** - ONVIF Profile T 双方向音声バックチャンネルストリーミング
-- **[aiomqtt](https://github.com/sbtinstruments/aiomqtt)** - 非同期 MQTT クライアント (Node-RED / n8n / Home Assistant 連携)
+- **[google-home-voicetext](https://github.com/sikkimtemi/google-home-voicetext-docker)** (Taro TAKAHASHI 様) - スマートスピーカー音声通知の素晴らしい着想
+- **[edge-tts](https://github.com/rany2/edge-tts)** - 自然な日本語音声を届けてくれる音声合成ライブラリ
+- **[PyChromecast](https://github.com/home-assistant-libs/pychromecast)** - Google Cast デバイスとの安定した通信基盤
+- **[pyatv](https://github.com/postlund/pyatv)** - Apple HomePod への AirPlay ストリーミング基盤
+- **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** - Amazon Echo コントロールの知見
+- **[go2rtc](https://github.com/AlexxIT/go2rtc)** - ネットワークカメラへの双方向音声ストリーミング
+- **[aiomqtt](https://github.com/sbtinstruments/aiomqtt)** - 非同期 MQTT 通信基盤

@@ -54,5 +54,8 @@ Thumbs.db
 .idea/
 .vscode/
 
-# Legacy Dependencies
-node_modules/
+# Node.js & Plugins build artifacts
+**/node_modules/
+plugins/**/dist/
+*.tsbuildinfo
+

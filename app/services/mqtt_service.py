@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import aiomqtt
 from app.services.settings_service import settings_manager
 from app.services.speech_service import speech_service
@@ -10,8 +10,13 @@ from app.core.logger import get_logger
 
 log = get_logger("MQTT")
 
-class MQTTService:
-    def __init__(self):
+class MQTTBrokerWorker:
+    """単一 MQTT ブローカーへの接続・購読・送受信を独立管理するワーカー"""
+    def __init__(self, broker_conf: Dict[str, Any], service: 'MQTTService'):
+        self.conf = dict(broker_conf)
+        self.broker_id = str(self.conf.get("id") or self.conf.get("broker") or "default")
+        self.name = self.conf.get("name") or self.conf.get("broker") or "Broker"
+        self.service = service
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._client: Optional[aiomqtt.Client] = None
@@ -21,11 +26,14 @@ class MQTTService:
         self.received_count = 0
 
     def start(self):
-        if self._running:
+        if self._running or not self.conf.get("enabled", True):
+            return
+        broker_host = (self.conf.get("broker") or "").strip()
+        if not broker_host:
             return
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
-        log.info("[MQTT] Background service started.")
+        log.info(f"[MQTT Worker:{self.name}] Started background worker for {broker_host}:{self.conf.get('port', 1883)}")
 
     async def stop(self):
         self._running = False
@@ -37,63 +45,60 @@ class MQTTService:
                 pass
             self._task = None
         self.is_connected = False
-        log.info("[MQTT] Background service stopped.")
-
-    async def restart(self):
-        await self.stop()
-        self.start()
+        self._client = None
+        log.info(f"[MQTT Worker:{self.name}] Stopped.")
 
     def get_status(self) -> Dict[str, Any]:
-        conf = settings_manager.get().get("mqtt", {})
         return {
-            "enabled": conf.get("enabled", False),
+            "id": self.broker_id,
+            "name": self.name,
+            "enabled": bool(self.conf.get("enabled", True)),
             "connected": self.is_connected,
-            "broker": conf.get("broker", ""),
-            "port": conf.get("port", 1883),
-            "clientId": conf.get("clientId", "voice-hub"),
-            "baseTopic": conf.get("baseTopic", "voicehub"),
-            "defaultTarget": conf.get("defaultTarget", ""),
-            "tls": bool(conf.get("tls", False)),
-            "haDiscoveryEnabled": bool(conf.get("haDiscoveryEnabled", True)),
-            "haDiscoveryPrefix": conf.get("haDiscoveryPrefix", "homeassistant"),
+            "broker": self.conf.get("broker", ""),
+            "port": int(self.conf.get("port") or 1883),
+            "clientId": self.conf.get("clientId", "voice-hub"),
+            "baseTopic": self.conf.get("baseTopic", "voicehub"),
+            "defaultTarget": self.conf.get("defaultTarget", ""),
+            "tls": bool(self.conf.get("tls", False)),
+            "haDiscoveryEnabled": bool(self.conf.get("haDiscoveryEnabled", True)),
+            "haDiscoveryPrefix": self.conf.get("haDiscoveryPrefix", "homeassistant"),
+            "publishEvents": bool(self.conf.get("publishEvents", True)),
             "receivedCount": self.received_count,
             "lastMessageAt": self.last_message_at,
             "lastError": self.last_error
         }
 
-    async def publish_event(self, sub_topic: str, payload: Dict[str, Any], retain: bool = False):
-        conf = settings_manager.get().get("mqtt", {})
-        if not self.is_connected or not self._client or not conf.get("publishEvents", True):
-            return
-        base_topic = conf.get("baseTopic", "voicehub").rstrip("/")
-        full_topic = f"{base_topic}/{sub_topic.lstrip('/')}"
-        try:
-            await self._client.publish(full_topic, json.dumps(payload, ensure_ascii=False), retain=retain)
-        except Exception as e:
-            log.warning(f"[MQTT] Failed to publish event to {full_topic}: {e}")
-
-    async def publish_dnd_state(self):
-        """現在の DND 状態（ON/OFF）を MQTT にパブリッシュ"""
-        conf = settings_manager.get().get("mqtt", {})
+    async def publish(self, topic: str, payload: str, retain: bool = False):
         if not self.is_connected or not self._client:
             return
-        base_topic = conf.get("baseTopic", "voicehub").rstrip("/")
+        try:
+            await self._client.publish(topic, payload, retain=retain)
+        except Exception as e:
+            log.warning(f"[MQTT Worker:{self.name}] Failed to publish to {topic}: {e}")
+
+    async def publish_event(self, sub_topic: str, payload: Dict[str, Any], retain: bool = False):
+        if not self.is_connected or not self._client or not self.conf.get("publishEvents", True):
+            return
+        base_topic = self.conf.get("baseTopic", "voicehub").rstrip("/")
+        full_topic = f"{base_topic}/{sub_topic.lstrip('/')}"
+        await self.publish(full_topic, json.dumps(payload, ensure_ascii=False), retain=retain)
+
+    async def publish_dnd_state(self):
+        if not self.is_connected or not self._client:
+            return
+        base_topic = self.conf.get("baseTopic", "voicehub").rstrip("/")
         status = dnd_service.get_global_status()
         is_active = status.get("active", False) or status.get("isActive", False)
         payload = "ON" if is_active else "OFF"
-        try:
-            await self._client.publish(f"{base_topic}/dnd/state", payload, retain=True)
-        except Exception as e:
-            log.warning(f"[MQTT] Failed to publish DND state: {e}")
+        await self.publish(f"{base_topic}/dnd/state", payload, retain=True)
 
     async def publish_ha_discovery(self, clear: bool = False) -> Dict[str, Any]:
         """Home Assistant MQTT Auto-Discovery トピックをパブリッシュ"""
-        conf = settings_manager.get().get("mqtt", {})
         if not self.is_connected or not self._client:
-            return {"success": False, "message": "MQTT ブローカーに接続されていません"}
+            return {"success": False, "message": f"ブローカー '{self.name}' に未接続です"}
 
-        ha_prefix = (conf.get("haDiscoveryPrefix") or "homeassistant").strip().rstrip("/")
-        base_topic = (conf.get("baseTopic") or "voicehub").strip().rstrip("/")
+        ha_prefix = (self.conf.get("haDiscoveryPrefix") or "homeassistant").strip().rstrip("/")
+        base_topic = (self.conf.get("baseTopic") or "voicehub").strip().rstrip("/")
         node_id = base_topic
 
         from app.config import settings
@@ -109,9 +114,7 @@ class MQTTService:
             "configuration_url": server_url
         }
 
-        # エンティティ定義一覧
         entities = [
-            # 1. notify (HA 2024.2+ MQTT Notify)
             {
                 "component": "notify",
                 "object_id": "say",
@@ -122,7 +125,6 @@ class MQTTService:
                     "device": device_info
                 }
             },
-            # 2. switch (おやすみ・会議モード DND)
             {
                 "component": "switch",
                 "object_id": "dnd",
@@ -139,7 +141,6 @@ class MQTTService:
                     "device": device_info
                 }
             },
-            # 3. sensor (直前発話内容)
             {
                 "component": "sensor",
                 "object_id": "last_say",
@@ -152,7 +153,6 @@ class MQTTService:
                     "device": device_info
                 }
             },
-            # 4. binary_sensor (接続ステータス)
             {
                 "component": "binary_sensor",
                 "object_id": "connectivity",
@@ -166,7 +166,6 @@ class MQTTService:
                     "device": device_info
                 }
             },
-            # 5. button (テスト発話ボタン)
             {
                 "component": "button",
                 "object_id": "test_speak",
@@ -179,7 +178,6 @@ class MQTTService:
                     "device": device_info
                 }
             },
-            # 6. button (DND保留キューフラッシュボタン)
             {
                 "component": "button",
                 "object_id": "flush_queue",
@@ -194,47 +192,42 @@ class MQTTService:
             }
         ]
 
-        published_count = 0
+        count = 0
         for ent in entities:
             topic = f"{ha_prefix}/{ent['component']}/{node_id}/{ent['object_id']}/config"
-            payload = "" if clear else json.dumps(ent["config"], ensure_ascii=False)
-            try:
-                await self._client.publish(topic, payload, retain=True)
-                published_count += 1
-            except Exception as e:
-                log.warning(f"[MQTT] Failed to publish HA Discovery config to {topic}: {e}")
+            if clear:
+                await self.publish(topic, "", retain=True)
+            else:
+                payload = json.dumps(ent["config"], ensure_ascii=False)
+                await self.publish(topic, payload, retain=True)
+            count += 1
 
-        action_str = "cleared" if clear else "published"
-        log.info(f"[MQTT] Home Assistant MQTT Discovery {action_str} ({published_count} entities, prefix='{ha_prefix}')")
-        return {"success": True, "count": published_count, "action": action_str, "prefix": ha_prefix}
+        action_label = "cleared" if clear else "published"
+        log.info(f"[MQTT Worker:{self.name}] Home Assistant MQTT Discovery {action_label} ({count} entities, prefix='{ha_prefix}')")
+        return {"success": True, "count": count, "action": action_label, "prefix": ha_prefix, "broker": self.name}
 
     async def _run_loop(self):
         reconnect_delay = 5
         while self._running:
-            conf = settings_manager.get().get("mqtt", {})
-            enabled = conf.get("enabled", False)
-            broker = (conf.get("broker") or "").strip()
-            port = int(conf.get("port") or 1883)
-            username = (conf.get("username") or "").strip() or None
-            password = conf.get("password") or None
-            client_id = (conf.get("clientId") or "voice-hub").strip()
-            keepalive = int(conf.get("keepalive") or 60)
-            base_topic = (conf.get("baseTopic") or "voicehub").strip().rstrip("/")
+            broker = (self.conf.get("broker") or "").strip()
+            port = int(self.conf.get("port") or 1883)
+            username = (self.conf.get("username") or "").strip() or None
+            password = self.conf.get("password") or None
+            client_id = (self.conf.get("clientId") or f"voice-hub-{self.broker_id}").strip()
+            keepalive = int(self.conf.get("keepalive") or 60)
+            base_topic = (self.conf.get("baseTopic") or "voicehub").strip().rstrip("/")
 
-            if not enabled or not broker:
-                self.is_connected = False
-                # 有効化されるまで待機
+            if not broker:
                 await asyncio.sleep(5)
                 continue
 
-            use_tls = bool(conf.get("tls", False)) or port == 8883
+            use_tls = bool(self.conf.get("tls", False)) or port == 8883
             tls_params = None
             if use_tls:
                 import ssl
                 ssl_ctx = ssl.create_default_context()
                 tls_params = aiomqtt.TLSParameters(context=ssl_ctx)
 
-            # LWT (Last Will and Testament): 切断時に offline をパブリッシュ
             will = aiomqtt.Will(
                 topic=f"{base_topic}/status",
                 payload="offline",
@@ -242,9 +235,9 @@ class MQTTService:
             )
 
             try:
-                log.info(f"[MQTT] Connecting to broker {broker}:{port} (tls={use_tls}, client_id={client_id})...")
+                log.info(f"[MQTT Worker:{self.name}] Connecting to broker {broker}:{port} (tls={use_tls}, client_id={client_id})...")
                 self.last_error = None
-                
+
                 async with aiomqtt.Client(
                     hostname=broker,
                     port=port,
@@ -258,16 +251,12 @@ class MQTTService:
                 ) as client:
                     self._client = client
                     self.is_connected = True
-                    log.info(f"[MQTT] Connected successfully to {broker}:{port}")
+                    log.info(f"[MQTT Worker:{self.name}] Connected successfully to {broker}:{port}")
 
                     # オンラインステータスを発行 (Retain)
                     await client.publish(f"{base_topic}/status", "online", retain=True)
 
                     # トピック購読
-                    # 1. base_topic/say
-                    # 2. base_topic/say/# (例: voicehub/say/living)
-                    # 3. base_topic/dnd/set (Home Assistant からの DND 操作)
-                    # 4. base_topic/dnd/flush (Home Assistant からの キューフラッシュ)
                     sub_say = f"{base_topic}/say"
                     sub_say_wild = f"{base_topic}/say/#"
                     sub_dnd_set = f"{base_topic}/dnd/set"
@@ -277,13 +266,13 @@ class MQTTService:
                     await client.subscribe(sub_say_wild)
                     await client.subscribe(sub_dnd_set)
                     await client.subscribe(sub_dnd_flush)
-                    log.info(f"[MQTT] Subscribed to say & DND control topics")
+                    log.info(f"[MQTT Worker:{self.name}] Subscribed to say & DND control topics")
 
                     # DND 状態を発行
                     await self.publish_dnd_state()
 
                     # Home Assistant MQTT Discovery の自動発行
-                    if conf.get("haDiscoveryEnabled", True):
+                    if self.conf.get("haDiscoveryEnabled", True):
                         await self.publish_ha_discovery(clear=False)
 
                     # メッセージ受信ループ
@@ -297,12 +286,12 @@ class MQTTService:
             except aiomqtt.MqttError as e:
                 self.is_connected = False
                 self.last_error = f"MQTT error: {e}"
-                log.warning(f"[MQTT] Connection lost / error: {e}. Reconnecting in {reconnect_delay}s...")
+                log.warning(f"[MQTT Worker:{self.name}] Connection lost / error: {e}. Reconnecting in {reconnect_delay}s...")
                 await asyncio.sleep(reconnect_delay)
             except Exception as e:
                 self.is_connected = False
                 self.last_error = f"Unexpected error: {e}"
-                log.error(f"[MQTT] Exception in MQTT loop: {e}", exc_info=True)
+                log.error(f"[MQTT Worker:{self.name}] Exception in MQTT loop: {e}", exc_info=True)
                 await asyncio.sleep(reconnect_delay)
             finally:
                 self.is_connected = False
@@ -316,10 +305,10 @@ class MQTTService:
         try:
             payload_str = message.payload.decode("utf-8").strip()
         except Exception as e:
-            log.warning(f"[MQTT] Failed to decode payload as utf-8: {e}")
+            log.warning(f"[MQTT Worker:{self.name}] Failed to decode payload as utf-8: {e}")
             return
 
-        log.info(f"[MQTT] Received message on topic '{topic_str}': {payload_str[:120]}")
+        log.info(f"[MQTT Worker:{self.name}] Received on '{topic_str}': {payload_str[:120]}")
 
         # Home Assistant DND 操作トピックの判定
         if topic_str == f"{base_topic}/dnd/set":
@@ -332,10 +321,10 @@ class MQTTService:
                     "dnd": {
                         **dnd_conf,
                         "manualUntil": until_ts,
-                        "manualReason": "Home Assistant からの有効化"
+                        "manualReason": f"MQTT ({self.name}) からの有効化"
                     }
                 })
-                log.info("[MQTT -> DND] Enabled DND mode via MQTT command")
+                log.info(f"[MQTT Worker:{self.name} -> DND] Enabled DND mode")
             elif cmd in ("OFF", "FALSE", "0", "DISABLE"):
                 settings_manager.update({
                     "dnd": {
@@ -345,18 +334,17 @@ class MQTTService:
                     }
                 })
                 await dnd_service.check_and_flush_queue()
-                log.info("[MQTT -> DND] Disabled DND mode via MQTT command, flushed queue")
-            await self.publish_dnd_state()
+                log.info(f"[MQTT Worker:{self.name} -> DND] Disabled DND mode, flushed queue")
+            # 全ワーカーに DND 状態をマルチキャスト
+            await self.service.publish_dnd_state()
             return
 
         if topic_str == f"{base_topic}/dnd/flush":
-            log.info("[MQTT -> DND] Flushing DND queue via MQTT command")
+            log.info(f"[MQTT Worker:{self.name} -> DND] Flushing DND queue")
             await dnd_service.check_and_flush_queue()
             return
 
         # トピックからターゲットスピーカーを推論
-        # 例: base_topic/say/living -> target = "living"
-        # 例: base_topic/say -> target = None
         topic_target: Optional[str] = None
         say_prefix = f"{base_topic}/say/"
         if topic_str.startswith(say_prefix):
@@ -364,7 +352,7 @@ class MQTTService:
             if sub_part:
                 topic_target = sub_part
 
-        # ペイロードの解析 (JSON または プレーンテキスト)
+        # ペイロードの解析
         text = ""
         target = topic_target
         voice = None
@@ -384,7 +372,6 @@ class MQTTService:
                     data.get("content") or
                     ""
                 )
-                # JSON内のターゲット指定があれば優先（無ければトピック指定を採用）
                 json_target = data.get("target") or data.get("device") or data.get("speaker")
                 if json_target:
                     target = json_target
@@ -397,23 +384,19 @@ class MQTTService:
             else:
                 text = str(data)
         except (json.JSONDecodeError, TypeError):
-            # プレーンテキスト
             text = payload_str
 
         text = text.strip()
         if not text:
-            log.warning(f"[MQTT] Message payload contained empty text. Skipping.")
             return
 
-        # ターゲットが未指定の場合、設定の defaultTarget を使用
-        conf = settings_manager.get().get("mqtt", {})
         if not target:
-            target = conf.get("defaultTarget") or ""
+            target = self.conf.get("defaultTarget") or ""
 
-        log.info(f"[MQTT -> Speech] Dispatching: text='{text}', target='{target or 'DEFAULT'}', urgent={urgent}")
+        log.info(f"[MQTT Worker:{self.name} -> Speech] text='{text}', target='{target or 'DEFAULT'}', urgent={urgent}")
 
         try:
-            broker_ip = conf.get("broker", "mqtt")
+            broker_ip = self.conf.get("broker", "mqtt")
             result = await speech_service.speak(
                 text=text,
                 targets=[target] if target else [],
@@ -422,16 +405,17 @@ class MQTTService:
                 speed=speed,
                 pitch=pitch,
                 chime=chime,
-                client_name=f"MQTT ({topic_str})",
+                client_name=f"MQTT ({self.name}:{topic_str})",
                 client_ip=broker_ip,
                 source="mqtt",
-                source_label="MQTT (Node-RED/n8n)",
+                source_label=f"MQTT ({self.name})",
                 urgent=urgent
             )
 
-            # 完了イベントを発行 (Node-RED / n8n での後続トリガー用)
+            # 完了イベントを発行 (接続中ワーカーへ)
             await self.publish_event("events/say", {
                 "status": "completed",
+                "broker": self.name,
                 "topic": topic_str,
                 "text": text,
                 "target": target,
@@ -440,18 +424,142 @@ class MQTTService:
             })
 
         except Exception as e:
-            log.error(f"[MQTT] Failed to execute speech: {e}", exc_info=True)
+            log.error(f"[MQTT Worker:{self.name}] Speech execution error: {e}", exc_info=True)
             self.last_error = f"Speech error: {e}"
 
-    async def test_publish(self, text: str, target: Optional[str] = None):
-        """テスト用: 自身が接続中のブローカーにPublishして発話パイプラインをテスト"""
-        conf = settings_manager.get().get("mqtt", {})
-        if not self.is_connected or not self._client:
-            raise RuntimeError("MQTT ブローカーに接続されていません")
-        base_topic = conf.get("baseTopic", "voicehub").rstrip("/")
-        topic = f"{base_topic}/say/{target}" if target else f"{base_topic}/say"
-        payload = json.dumps({"text": text, "target": target}, ensure_ascii=False)
-        await self._client.publish(topic, payload)
-        return {"success": True, "topic": topic, "payload": payload}
+
+class MQTTService:
+    """複数 MQTT ブローカーを統合管理するオーケストレーター"""
+    def __init__(self):
+        self.workers: Dict[str, MQTTBrokerWorker] = {}
+        self._running = False
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+
+        mqtt_conf = settings_manager.get().get("mqtt", {})
+        if not mqtt_conf.get("enabled", True):
+            log.info("[MQTT] Service is disabled in settings.")
+            return
+
+        brokers = mqtt_conf.get("brokers", [])
+
+        self.workers.clear()
+        for b in brokers:
+            worker = MQTTBrokerWorker(b, self)
+            self.workers[worker.broker_id] = worker
+            worker.start()
+
+        log.info(f"[MQTT] Service started with {len(self.workers)} broker worker(s).")
+
+    async def stop(self):
+        self._running = False
+        tasks = [w.stop() for w in self.workers.values()]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self.workers.clear()
+        log.info("[MQTT] Service stopped.")
+
+    async def restart(self):
+        await self.stop()
+        self.start()
+
+    @property
+    def is_connected(self) -> bool:
+        """1台でも接続されていれば True (下位互換)"""
+        return any(w.is_connected for w in self.workers.values())
+
+    def get_status(self) -> Dict[str, Any]:
+        mqtt_conf = settings_manager.get().get("mqtt", {})
+        worker_statuses = [w.get_status() for w in self.workers.values()]
+        total_received = sum(w.received_count for w in self.workers.values())
+        connected_count = sum(1 for w in self.workers.values() if w.is_connected)
+
+        # 最初のワーカーまたは直下設定 (後方互換プロパティ)
+        first_worker = worker_statuses[0] if worker_statuses else {}
+
+        return {
+            "enabled": bool(mqtt_conf.get("enabled", False)),
+            "connected": self.is_connected,
+            "totalBrokers": len(self.workers),
+            "connectedCount": connected_count,
+            "brokers": worker_statuses,
+            # 下位互換用フィールド
+            "broker": first_worker.get("broker", mqtt_conf.get("broker", "")),
+            "port": first_worker.get("port", mqtt_conf.get("port", 1883)),
+            "clientId": first_worker.get("clientId", mqtt_conf.get("clientId", "voice-hub")),
+            "baseTopic": first_worker.get("baseTopic", mqtt_conf.get("baseTopic", "voicehub")),
+            "defaultTarget": first_worker.get("defaultTarget", mqtt_conf.get("defaultTarget", "")),
+            "tls": first_worker.get("tls", mqtt_conf.get("tls", False)),
+            "haDiscoveryEnabled": first_worker.get("haDiscoveryEnabled", mqtt_conf.get("haDiscoveryEnabled", True)),
+            "haDiscoveryPrefix": first_worker.get("haDiscoveryPrefix", mqtt_conf.get("haDiscoveryPrefix", "homeassistant")),
+            "receivedCount": total_received,
+            "lastMessageAt": max([w.last_message_at for w in self.workers.values() if w.last_message_at], default=None),
+            "lastError": next((w.last_error for w in self.workers.values() if w.last_error), None)
+        }
+
+    async def publish_event(self, sub_topic: str, payload: Dict[str, Any], retain: bool = False):
+        """全接続ブローカーへイベントをマルチキャスト発行"""
+        tasks = [w.publish_event(sub_topic, payload, retain=retain) for w in self.workers.values() if w.is_connected]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def publish_dnd_state(self):
+        """全接続ブローカーへ現在の DND 状態をマルチキャスト発行"""
+        tasks = [w.publish_dnd_state() for w in self.workers.values() if w.is_connected]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def publish_ha_discovery(self, clear: bool = False, broker_id: Optional[str] = None) -> Dict[str, Any]:
+        """Home Assistant MQTT Auto-Discovery トピックを発行"""
+        results = []
+        target_workers = []
+        if broker_id:
+            w = self.workers.get(str(broker_id))
+            if w:
+                target_workers.append(w)
+        else:
+            # haDiscoveryEnabled が True のワーカーすべて
+            target_workers = [w for w in self.workers.values() if w.conf.get("haDiscoveryEnabled", True)]
+
+        if not target_workers:
+            return {"success": False, "message": "対象となる有効な MQTT ブローカーがありません"}
+
+        for w in target_workers:
+            res = await w.publish_ha_discovery(clear=clear)
+            results.append(res)
+
+        total_count = sum(r.get("count", 0) for r in results if r.get("success"))
+        return {
+            "success": any(r.get("success") for r in results),
+            "count": total_count,
+            "action": "cleared" if clear else "published",
+            "results": results
+        }
+
+    async def test_publish(self, text: str, target: Optional[str] = None, broker_id: Optional[str] = None):
+        """テスト発話メッセージをパブリッシュ"""
+        target_workers = []
+        if broker_id:
+            w = self.workers.get(str(broker_id))
+            if w:
+                target_workers.append(w)
+        else:
+            target_workers = [w for w in self.workers.values() if w.is_connected]
+
+        if not target_workers:
+            raise RuntimeError("接続中の MQTT ブローカーがありません")
+
+        results = []
+        for w in target_workers:
+            base_topic = w.conf.get("baseTopic", "voicehub").rstrip("/")
+            topic = f"{base_topic}/say/{target}" if target else f"{base_topic}/say"
+            payload = json.dumps({"text": text, "target": target}, ensure_ascii=False)
+            await w.publish(topic, payload)
+            results.append({"broker": w.name, "topic": topic})
+
+        return {"success": True, "publishedTo": results}
 
 mqtt_service = MQTTService()

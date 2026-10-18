@@ -1,0 +1,116 @@
+{
+  "pluginAlias": "VoiceHubPlatform",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "### Smart Speaker Voice Hub 連携プラグイン\nGoogle Cast, Amazon Alexa, Apple HomePod, ONVIF/DLNA スピーカーの自動検出、Siri発話オートメーション、およびDND（おやすみ・会議モード）連動を提供します。",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "プラットフォーム表示名",
+        "type": "string",
+        "default": "VoiceHubPlatform",
+        "required": true
+      },
+      "host": {
+        "title": "VoiceHub サーバーURL",
+        "type": "string",
+        "default": "http://127.0.0.1:8080",
+        "placeholder": "例: http://127.0.0.1:8080 または http://192.168.1.100:8080",
+        "required": true
+      },
+      "webhookToken": {
+        "title": "Webhook 認証トークン (任意)",
+        "type": "string",
+        "description": "VoiceHub のセキュリティ設定でトークン認証を有効化している場合に入力してください"
+      },
+      "enableDndSwitch": {
+        "title": "DND（おやすみ・会議モード）スイッチを有効化",
+        "type": "boolean",
+        "default": true
+      },
+      "autoDiscoverSpeakers": {
+        "title": "登録済みスピーカーの自動検出とアクセサリ登録",
+        "type": "boolean",
+        "default": true
+      },
+      "volumeAsLightbulb": {
+        "title": "音量制御を照明タイル（明度スライダー）として表示",
+        "type": "boolean",
+        "default": true,
+        "description": "有効にするとホームアプリ上でスライダーから直感的に音量パーセントを操作できるようになります（Siri から『○○の音量を60%にして』等）"
+      },
+      "pollInterval": {
+        "title": "状態同期ポーリング間隔 (秒)",
+        "type": "integer",
+        "default": 30,
+        "minimum": 5,
+        "maximum": 300
+      },
+      "presets": {
+        "title": "📢 プリセット発話スイッチ一覧",
+        "type": "array",
+        "description": "Siri やオートメーションからワンタップ・一言で発話させたい定型文スイッチを登録します（押下後自動でOFFに戻るプッシュボタン仕様）",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "スイッチ名 (Siri呼び出し名)",
+              "type": "string",
+              "placeholder": "例: ご飯できたよ",
+              "required": true
+            },
+            "text": {
+              "title": "発話内容",
+              "type": "string",
+              "placeholder": "例: ご飯ができました。リビングに集まってください。",
+              "required": true
+            },
+            "target": {
+              "title": "対象スピーカー / グループ (省略時は全体)",
+              "type": "string",
+              "default": "ALL",
+              "placeholder": "ALL, 部屋, リビング など"
+            },
+            "volume": {
+              "title": "発話音量 (%)",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 70
+            }
+          },
+          "required": ["name", "text"]
+        }
+      }
+    }
+  },
+  "layout": [
+    "name",
+    {
+      "type": "fieldset",
+      "title": "接続設定",
+      "items": [
+        "host",
+        "webhookToken",
+        "pollInterval"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "機能オプション",
+      "items": [
+        "enableDndSwitch",
+        "autoDiscoverSpeakers",
+        "volumeAsLightbulb"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "プリセット発話スイッチ",
+      "items": [
+        "presets"
+      ]
+    }
+  ]
+}

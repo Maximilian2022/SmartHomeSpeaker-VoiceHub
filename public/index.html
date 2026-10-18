@@ -487,43 +487,64 @@
         </div>
       </section>
 
-      <!-- 5. 拡張・システム設定パネル (音声・機能拡張、おやすみ・会議 DND、Webhook & Tunnel を集約) -->
+      <!-- 5. 拡張・システム設定パネル (macOS / Home Assistant 風 2カラム縦型レイアウト) -->
       <section id="tab-settings" class="tab-pane">
-        <!-- 設定 サブナビゲーション -->
-        <div class="sub-tab-nav" id="settingsSubTabNav">
-          <button type="button" class="sub-tab-btn active" data-subtab="subtab-settings-features" id="btnSubtabSettingsFeatures">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            ⚙️ 音声・機能拡張
-          </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-dnd" id="btnSubtabSettingsDnd">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
-            🔕 おやすみ・会議 (DND)
-          </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-integrations" id="btnSubtabSettingsIntegrations">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            🔗 外部連携 (AI / Alexa / HomePod)
-          </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-onvif" id="btnSubtabSettingsOnvif">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-            📷 ONVIF / 🎵 DLNA
-          </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-webhook" id="btnSubtabSettingsWebhook">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            🌐 Webhook & Tunnel
-          </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-disaster" id="btnSubtabSettingsDisaster">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            🚨 緊急速報・天気
-          </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-mqtt" id="btnSubtabSettingsMqtt">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.93 19.07a10 10 0 0 1 0-14.14"/><path d="M7.76 16.24a6 6 0 0 1 0-8.48"/><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.48"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-            📡 MQTT 連携
-          </button>
-          <button type="button" class="sub-tab-btn" data-subtab="subtab-settings-mcp" id="btnSubtabSettingsMcp">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></svg>
-            🤖 MCP 連携
-          </button>
-        </div>
+        <div class="settings-layout">
+          <!-- 左側サイドバー（縦型メニュー） -->
+          <aside class="settings-sidebar sub-tab-nav" id="settingsSubTabNav">
+            <div class="settings-sidebar-nav">
+              <!-- グループ 1: 音声・アナウンス動作 -->
+              <div class="settings-nav-group">
+                <div class="settings-group-title">🔊 音声・アナウンス</div>
+                <button type="button" class="sub-tab-btn settings-nav-item active" data-subtab="subtab-settings-features" id="btnSubtabSettingsFeatures">
+                  <span class="nav-icon">⚙️</span>
+                  <span class="nav-label">音声・機能拡張</span>
+                </button>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-dnd" id="btnSubtabSettingsDnd">
+                  <span class="nav-icon">🔕</span>
+                  <span class="nav-label">おやすみ・会議 (DND)</span>
+                </button>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-disaster" id="btnSubtabSettingsDisaster">
+                  <span class="nav-icon">🚨</span>
+                  <span class="nav-label">緊急速報・防災・天気</span>
+                </button>
+              </div>
+
+              <!-- グループ 2: スマートホーム・外部連携 -->
+              <div class="settings-nav-group">
+                <div class="settings-group-title">🔗 スマートホーム連携</div>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-integrations" id="btnSubtabSettingsIntegrations">
+                  <span class="nav-icon">🤖</span>
+                  <span class="nav-label">AI / Alexa / HomePod</span>
+                </button>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-onvif" id="btnSubtabSettingsOnvif">
+                  <span class="nav-icon">📷</span>
+                  <span class="nav-label">ONVIF / DLNA</span>
+                </button>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-mqtt" id="btnSubtabSettingsMqtt">
+                  <span class="nav-icon">📡</span>
+                  <span class="nav-label">MQTT ブローカー連携</span>
+                </button>
+              </div>
+
+              <!-- グループ 3: 開発・API・システム -->
+              <div class="settings-nav-group">
+                <div class="settings-group-title">🌐 API・インフラ</div>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-webhook" id="btnSubtabSettingsWebhook">
+                  <span class="nav-icon">🌐</span>
+                  <span class="nav-label">Webhook & Tunnel</span>
+                </button>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-mcp" id="btnSubtabSettingsMcp">
+                  <span class="nav-icon">🤖</span>
+                  <span class="nav-label">MCP ツール連携</span>
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          <!-- 右側メインコンテンツエリア -->
+          <div class="settings-content">
+
 
         <!-- 1. 音声・機能拡張 サブペイン -->
         <div id="subtab-settings-features" class="sub-tab-pane active">
@@ -1093,10 +1114,11 @@
                       <button type="button" id="btnRefreshGeminiModels" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.75rem;" title="Google から利用可能な最新モデル一覧を動的取得">🔄 最新モデル再取得</button>
                     </div>
                     <select id="selectGeminiModel" class="form-select">
-                      <option value="gemini-3.8-flash" selected>gemini-3.8-flash (最新主力・高速・推奨)</option>
-                      <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (超高速・低遅延)</option>
-                      <option value="gemini-4-argon">gemini-4-argon (最高峰推論)</option>
-                      <option value="gemini-2.5-flash">gemini-2.5-flash (安定版)</option>
+                      <option value="gemini-2.5-flash" selected>gemini-2.5-flash (最新主力・高速・推奨)</option>
+                      <option value="gemini-2.5-pro">gemini-2.5-pro (最高峰推論・高精度)</option>
+                      <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (超軽量・即答)</option>
+                      <option value="gemini-3.5-flash">gemini-3.5-flash (次世代高速)</option>
+                      <option value="gemini-3.8-flash">gemini-3.8-flash (最新フラッシュ)</option>
                     </select>
                     <div id="geminiModelAlert" style="display: none; margin-top: 8px; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5;"></div>
                   </div>
@@ -1340,9 +1362,60 @@
                   </div>
                 </div>
               </div>
+
+              <!-- 4. Apple HomeKit / Homebridge 連携カード -->
+              <div class="card glass-card" style="margin-top: 16px; border: 1px solid rgba(255, 45, 85, 0.25); background: linear-gradient(135deg, rgba(255, 45, 85, 0.05) 0%, rgba(142, 142, 147, 0.03) 100%);">
+                <div class="card-header flex-between" style="align-items: center;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.6rem;">🍏</span>
+                    <div>
+                      <h2 style="margin: 0; font-size: 1.15rem; color: #ff2d55;">Apple HomeKit / Homebridge 連携</h2>
+                      <p class="card-sub" style="margin: 0;">専用プラグイン <code>homebridge-voicehub</code> により、Siri 発話・全スピーカー・DND をホーム App に完全同期</p>
+                    </div>
+                  </div>
+                  <span class="badge" style="background: rgba(255, 45, 85, 0.2); color: #ff3b30; border: 1px solid rgba(255, 45, 85, 0.4); font-size: 0.75rem; padding: 4px 10px; border-radius: 20px;">公式 Verified 準拠</span>
+                </div>
+                <div class="card-body">
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px;">
+                    <!-- 接続設定パラメータ -->
+                    <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px;">
+                      <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px;">Homebridge 設定用パラメータ</div>
+                      <div style="font-family: monospace; font-size: 0.85rem; line-height: 1.6;">
+                        <div><strong>host:</strong> <span id="homebridgeHostDisplay">http://127.0.0.1:8080</span></div>
+                        <div><strong>platform:</strong> <code>VoiceHubPlatform</code></div>
+                        <div><strong>token:</strong> <span id="homebridgeTokenDisplay" style="color: #38bdf8;">設定済み (セキュリティタブ)</span></div>
+                      </div>
+                    </div>
+                    <!-- Siri 発話・機能特徴 -->
+                    <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px;">
+                      <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px;">🗣️ Siri 音声操作・オートメーション</div>
+                      <ul style="margin: 0; padding-left: 18px; font-size: 0.83rem; line-height: 1.6; color: var(--text-color);">
+                        <li><em>「Hey Siri, ご飯できたよ をつけて」</em> → 全台アナウンス (プッシュスイッチ)</li>
+                        <li><em>「Hey Siri, 会議モード をつけて」</em> → DND 有効化 (解除時AI自動要約)</li>
+                        <li><em>「リビングの音量を 60% にして」</em> → 明度スライダー連携</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                    <div style="font-size: 0.84rem;">
+                      📦 プラグイン本体はリポジトリ内 <code>plugins/homebridge-voicehub/</code> にビルド済みです。
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                      <button type="button" id="btnOpenHomebridgeManual" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
+                        📖 プラグイン解説書を見る
+                      </button>
+                      <a href="/plugins/homebridge-voicehub/README.md" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" title="Markdown 原文を別タブで開く">
+                        📄 Raw Markdown
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
 
         <!-- 3-B. ONVIF & DLNA スピーカー連携 サブペイン -->
         <div id="subtab-settings-onvif" class="sub-tab-pane">
@@ -1974,122 +2047,41 @@ Body:
                 <div class="card-header flex-between">
                   <div>
                     <h2>📡 MQTT ブローカー接続設定</h2>
-                    <span class="card-sub">Node-RED や n8n、Home Assistant からのメッセージ読み上げを可能にします</span>
+                    <span class="card-sub">複数ブローカー（Home Assistant, Node-RED, n8n等）への同時接続・トピック購読に対応しています</span>
                   </div>
-                  <label class="switch">
+                  <label class="switch" title="MQTT機能全体の有効/無効">
                     <input type="checkbox" id="settingMqttEnabled">
                     <span class="slider round"></span>
                   </label>
                 </div>
                 <div class="card-body">
-                  <!-- 接続ステータスインジケーター -->
+                  <!-- 接続ステータスサマリーインジケーター -->
                   <div id="mqttStatusBanner" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
                     <div style="display: flex; align-items: center; gap: 10px;">
                       <span id="mqttStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #64748b; display: inline-block;"></span>
                       <div>
                         <div id="mqttStatusText" style="font-weight: 600; font-size: 0.95rem;">未接続 / 無効</div>
-                        <div id="mqttStatusDetail" style="font-size: 0.8rem; color: var(--text-muted);">設定を有効にして保存するとブローカーに自動接続します</div>
+                        <div id="mqttStatusDetail" style="font-size: 0.8rem; color: var(--text-muted);">設定した各ブローカーへの接続状況を監視します</div>
                       </div>
                     </div>
                     <button type="button" id="btnReconnectMqtt" class="btn btn-secondary btn-sm">
-                      🔄 再接続
+                      🔄 全再接続
                     </button>
                   </div>
 
-                  <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
-                    <div class="form-group" style="margin: 0;">
-                      <label for="settingMqttBroker" class="form-label">ブローカー IP / ホスト名 *</label>
-                      <input type="text" id="settingMqttBroker" class="form-input" placeholder="例: 192.168.11.xxx または localhost">
-                    </div>
-                    <div class="form-group" style="margin: 0;">
-                      <label for="settingMqttPort" class="form-label">ポート番号 *</label>
-                      <input type="number" id="settingMqttPort" class="form-input" placeholder="1883" value="1883">
-                    </div>
+                  <!-- 登録ブローカー一覧コンテナ (動的レンダリング) -->
+                  <div id="mqttBrokersContainer" class="mqtt-brokers-list">
+                    <!-- JS によりブローカーカードがレンダリングされます -->
                   </div>
 
-                  <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
-                    <div class="form-group" style="margin: 0;">
-                      <label for="settingMqttUsername" class="form-label">ユーザー名 (任意)</label>
-                      <input type="text" id="settingMqttUsername" class="form-input" placeholder="空欄時は認証なし">
-                    </div>
-                    <div class="form-group" style="margin: 0;">
-                      <label for="settingMqttPassword" class="form-label">パスワード (任意)</label>
-                      <input type="password" id="settingMqttPassword" class="form-input" placeholder="空欄時はパスワードなし">
-                    </div>
-                  </div>
+                  <!-- ブローカー追加ボタン -->
+                  <button type="button" id="btnAddMqttBroker" class="btn-add-broker">
+                    ➕ 新しい MQTT ブローカーを追加
+                  </button>
 
-                  <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
-                    <div class="form-group" style="margin: 0;">
-                      <label for="settingMqttBaseTopic" class="form-label">ベーストピック *</label>
-                      <input type="text" id="settingMqttBaseTopic" class="form-input" placeholder="voicehub" value="voicehub">
-                      <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">購読: <code>{baseTopic}/say</code>, <code>{baseTopic}/say/#</code></div>
-                    </div>
-                    <div class="form-group" style="margin: 0;">
-                      <label for="settingMqttClientId" class="form-label">クライアント ID</label>
-                      <input type="text" id="settingMqttClientId" class="form-input" placeholder="voice-hub" value="voice-hub">
-                    </div>
-                  </div>
-
-                  <div class="form-group" style="margin-bottom: 16px;">
-                    <label for="settingMqttDefaultTarget" class="form-label">デフォルト読み上げ先スピーカー</label>
-                    <select id="settingMqttDefaultTarget" class="form-input">
-                      <option value="">全体デフォルトスピーカーに従う</option>
-                    </select>
-                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">トピックやメッセージ内でスピーカー指定が無い場合に使用されます</div>
-                  </div>
-
-                  <div class="form-group flex-between" style="padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05);">
-                    <div>
-                      <div style="font-weight: 500; font-size: 0.9rem;">イベント通知の自動発行 (Publish)</div>
-                      <small style="color: var(--text-muted);">発話完了時に <code>{baseTopic}/events/say</code> へ結果を通知します</small>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" id="settingMqttPublishEvents" checked>
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-
-                  <div class="form-group flex-between" style="padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05);">
-                    <div>
-                      <div style="font-weight: 500; font-size: 0.9rem;">MQTTS (TLS/SSL 暗号化通信)</div>
-                      <small style="color: var(--text-muted);">クラウド上のブローカー（ポート8883等）への通信を安全に暗号化します</small>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" id="settingMqttTls">
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-
-                  <!-- Home Assistant MQTT Auto-Discovery -->
-                  <div class="form-group flex-between" style="padding: 10px 0; border-top: 1px solid rgba(255,255,255,0.05);">
-                    <div>
-                      <div style="font-weight: 500; font-size: 0.9rem;">🏠 Home Assistant 自動検出 (MQTT Discovery)</div>
-                      <small style="color: var(--text-muted);">HA のデバイス一覧に Voice Hub（通知・DNDスイッチ・センサー・ボタン）を完全自動登録します</small>
-                    </div>
-                    <label class="switch">
-                      <input type="checkbox" id="settingMqttHaDiscoveryEnabled" checked>
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-
-                  <div id="haDiscoveryOptions" style="padding: 12px 14px; background: rgba(0,0,0,0.25); border-radius: 8px; margin-bottom: 12px; border: 1px solid rgba(255,255,255,0.05);">
-                    <div class="form-group" style="margin: 0 0 10px 0;">
-                      <label for="settingMqttHaDiscoveryPrefix" class="form-label" style="font-size: 0.8rem;">HA Discovery プレフィックス</label>
-                      <input type="text" id="settingMqttHaDiscoveryPrefix" class="form-input" placeholder="homeassistant" value="homeassistant" style="font-size: 0.85rem;">
-                    </div>
-                    <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                      <button type="button" id="btnResendHaDiscovery" class="btn btn-secondary btn-sm" style="font-size: 0.78rem;">
-                        🔄 Discovery トピック再送信
-                      </button>
-                      <button type="button" id="btnClearHaDiscovery" class="btn btn-secondary btn-sm" style="font-size: 0.78rem; color: #f87171;">
-                        🗑️ HA から解除
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- 保存ボタン -->
-                  <div style="margin-top: 20px; text-align: right;">
-                    <button type="button" id="btnSaveMqttSettings" class="btn btn-primary" style="padding: 10px 24px;">
+                  <!-- 全体保存ボタン -->
+                  <div style="margin-top: 24px; text-align: right;">
+                    <button type="button" id="btnSaveMqttSettings" class="btn btn-primary" style="padding: 12px 28px; font-size: 0.95rem;">
                       💾 MQTT 設定を保存
                     </button>
                   </div>
@@ -2106,6 +2098,12 @@ Body:
                   <span class="card-sub">接続中のブローカーにテストメッセージを発行し、Voice Hubの読み上げ動作を検証します</span>
                 </div>
                 <div class="card-body">
+                  <div class="form-group">
+                    <label for="selectMqttTestBroker" class="form-label">送信先ブローカー</label>
+                    <select id="selectMqttTestBroker" class="form-input">
+                      <option value="">🌐 すべての接続中ブローカーに配信</option>
+                    </select>
+                  </div>
                   <div class="form-group">
                     <label for="inputMqttTestText" class="form-label">テスト発話テキスト</label>
                     <input type="text" id="inputMqttTestText" class="form-input" value="MQTT連携からのテスト発話です。正常に受信しました。">
@@ -2337,8 +2335,82 @@ Body:
             </div>
           </div>
         </div>
-      </section>
-    </main>
+      </div>
+    </div>
+    <!-- Homebridge プラグイン解説書モーダル -->
+    <div id="modalHomebridgeManual" class="modal-backdrop" style="display: none;">
+      <div class="modal-content glass-card" style="max-width: 720px; max-height: 85vh; display: flex; flex-direction: column;">
+        <div class="modal-header flex-between" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.4rem;">🍏</span>
+            <h3 style="margin: 0; font-size: 1.1rem; color: #ff2d55;">homebridge-voicehub プラグイン解説書</h3>
+          </div>
+          <button type="button" id="btnCloseHomebridgeManualModal" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" style="overflow-y: auto; padding: 16px 0; font-size: 0.88rem; line-height: 1.6; color: var(--text-color);">
+          
+          <div style="background: rgba(255, 45, 85, 0.08); border-left: 3px solid #ff2d55; padding: 10px 14px; border-radius: 4px; margin-bottom: 16px;">
+            <strong>Smart Speaker Voice Hub</strong> を Apple HomeKit / Siri と完全連携させるための Homebridge 公式準拠プラットフォームプラグインです。Google Cast, Alexa, HomePod, ONVIF/DLNA を HomeKit から操作可能にします。
+          </div>
+
+          <h4 style="color: #38bdf8; margin: 16px 0 8px 0; font-size: 0.95rem;">📦 1. インストール方法</h4>
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 4px;">推奨: Homebridge Config UI X の「プラグイン」画面で <code>homebridge-voicehub</code> を検索してインストール</div>
+            <div style="position: relative; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 0.82rem; display: flex; justify-content: space-between; align-items: center;">
+              <code>npm install -g homebridge-voicehub</code>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCopyInstallCmd" style="padding: 2px 8px; font-size: 0.75rem;">コピー</button>
+            </div>
+          </div>
+
+          <h4 style="color: #38bdf8; margin: 18px 0 8px 0; font-size: 0.95rem;">⚙️ 2. Homebridge 設定例 (config.json)</h4>
+          <div style="position: relative; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCopyHomebridgeJson" style="padding: 2px 8px; font-size: 0.75rem;">📋 設定 JSON をコピー</button>
+            </div>
+            <pre id="preHomebridgeConfigJson" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 12px; font-size: 0.8rem; overflow-x: auto; color: #86efac; margin: 0; line-height: 1.5;">{
+  "platforms": [
+    {
+      "platform": "VoiceHubPlatform",
+      "name": "VoiceHub",
+      "host": "http://127.0.0.1:8080",
+      "enableDndSwitch": true,
+      "autoDiscoverSpeakers": true,
+      "volumeAsLightbulb": true,
+      "presets": [
+        {
+          "name": "ご飯できたよ",
+          "text": "ご飯ができました。リビングに集まってください。",
+          "target": "ALL",
+          "volume": 70
+        },
+        {
+          "name": "お風呂が沸いたよ",
+          "text": "お風呂が沸き上がりました。",
+          "target": "ALL",
+          "volume": 60
+        }
+      ]
+    }
+  ]
+}</pre>
+          </div>
+
+          <h4 style="color: #38bdf8; margin: 18px 0 8px 0; font-size: 0.95rem;">🗣️ 3. Siri 音声操作・オートメーション活用例</h4>
+          <ul style="padding-left: 20px; margin: 0 0 16px 0; font-size: 0.85rem; line-height: 1.7;">
+            <li><strong>「Hey Siri, ご飯できたよ をつけて」</strong> → 家中のスピーカーから一斉アナウンス（実行後自動OFF）</li>
+            <li><strong>「Hey Siri, 会議モード をつけて」</strong> → DND 有効化（解除時に保留通知を AI が要約して読み上げ）</li>
+            <li><strong>「リビングの音量を 60% にして」</strong> → HomeKit の明度スライダーと連動して音量変更</li>
+          </ul>
+
+        </div>
+        <div class="modal-footer" style="padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;">
+          <a href="/plugins/homebridge-voicehub/README.md" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+            📄 Raw Markdown を別タブで開く
+          </a>
+          <button type="button" id="btnCloseHomebridgeManualModalFooter" class="btn btn-primary btn-sm">閉じる</button>
+        </div>
+      </div>
+    </div>
 
     <!-- グループ作成モーダル -->
     <div id="modalDeviceGroup" class="modal-backdrop" style="display: none;">
