@@ -189,6 +189,9 @@ document.addEventListener('DOMContentLoaded', () => {
       loadAiSettings(),
       loadDisasterSettings()
     ]);
+    if (typeof updateMcpConfigSnippets === 'function') {
+      updateMcpConfigSnippets();
+    }
   }
 
   // サーバー状態
@@ -226,6 +229,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (radioTunnelWrapper) radioTunnelWrapper.style.display = 'inline-flex';
         const tunnelLabel = document.getElementById('builderTunnelUrlLabel');
         if (tunnelLabel) tunnelLabel.textContent = `https://${data.tunnelDomain}/api/say`;
+
+        const txtMcpTunnel = document.getElementById('txtMcpTunnelDomain');
+        if (txtMcpTunnel && !txtMcpTunnel.value) {
+          txtMcpTunnel.value = data.tunnelDomain;
+        }
+      }
+
+      if (typeof updateMcpConfigSnippets === 'function') {
+        updateMcpConfigSnippets();
       }
 
       // HomePod 台数の反映
@@ -2372,6 +2384,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!res.ok) throw new Error('保存失敗');
         if (state.serverInfo) state.serverInfo.webhookToken = token;
         updateBuilderCode();
+        if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
         showToast('Webhook 認証トークンを保存しました！', 'success');
       } catch (e) {
         showToast('トークン保存エラー: ' + e.message, 'error');
@@ -5370,7 +5383,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const preCursor = document.getElementById('preCursorConfig');
     if (!preClaude && !preCursor) return;
 
-    const token = state.settings?.webhookToken || '';
+    const token = state.serverInfo?.webhookToken
+      || state.serverStatus?.webhookToken
+      || document.getElementById('txtWebhookTokenVal')?.value
+      || state.settings?.webhookToken
+      || '';
+
     const host = location.host || '127.0.0.1:8080';
     const proto = location.protocol || 'http:';
 
@@ -5378,15 +5396,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mcpConnectionMode === 'local') {
       sseUrl = `${proto}//${host}/mcp/sse`;
     } else {
-      let tunnelDomain = state.serverInfo?.tunnelDomain || state.serverStatus?.tunnelDomain || state.settings?.tunnelDomain;
+      const inputTunnel = document.getElementById('txtMcpTunnelDomain')?.value?.trim();
+      let tunnelDomain = inputTunnel
+        || state.serverInfo?.tunnelDomain
+        || state.serverStatus?.tunnelDomain
+        || document.getElementById('tunnelDomainBadge')?.textContent?.trim()
+        || state.settings?.tunnelDomain;
+
       if (!tunnelDomain) {
-        const isIp = /^[0-9.]+(:[0-9]+)?$/.test(host);
+        const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]+)?$|^localhost(?::[0-9]+)?$/i.test(host);
         tunnelDomain = isIp ? 'your-tunnel-domain.com' : host;
       }
       sseUrl = `https://${tunnelDomain}/mcp/sse${token ? '?token=' + encodeURIComponent(token) : ''}`;
     }
-
-
 
     // Claude Desktop 設定
     const claudeJson = {
@@ -5428,6 +5450,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function setupMcpSettings() {
     const btnLocal = document.getElementById('btnMcpModeLocal');
     const btnInternet = document.getElementById('btnMcpModeInternet');
+    const tunnelGroup = document.getElementById('mcpTunnelDomainGroup');
+    const txtTunnel = document.getElementById('txtMcpTunnelDomain');
+    const btnResetTunnel = document.getElementById('btnResetMcpTunnelDomain');
     const btnCopyClaude = document.getElementById('btnCopyClaudeConfig');
     const btnCopyCursor = document.getElementById('btnCopyCursorConfig');
     const selectSimTool = document.getElementById('selectMcpSimTool');
@@ -5435,11 +5460,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const preSimResult = document.getElementById('preMcpSimResult');
     const selSimTarget = document.getElementById('mcpSimSpeakTarget');
 
+    // 初期値の補完
+    if (txtTunnel && !txtTunnel.value) {
+      const autoDomain = state.serverInfo?.tunnelDomain || state.serverStatus?.tunnelDomain || '';
+      if (autoDomain) txtTunnel.value = autoDomain;
+    }
+
     // モード切り替え
     btnLocal?.addEventListener('click', () => {
       mcpConnectionMode = 'local';
       btnLocal.classList.add('active');
       btnInternet?.classList.remove('active');
+      if (tunnelGroup) tunnelGroup.style.display = 'none';
       updateMcpConfigSnippets();
     });
 
@@ -5447,7 +5479,23 @@ document.addEventListener('DOMContentLoaded', () => {
       mcpConnectionMode = 'internet';
       btnInternet.classList.add('active');
       btnLocal?.classList.remove('active');
+      if (tunnelGroup) tunnelGroup.style.display = 'block';
+      if (txtTunnel && !txtTunnel.value) {
+        const autoDomain = state.serverInfo?.tunnelDomain || state.serverStatus?.tunnelDomain || '';
+        if (autoDomain) txtTunnel.value = autoDomain;
+      }
       updateMcpConfigSnippets();
+    });
+
+    // Tunnel ドメインの手動入力・リセットイベント
+    txtTunnel?.addEventListener('input', () => {
+      updateMcpConfigSnippets();
+    });
+    btnResetTunnel?.addEventListener('click', () => {
+      const autoDomain = state.serverInfo?.tunnelDomain || state.serverStatus?.tunnelDomain || '';
+      if (txtTunnel) txtTunnel.value = autoDomain;
+      updateMcpConfigSnippets();
+      showToast('Tunnel ドメインを設定値にリセットしました', 'info');
     });
 
     // コピーボタン

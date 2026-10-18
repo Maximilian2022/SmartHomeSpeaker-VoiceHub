@@ -2449,6 +2449,23 @@ Body:
                     </div>
                   </div>
 
+                  <!-- インターネット接続時の Tunnel ドメイン表示・設定 -->
+                  <div id="mcpTunnelDomainGroup" style="display: none; margin-bottom: 14px; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                    <div class="flex-between" style="align-items: center; margin-bottom: 6px;">
+                      <label for="txtMcpTunnelDomain" class="form-label" style="margin: 0; display: flex; align-items: center; gap: 6px;">
+                        <span>🌐 Cloudflare Tunnel FQDN</span>
+                      </label>
+                      <span id="mcpTunnelDetectedBadge" class="badge-tech" style="font-size: 0.75rem;">自動検出済み</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="text" id="txtMcpTunnelDomain" class="form-input" placeholder="例: webhook.your-domain.com" style="flex: 1; font-family: monospace; font-size: 0.85rem;">
+                      <button type="button" id="btnResetMcpTunnelDomain" class="btn btn-secondary btn-sm" title="設定値にリセット">🔄 リセット</button>
+                    </div>
+                    <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 6px; display: block;">
+                      設定（<code>.my.env</code> の <code>CLOUDFLARE_TUNNEL_DOMAIN</code>）から自動補完されます。必要に応じて変更可能です。
+                    </small>
+                  </div>
+
                   <!-- Claude Desktop 設定スニペット -->
                   <div class="form-group">
                     <div class="flex-between" style="align-items: center; margin-bottom: 6px;">
