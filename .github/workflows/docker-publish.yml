@@ -52,7 +52,9 @@ jobs:
         id: prep
         run: |
           # Docker Hub のユーザー名とリポジトリ名を小文字化（大文字混入によるDockerエラーを防止）
+          # PR実行時（Dependabot等）はSecretsが注入されないため、既定ユーザー名（madpiero）へ安全にフォールバック
           DOCKER_USER=$(echo "${{ secrets.DOCKERHUB_USERNAME }}" | tr '[:upper:]' '[:lower:]')
+          DOCKER_USER=${DOCKER_USER:-madpiero}
           IMAGE_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
           echo "docker_image=${DOCKER_USER}/${IMAGE_LOWER}" >> $GITHUB_OUTPUT
 
