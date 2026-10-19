@@ -74,14 +74,20 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
 ## 5. テストの実行
 
-変更を加えた後は、必ず既存の単体テスト・スモークテストを実行し、すべてのテストが合格することを確認してください。
+変更を加えた後は、必ず既存の単体テスト・スモークテストを実行し、すべてのテストが合格することを確認してください。本プロジェクトでは Docker コンテナ内で本番と同一環境（Python 3.14 + 各種システムライブラリ）のテストを実行することを推奨しています。
 
+### Docker 環境でのテスト実行（推奨）
 ```bash
-# テストの実行
-python3 -m unittest discover -s tests -p "test_*.py"
+# 一時コンテナを起動してテストを実行（終了時に自動削除）
+docker compose run --rm voice-hub python3 -m unittest discover -s tests -p "test_*.py"
 
-# または特定のスモークテストの実行
-python3 -m unittest tests/test_smoke.py
+# すでにコンテナが起動中の場合
+docker exec SmartSpeaker-VoiceHub python3 -m unittest discover -s tests -p "test_*.py"
+```
+
+### ローカル Python 環境でのテスト実行
+```bash
+python3 -m unittest discover -s tests -p "test_*.py"
 ```
 
 新機能やバグ修正を行う場合は、可能な限り `tests/` 配下にテストケースを追加してください。

@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# 引数が指定された場合はそのコマンドを実行（テスト実行や対話シェル用）
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi
+
 echo "[VoiceHub Entrypoint] Starting go2rtc background daemon..."
 # go2rtc 設定ファイルがあれば使用、なければ安全なデフォルト設定を生成して起動 (LANへの無認証API露出防止)
 if [ ! -f "/app/data/go2rtc.yaml" ]; then
