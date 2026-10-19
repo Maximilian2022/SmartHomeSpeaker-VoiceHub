@@ -8,7 +8,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Tokyo"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 20
     commit-message:
       prefix: "ci"
       include: "scope"
@@ -16,7 +16,7 @@ updates:
       - "dependencies"
       - "github-actions"
     groups:
-      actions-all:
+      actions-dependencies:
         patterns:
           - "*"
 
@@ -28,7 +28,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Tokyo"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 20
     commit-message:
       prefix: "build"
       include: "scope"
@@ -36,12 +36,9 @@ updates:
       - "dependencies"
       - "python"
     groups:
-      python-minor-patch:
+      python-dependencies:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
 
   # 3. Dockerfile (ベースイメージ) の依存関係自動更新
   - package-ecosystem: "docker"
@@ -51,7 +48,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Tokyo"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 20
     commit-message:
       prefix: "build"
       include: "scope"
@@ -67,7 +64,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Tokyo"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 20
     commit-message:
       prefix: "build"
       include: "scope"
@@ -75,9 +72,6 @@ updates:
       - "dependencies"
       - "homebridge"
     groups:
-      npm-minor-patch:
+      npm-dependencies:
         patterns:
           - "*"
-        update-types:
-          - "minor"
-          - "patch"
