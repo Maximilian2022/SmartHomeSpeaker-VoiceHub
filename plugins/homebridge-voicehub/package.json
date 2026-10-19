@@ -6,7 +6,7 @@
   "author": "Maximilian2022",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub.git",
+    "url": "git+https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub.git",
     "directory": "plugins/homebridge-voicehub"
   },
   "homepage": "https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/tree/master/plugins/homebridge-voicehub#readme",
