@@ -34,6 +34,33 @@ def get_logger(module_name: str) -> logging.Logger:
     return mod_logger
 
 
+import re
+
+class UvicornAccessFilter(logging.Filter):
+    """uvicorn.access ロガー用フィルター: ポーリングログの除外とトークン平文のマスク"""
+    POLL_PATTERNS = ("/api/status", "/api/dnd/status", "/api/logs")
+    TOKEN_REGEX = re.compile(r"([?&]token=)[^&\s]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        # 1. ヘルスチェック・ポーリング系エンドポイントのアクセスログを抑制 (ログ肥大化防止)
+        for pattern in self.POLL_PATTERNS:
+            if pattern in msg:
+                return False
+        # 2. トークン平文のマスク
+        if "token=" in msg:
+            if isinstance(record.msg, str):
+                record.msg = self.TOKEN_REGEX.sub(r"\1***", record.msg)
+            if record.args:
+                new_args = []
+                for a in record.args:
+                    if isinstance(a, str) and "token=" in a:
+                        new_args.append(self.TOKEN_REGEX.sub(r"\1***", a))
+                    else:
+                        new_args.append(a)
+                record.args = tuple(new_args)
+        return True
+
 _system_logging_initialized = False
 
 
@@ -43,6 +70,11 @@ def init_system_logging():
     if _system_logging_initialized:
         return
     _system_logging_initialized = True
+
+    # uvicorn.access ロガーにポーリング除外 & トークンマスクフィルターを適用
+    access_filter = UvicornAccessFilter()
+    u_access = logging.getLogger("uvicorn.access")
+    u_access.addFilter(access_filter)
 
     # Uvicorn のロガーにファイルハンドラーを追加
     for uvicorn_log_name in ["uvicorn", "uvicorn.error", "uvicorn.access"]:

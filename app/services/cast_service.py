@@ -17,6 +17,11 @@ class CastService:
                 c = self._cast_cache[key]
                 if c.socket_client and c.socket_client.is_connected:
                     return c
+                # 切断されている古いインスタンスのワーカースレッドを明示的に解放
+                try:
+                    c.disconnect(timeout=1.0)
+                except Exception:
+                    pass
             except Exception:
                 pass
 

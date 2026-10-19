@@ -68,6 +68,7 @@ async def set_device_volume(req: DeviceVolumeRequest, device_id: Optional[str] =
 
     from app.services.cast_service import cast_service
     from app.services.alexa_service import alexa_service
+    from app.services.homepod_service import homepod_service
 
     success = False
     if dtype == "google":
@@ -77,6 +78,9 @@ async def set_device_volume(req: DeviceVolumeRequest, device_id: Optional[str] =
         success = await cast_service.set_volume(host, port, vol_ratio)
     elif dtype == "alexa":
         success = await alexa_service.set_volume(dev.get("name", ""), vol_percent)
+    elif dtype == "homepod":
+        raw_ip = dev.get("rawIp") or dev.get("ip", "")
+        success = await homepod_service.set_volume(raw_ip, vol_percent)
     else:
         success = True
 

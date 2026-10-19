@@ -123,14 +123,16 @@ class DndService:
                 }
 
         # 2. カレンダー会議連動
-        meeting_title = active_event_title or calendar_service.get_current_meeting_title()
-        if dnd_conf.get("calendarEnabled", True) and meeting_title:
+        include_all_day = bool(dnd_conf.get("calendarIncludeAllDay", False))
+        meeting_titles = [active_event_title] if active_event_title else calendar_service.get_current_meeting_titles(include_all_day=include_all_day)
+        if dnd_conf.get("calendarEnabled", True) and meeting_titles:
             mode = dnd_conf.get("calendarMode", "keywords")
             if mode == "all":
+                first_title = meeting_titles[0]
                 return {
                     "active": True,
                     "isActive": True,
-                    "reason": f"カレンダー予定中: {meeting_title}",
+                    "reason": f"カレンダー予定中: {first_title}",
                     "action": action,
                     "whisperVolume": whisper_vol,
                     "targetScope": target_scope,
@@ -139,18 +141,19 @@ class DndService:
             else:
                 keywords_str = dnd_conf.get("calendarKeywords", "")
                 keywords = [k.strip().lower() for k in keywords_str.split(",") if k.strip()]
-                title_lower = meeting_title.lower()
-                matched = next((k for k in keywords if k in title_lower), None)
-                if matched:
-                    return {
-                        "active": True,
-                        "isActive": True,
-                        "reason": f"会議中 ({matched}): {meeting_title}",
-                        "action": action,
-                        "whisperVolume": whisper_vol,
-                        "targetScope": target_scope,
-                        "targetDevices": target_devices
-                    }
+                for m_title in meeting_titles:
+                    title_lower = m_title.lower()
+                    matched = next((k for k in keywords if k in title_lower), None)
+                    if matched:
+                        return {
+                            "active": True,
+                            "isActive": True,
+                            "reason": f"会議中 ({matched}): {m_title}",
+                            "action": action,
+                            "whisperVolume": whisper_vol,
+                            "targetScope": target_scope,
+                            "targetDevices": target_devices
+                        }
 
         # 3. 曜日・時間帯定時スケジュール
         if dnd_conf.get("scheduleEnabled", False):

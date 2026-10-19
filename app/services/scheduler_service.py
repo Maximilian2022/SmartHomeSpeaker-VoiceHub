@@ -214,6 +214,7 @@ class SchedulerService:
                 pass
 
         try:
+            sched_name = sched.get("name") or sched.get("id") or "無題"
             res = await speech_service.speak(
                 text=text,
                 targets=targets,
@@ -221,7 +222,10 @@ class SchedulerService:
                 rate=rate,
                 pitch=pitch,
                 volume_level=vol_val,
-                urgent=False
+                urgent=False,
+                source="scheduler",
+                source_label=f"定期スケジュール ({sched_name})",
+                client_name="定期スケジューラー"
             )
             hist = {
                 "scheduleId": sched.get("id"),

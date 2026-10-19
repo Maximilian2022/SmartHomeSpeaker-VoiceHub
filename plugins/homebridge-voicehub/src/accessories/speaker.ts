@@ -69,6 +69,9 @@ export class SpeakerAccessory {
     const vol = Number(value);
     this.currentVolume = Math.min(100, Math.max(0, vol));
     this.platform.log.info(`[Speaker:${this.device.name}] 音量変更: ${this.currentVolume}%`);
+    this.platform.client.setDeviceVolume(this.device.id, this.currentVolume).catch((err: any) => {
+      this.platform.log.warn(`[Speaker:${this.device.name}] 音量更新失敗: ${err.message || err}`);
+    });
   }
 
   async getBrightness(): Promise<CharacteristicValue> {
@@ -88,6 +91,9 @@ export class SpeakerAccessory {
   async setVolume(value: CharacteristicValue) {
     this.currentVolume = Number(value);
     this.platform.log.info(`[Speaker:${this.device.name}] 音量変更: ${this.currentVolume}%`);
+    this.platform.client.setDeviceVolume(this.device.id, this.currentVolume).catch((err: any) => {
+      this.platform.log.warn(`[Speaker:${this.device.name}] 音量更新失敗: ${err.message || err}`);
+    });
   }
 
   async getVolume(): Promise<CharacteristicValue> {

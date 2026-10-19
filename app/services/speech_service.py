@@ -243,6 +243,11 @@ class SpeechService:
             return {"status": "error", "message": "No valid target devices found"}
 
         # 4. 音声合成 (TTS)
+        opt_voice = voice or "ja-JP-NanamiNeural"
+        opt_rate = rate or speed or "+0%"
+        opt_pitch = pitch or "+0Hz"
+        opt_chime = chime or settings_manager.get().get("chime", "dingdong")
+
         # 宛先がすべて Alexa の場合、MP3 音声は一切使用されないため合成処理・チャイム結合をスキップして高速化
         only_alexa = all(d.get("type") == "alexa" for d in unique_targets)
         if only_alexa:
@@ -250,11 +255,6 @@ class SpeechService:
             speech = {"filename": "", "filepath": "", "duration": 0.0, "cached": False, "voice": "alexa", "fallback": False}
             audio_url = ""
         else:
-            opt_voice = voice or "ja-JP-NanamiNeural"
-            opt_rate = rate or speed or "+0%"
-            opt_pitch = pitch or "+0Hz"
-            opt_chime = chime or settings_manager.get().get("chime", "dingdong")
-
             speech = await tts_service.synthesize(
                 text=text,
                 voice=opt_voice,
@@ -267,7 +267,17 @@ class SpeechService:
 
         effective_vol = self._get_effective_volume(volume_level)
 
-        # 5. 各プラットフォームへの並列ディスパッチ
+        # 5. 各プラットフォームへの並列ディスパッチ (syncOffsets 静的ディレイ反映)
+        sync_offsets = settings_manager.get().get("syncOffsets", {})
+        google_delay = max(0, int(sync_offsets.get("googleDelayMs", 0)))
+        homepod_delay = max(0, int(sync_offsets.get("homepodDelayMs", 0)))
+        alexa_delay = max(0, int(sync_offsets.get("alexaDelayMs", 0)))
+
+        async def _run_delayed(delay_ms: int, coro):
+            if delay_ms > 0:
+                await asyncio.sleep(delay_ms / 1000.0)
+            return await coro
+
         tasks = []
         target_names = [f"{d.get('name')} ({d.get('type')}:{d.get('ip')})" for d in unique_targets]
         log.info(f"Dispatching speech '{text[:40]}' to {len(unique_targets)} device(s): {', '.join(target_names)}")
@@ -287,11 +297,13 @@ class SpeechService:
                 else:
                     host = dev.get("host") or ip_val
                     port = int(dev.get("port", 8009))
-                log.info(f"[Dispatch -> Google Cast] {dev_name} ({host}:{port}) URL: {audio_url}")
-                tasks.append(cast_service.play_audio(host, port, audio_url, effective_vol))
+                log.info(f"[Dispatch -> Google Cast] {dev_name} ({host}:{port}) URL: {audio_url} (delay={google_delay}ms)")
+                coro = cast_service.play_audio(host, port, audio_url, effective_vol)
+                tasks.append(_run_delayed(google_delay, coro))
             elif dtype == "homepod":
-                log.info(f"[Dispatch -> HomePod] {dev_name} ({dev.get('ip')}) File: {speech['filepath']}")
-                tasks.append(homepod_service.play_audio(dev.get("ip", ""), speech["filepath"]))
+                log.info(f"[Dispatch -> HomePod] {dev_name} ({dev.get('ip')}) File: {speech['filepath']} (delay={homepod_delay}ms)")
+                coro = homepod_service.play_audio(dev.get("ip", ""), speech["filepath"], volume_level=effective_vol)
+                tasks.append(_run_delayed(homepod_delay, coro))
             elif dtype == "dlna":
                 log.info(f"[Dispatch -> DLNA] {dev_name} ({dev.get('ip')}) URL: {audio_url}")
                 tasks.append(dlna_service.play_audio(dev, audio_url, effective_vol))
@@ -299,8 +311,9 @@ class SpeechService:
                 log.info(f"[Dispatch -> ONVIF] {dev_name} ({dev.get('ip')}) file: {speech['filepath']}")
                 tasks.append(onvif_service.play_audio(dev, speech["filepath"], speech["duration"], effective_vol))
             elif dtype == "alexa":
-                log.info(f"[Dispatch -> Alexa] {dev_name} text: '{text[:30]}'")
-                tasks.append(alexa_service.speak(dev.get("name", ""), text))
+                log.info(f"[Dispatch -> Alexa] {dev_name} text: '{text[:30]}' (delay={alexa_delay}ms)")
+                coro = alexa_service.speak(dev.get("name", ""), text, volume_level=effective_vol)
+                tasks.append(_run_delayed(alexa_delay, coro))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -337,6 +350,7 @@ class SpeechService:
             history_msg = f"{history_msg} (※外部TTS接続不可のためEdge TTSでフォールバック発話)"
 
         # 6. 永続化履歴記録
+        saved_audio_url = f"/voice/{speech['filename']}" if speech.get("filename") else ""
         history_entry = {
             "text": text,
             "source": effective_source,
@@ -350,7 +364,7 @@ class SpeechService:
             "fallback": bool(speech.get("fallback", False)),
             "rate": opt_rate,
             "pitch": opt_pitch,
-            "audioUrl": f"/voice/{speech['filename']}",
+            "audioUrl": saved_audio_url,
             "duration": speech["duration"],
             "status": history_status,
             "statusMessage": history_msg,

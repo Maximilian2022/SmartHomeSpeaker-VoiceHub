@@ -136,7 +136,10 @@ class DisasterService:
                 text=text,
                 targets=targets,
                 urgent=urgent,
-                volume_level=volume
+                volume_level=volume,
+                source="disaster",
+                source_label="防災速報",
+                client_name="防災速報サービス"
             )
         except Exception as e:
             log.error(f"Speech dispatch error in disaster: {e}", exc_info=True)

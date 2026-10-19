@@ -166,14 +166,20 @@ class TtsService:
             pass
 
     async def warmup_enabled_speakers(self):
-        """有効な音声エンジンの推奨デフォルトモデルをバックグラウンド事前初期化"""
-        for p in self.voice_engine_providers:
-            if p.enabled:
-                try:
-                    await p.initialize_speaker(p.default_voice_id)
-                    await p.get_voices()
-                except Exception as e:
-                    log.warning(f"[TtsService] {p.display_name} 事前初期化スキップ: {e}")
+        """有効な音声エンジンの推奨デフォルトモデルをバックグラウンド事前初期化 (並列実行・高速化)"""
+        async def _warmup_single(p):
+            if not p.enabled:
+                return
+            try:
+                # 接続確認: initialize_speaker と get_voices (タイムアウトを3秒に抑えてオフライン待機を防止)
+                await asyncio.wait_for(p.initialize_speaker(p.default_voice_id), timeout=3.0)
+                await asyncio.wait_for(p.get_voices(), timeout=4.0)
+            except Exception as e:
+                log.warning(f"[TtsService] {p.display_name} 事前初期化スキップ (オフラインまたは応答なし): {e}")
+
+        tasks = [_warmup_single(p) for p in self.voice_engine_providers if p.enabled]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def resolve_provider(self, voice_id: Optional[str]) -> Tuple[BaseTtsProvider, str]:
         """voice_id から適切なプロバイダーと正規化ボイスIDを特定。
@@ -314,15 +320,22 @@ class TtsService:
         }
 
     def get_cache_stats(self) -> Dict[str, Any]:
+        now = time.time()
+        if hasattr(self, "_cached_stats") and (now - getattr(self, "_cached_stats_time", 0.0) < 60.0):
+            return self._cached_stats
+
         try:
             files = list(self.voice_dir.glob("*.mp3"))
             total_bytes = sum(f.stat().st_size for f in files)
-            return {
+            stats = {
                 "count": len(files),
                 "totalBytes": total_bytes,
                 "totalMB": f"{total_bytes / 1024 / 1024:.2f}",
                 "maxMB": "1024"
             }
+            self._cached_stats = stats
+            self._cached_stats_time = now
+            return stats
         except Exception:
             return {"count": 0, "totalBytes": 0, "totalMB": "0", "maxMB": "1024"}
 
@@ -623,8 +636,11 @@ class TtsService:
                     try:
                         f.unlink(missing_ok=True)
                         total_size -= size
+                        if hasattr(self, "_duration_cache"):
+                            self._duration_cache.pop(str(f), None)
                     except OSError:
                         pass
+                self._cached_stats_time = 0.0
         except Exception as e:
             log.error(f"[TtsService] Cache cleanup error: {e}")
 

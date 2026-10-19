@@ -238,7 +238,7 @@ class DeviceManager:
             if not dev.get("isGroup") and (norm_lower in dev.get("name", "").lower()):
                 return dev
 
-        # IP 形式直打ち (例: 192.168.11.85 または 192.168.11.85:32094)
+        # IP 形式直打ち (例: 192.168.1.100 または 192.168.1.100:32094)
         if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$", norm):
             parts = norm.split(":")
             h = parts[0]

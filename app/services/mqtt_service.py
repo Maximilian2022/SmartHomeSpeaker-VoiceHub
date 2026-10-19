@@ -257,13 +257,11 @@ class MQTTBrokerWorker:
                     # オンラインステータスを発行 (Retain)
                     await client.publish(f"{base_topic}/status", "online", retain=True)
 
-                    # トピック購読
-                    sub_say = f"{base_topic}/say"
+                    # トピック購読 (# ワイルドカードは base_topic/say 自体にもマッチするため重複購読を防止)
                     sub_say_wild = f"{base_topic}/say/#"
                     sub_dnd_set = f"{base_topic}/dnd/set"
                     sub_dnd_flush = f"{base_topic}/dnd/flush"
 
-                    await client.subscribe(sub_say)
                     await client.subscribe(sub_say_wild)
                     await client.subscribe(sub_dnd_set)
                     await client.subscribe(sub_dnd_flush)

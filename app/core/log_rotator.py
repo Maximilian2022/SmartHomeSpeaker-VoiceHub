@@ -49,12 +49,9 @@ def compress_file_zstd(src_path: Path, dest_path: Path) -> bool:
     # 万一 zstd が利用できない場合の gzip フォールバック (安全策)
     try:
         import gzip
-        dest_gz = dest_path.with_suffix(".gz")
+        dest_gz = src_path.with_name(f"{src_path.name}.gz")
         with open(src_path, "rb") as f_in, gzip.open(dest_gz, "wb", compresslevel=6) as f_out:
             shutil.copyfileobj(f_in, f_out)
-        if dest_path.exists():
-            dest_path.unlink()
-        dest_gz.rename(dest_path)
         return True
     except Exception as e:
         sys.__stderr__.write(f"[LogRotator] gzip fallback compression error: {e}\n")

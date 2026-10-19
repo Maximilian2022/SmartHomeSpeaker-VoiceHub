@@ -118,7 +118,7 @@ export class VoiceHubClient {
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     const body: Record<string, any> = { text };
-    if (target && target.trim().length > 0 && target !== 'ALL') {
+    if (target && target.trim().length > 0) {
       body.target = target.trim();
     }
     if (typeof volume === 'number' && volume >= 0 && volume <= 100) {
@@ -138,6 +138,29 @@ export class VoiceHubClient {
       }
 
       return await res.json() as VoiceHubSayResult;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * 指定デバイスの音量を設定 (0〜100)
+   */
+  async setDeviceVolume(deviceId: string, volume: number): Promise<boolean> {
+    const url = this.getUrl(`/api/devices/${encodeURIComponent(deviceId)}/volume`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ volume: Math.min(100, Math.max(0, volume)) }),
+        signal: controller.signal,
+      });
+      return res.ok;
+    } catch {
+      return false;
     } finally {
       clearTimeout(timer);
     }

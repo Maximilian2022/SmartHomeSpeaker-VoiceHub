@@ -294,9 +294,19 @@ class OnvifService:
         volume_level: Optional[float] = None
     ) -> Dict[str, Any]:
         onvif_config = settings_manager.get().get("onvif", {})
-        username = camera.get("username") or onvif_config.get("defaultUsername", "admin")
-        password = camera.get("password") or onvif_config.get("defaultPassword", "")
         raw_ip = camera.get("rawIp") or camera.get("ip", "").replace("onvif:", "")
+        username = camera.get("username")
+        password = camera.get("password")
+        if not password or not username:
+            for reg in onvif_config.get("registeredDevices", []):
+                if reg.get("ip") == raw_ip:
+                    if not username:
+                        username = reg.get("username")
+                    if not password:
+                        password = reg.get("password")
+                    break
+        username = username or onvif_config.get("defaultUsername", "admin")
+        password = password or onvif_config.get("defaultPassword", "")
         rtsp_port = camera.get("rtspPort", 554)
         onvif_port = camera.get("port", 8000)
         stream_name = f"onvif_{raw_ip.replace('.', '_')}"

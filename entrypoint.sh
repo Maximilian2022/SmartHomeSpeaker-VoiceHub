@@ -13,6 +13,10 @@ rtsp:
 webrtc:
   listen: "127.0.0.1:8555"
 EOF
+else
+    # 既存の Named Volume 内設定ファイルでも全インターフェース公開 (*:8554, *:8555, *:1984) を 127.0.0.1 に強制修正
+    sed -i 's/listen: ":1984"/listen: "127.0.0.1:1984"/g' /app/data/go2rtc.yaml
+    sed -i 's/listen: ":855/listen: "127.0.0.1:855/g' /app/data/go2rtc.yaml
 fi
 (
     while true; do

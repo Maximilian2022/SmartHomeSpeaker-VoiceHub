@@ -91,12 +91,12 @@ Smart Home Speaker Voice Hub は、規格の異なる 5 つのスマートスピ
     │  └───────────────────────┘  └───────────────────────────────────────┘  └─────────────────┘  │
     │                                                                                             │
     │  ┌───────────────────────┐  ┌───────────────────────────────────────┐  ┌─────────────────┐  │
-    │  │ Edge TTS + Chime Mix  │  │ WAL Persistent Queue (Disk-backed)    │  │ Multi MQTT Hub  │  │
-    │  │ (LRU Caching & Probe) │  │ (Webhook Queue & DND Recovery)        │  │ (HA Discovery)  │  │
+    │  │ Edge TTS + Chime Mix  │  │ In-Memory Queue & DND Disk WAL        │  │ Multi MQTT Hub  │  │
+    │  │ (LRU Caching & Probe) │  │ (Non-blocking & DND Queue Recovery)   │  │ (HA Discovery)  │  │
     │  └───────────────────────┘  └───────────────────────────────────────┘  └─────────────────┘  │
     │                                                                                             │
     │  ┌───────────────────────────────────────────────────────────────────────────────────────┐  │
-    │  │                  Cross-Platform Sync Engine (EMA Delay Compensation)                  │  │
+    │  │               Cross-Platform Sync Engine (Static Offset Compensation)                 │  │
     │  └───────────────────────────────────────────────────────────────────────────────────────┘  │
     └───┬──────────────────┬──────────────────┬──────────────┬───────────────┬────────────────────┘
         │                  │                  │              │               │
@@ -182,7 +182,7 @@ Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `vo
 | `homepod:<IPまたはMAC>` | 特定の Apple HomePod デバイスを直接指定。 |
 | `onvif:<IP>` | 特定の ONVIF ネットワークカメラを直接指定。 |
 | `dlna:<IP>` | 特定の DLNA / UPnP レンダラーを直接指定。 |
-| IPアドレス (例: `192.168.11.96`) | Google Cast デバイスの IP アドレス直打ち。 |
+| IPアドレス (例: `192.168.1.50`) | Google Cast デバイスの IP アドレス直打ち。 |
 
 ### 3.2 スピーカー種別の自動判別と解決アルゴリズム
 
@@ -205,10 +205,7 @@ Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `vo
 Google Home、Amazon Echo、Apple HomePod は、通信プロトコル（Castv2、Alexa クラウド経由、AirPlay 2）の構造上、発声開始までに要する内部レイテンシが異なります。
 
 * **オフセット遅延制御 (`alexaDelayMs`, `homepodDelayMs`, `googleDelayMs`)**:
-  - クラウド経由でレイテンシが生じる Alexa に合わせ、応答の速い Google Home や HomePod の再生開始を意図的にミリ秒単位でディレイ（待機）させます。
-* **動的自動学習 (`dynamicAutoAdjust`)**:
-  - 発声時の RTT（ラウンドトリップタイム）を各プラットフォームごとに計測。
-  - **指数移動平均 (EMA / $\alpha = 0.25$)** を用いて直近のネットワーク揺らぎを学習し、最適な遅延オフセットを自動計算・永続化します。
+  - クラウド経由でレイテンシが生じる Alexa に合わせ、応答の速い Google Home や HomePod の再生開始を意図的にミリ秒単位でディレイ（待機）させ、全プラットフォームでの同時発声を綺麗に調和させます。`settings.json` の `syncOffsets` でデバイス種別ごとの遅延ミリ秒（0〜5000ms）を自由に調整可能です。
 
 ---
 
@@ -282,7 +279,7 @@ Edge-TTS の Neural 音声エンジン（SSML 対応）を採用しています�
     ├─► ローカル音声エンジン群 (複数登録可)                     ├─► VOICEVOX / SHAREVOX / COEIROINK
     │   ├─► VOICEVOX (メインPC / GPUサーバー等)                 └─► 追加ローカル音声エンジン群
     │   ├─► SHAREVOX                                                        │
-    │   └─► COEIROINK (192.168.11.245 等)                      asyncio.wait(FIRST_COMPLETED)
+    │   └─► COEIROINK (192.168.1.50 等)                       asyncio.wait(FIRST_COMPLETED)
     └─► Edge-TTS (Azure未登録時)                                            │
                │                                                            ▼
        (タイムアウト/通信障害時)                                      最速完了音声を即採用
@@ -836,7 +833,6 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 │   ├── tts_usage.json          # クラウドTTS (GCP/Azure) 月次消費文字数カウンター
 │   ├── schedules.json          # 定期スケジュール定義
 │   ├── dnd_queue.json          # DND 保留メッセージキュー (WAL)
-│   ├── webhook_queue.json      # Webhook 非同期キュー (WAL)
 │   ├── homepod_devices.json    # HomePod スキャンキャッシュ
 │   └── .alexa.cookie           # Alexa 認証トークン
 │
@@ -879,12 +875,16 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
   Cloudflare Tunnel 判定、管理者セッション Cookie 検証、Webhook Bearer トークン認証を担当。
 - **`deduplication.py`**:
   メモリ内キャッシュを用いた連呼防止エンジン。同一クライアントからの同一テキストをクールダウン秒数判定して重複排除。
-- **`sync_offsets` (静的ディレイ制御)**:
-  `settings.json` の `syncOffsets` 設定に基づき、Alexa / HomePod / Google Cast の発話タイミングを静的オフセットで調整。
-- **`dnd_service` (キュー制御)**:
-  `asyncio.Queue` を用いた DND 発動中メッセージのインメモリ保留および解除時の一括フラッシュ。
+- **`logger.py`**:
+  VoiceHub 共通ロガー、標準出力キャプチャ（TeeStream）、uvicorn.access のポーリング除外＆トークンマスクフィルター。
+- **`log_rotator.py`**:
+  コンテナログのサイズ監視、zstd（および gzip フォールバック）による自動ローテーション・圧縮。
 
 ### 15.2 サービスモジュール (`app/services/`)
+- **`speech_service.py`**:
+  発話リクエスト受付、DND 判定、TTS 合成連携、`syncOffsets` 静的ディレイ制御、各スピーカープラットフォームへの並列ディスパッチ、永続発言履歴記録。
+- **`dnd_service.py`**:
+  DND (おやすみ・会議モード) 状態の多層判定、保留メッセージキューのディスク永続化 (`dnd_queue.json`) と解除時の一括フラッシュ。
 - **`tts_service.py`**:
   プロバイダー別動的ルーティング、タイムアウト時の Edge TTS 自動フォールバック、緊急速報（`urgent: true`）時の最速並行生成（Fastest Wins）、FFmpeg チャイム結合、LRU ディスクキャッシュ管理。
 - **`tts/` パッケージ**:

@@ -100,14 +100,21 @@ class CalendarService:
         log.info(f"Calendar sync complete: {len(all_events)} event(s) cached.")
         return all_events
 
-    def get_current_meeting_title(self) -> Optional[str]:
+    def get_current_meeting_titles(self, include_all_day: bool = False) -> List[str]:
         now = datetime.now()
+        titles = []
         for ev in self.cached_events:
-            if ev.get("isAllDay"):
+            if ev.get("isAllDay") and not include_all_day:
                 continue
             if ev["start"] <= now <= ev["end"]:
-                return ev["summary"]
-        return None
+                titles.append(ev["summary"])
+        return titles
+
+    def get_current_meeting_title(self) -> Optional[str]:
+        dnd_conf = settings_manager.get().get("dnd", {})
+        include_all_day = bool(dnd_conf.get("calendarIncludeAllDay", False))
+        titles = self.get_current_meeting_titles(include_all_day=include_all_day)
+        return titles[0] if titles else None
 
     def get_today_events(self) -> List[Dict[str, Any]]:
         today = date.today()
@@ -153,7 +160,11 @@ class CalendarService:
         if use_ai and (today_events or weather_info):
             try:
                 log.info("Generating AI calendar daily summary...")
-                message = await ai_service.summarize_calendar_events(today_events, weather_info=weather_info)
+                message = await ai_service.summarize_calendar_events(
+                    today_events,
+                    weather_info=weather_info,
+                    custom_prompt=ai_conf.get("dailyCalendarPrompt")
+                )
             except Exception as e:
                 log.warning(f"AI summary failed, falling back to standard template: {e}")
                 message = ""
@@ -187,7 +198,9 @@ class CalendarService:
             rate=rate,
             pitch=pitch,
             volume_level=volume_level,
-            client_name="カレンダー通知 (朝の予定まとめ)"
+            client_name="カレンダー通知 (朝の予定まとめ)",
+            source="calendar",
+            source_label="カレンダー (朝の予定まとめ)"
         )
         return {"success": True, "text": message, "result": res}
 
@@ -249,7 +262,9 @@ class CalendarService:
                         rate=cal_conf.get("rate") or "+0%",
                         pitch=cal_conf.get("pitch") or "+0Hz",
                         volume_level=cal_conf.get("volumeLevel"),
-                        client_name="カレンダー通知 (リマインダー)"
+                        client_name="カレンダー通知 (リマインダー)",
+                        source="calendar",
+                        source_label="カレンダー (リマインダー)"
                     )
 
 calendar_service = CalendarService()

@@ -136,7 +136,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     },
     "mqtt": {
         "enabled": False,
-        "broker": "192.168.11.1",
+        "broker": "localhost",
         "port": 1883,
         "username": "",
         "password": "",
@@ -181,7 +181,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         },
         "coeiroink": {
             "enabled": False,
-            "baseUrl": "http://192.168.11.245:50031",
+            "baseUrl": "http://127.0.0.1:50031",
             "timeoutSeconds": 5.0,
             "defaultVoiceId": "coeiroink:140",
             "preload": True
@@ -212,7 +212,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
                 "name": "COEIROINK (ローカル)",
                 "type": "coeiroink",
                 "enabled": False,
-                "baseUrl": "http://192.168.11.245:50031",
+                "baseUrl": "http://127.0.0.1:50031",
                 "timeoutSeconds": 5.0,
                 "defaultVoiceId": "coeiroink:140",
                 "preload": True
@@ -308,11 +308,6 @@ class SettingsManager:
         if tp.get("coeiroink", {}).get("defaultVoiceId") in ["coeiroink:0", "0"]:
             tp["coeiroink"]["defaultVoiceId"] = "coeiroink:140"
 
-        # COEIROINK IPアドレスの最新化補正 (ユーザー指定: 192.168.11.245)
-        ci_url = tp.get("coeiroink", {}).get("baseUrl", "")
-        if "192.168.11.244:50031" in ci_url:
-            tp["coeiroink"]["baseUrl"] = "http://192.168.11.245:50031"
-
         # 動的ローカル音声エンジン群 (voice_engines) のマイグレーション & 同期
         v_engines = tp.get("voice_engines")
         if not v_engines or not isinstance(v_engines, list) or len(v_engines) == 0:
@@ -343,7 +338,7 @@ class SettingsManager:
                     "name": "COEIROINK (ローカル)",
                     "type": "coeiroink",
                     "enabled": bool(tp.get("coeiroink", {}).get("enabled", False)),
-                    "baseUrl": tp.get("coeiroink", {}).get("baseUrl") or "http://192.168.11.245:50031",
+                    "baseUrl": tp.get("coeiroink", {}).get("baseUrl") or "http://127.0.0.1:50031",
                     "timeoutSeconds": float(tp.get("coeiroink", {}).get("timeoutSeconds") or 5.0),
                     "defaultVoiceId": tp.get("coeiroink", {}).get("defaultVoiceId") or "coeiroink:140",
                     "preload": bool(tp.get("coeiroink", {}).get("preload", True))

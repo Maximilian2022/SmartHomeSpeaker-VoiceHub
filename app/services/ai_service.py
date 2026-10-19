@@ -234,13 +234,16 @@ class AiService:
     async def _call_openai_with_err(self, api_key: str, model: str, prompt: str) -> tuple[str, Optional[str]]:
         valid_model = model or "gpt-4o-mini"
         try:
-            url = "https://api.openai.com/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {api_key}"}
-            payload = {
+            is_reasoning_model = any(valid_model.startswith(prefix) for prefix in ["o1", "o3", "o4"])
+            payload: Dict[str, Any] = {
                 "model": valid_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 150
+                "messages": [{"role": "user", "content": prompt}]
             }
+            if is_reasoning_model:
+                payload["max_completion_tokens"] = 150
+            else:
+                payload["max_tokens"] = 150
+
             async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.post(url, headers=headers, json=payload)
                 if res.status_code == 200:

@@ -5364,7 +5364,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="two-col-layout" style="gap: 12px; margin-bottom: 12px;">
                 <div class="form-group" style="margin: 0;">
                   <label class="form-label" style="font-size: 0.85rem;">ブローカー IP / ホスト名 *</label>
-                  <input type="text" class="form-input broker-input-host" placeholder="例: 192.168.11.248 または localhost" value="${escapeHtml(b.broker || '')}">
+                  <input type="text" class="form-input broker-input-host" placeholder="例: 192.168.1.100 または localhost" value="${escapeHtml(b.broker || '')}">
                 </div>
                 <div class="form-group" style="margin: 0;">
                   <label class="form-label" style="font-size: 0.85rem;">ポート番号 *</label>
@@ -7159,7 +7159,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
         if (!url) {
-          showToast('接続先 URL を入力してください（例: http://192.168.11.xxx:50021）', 'warning');
+          showToast('接続先 URL を入力してください（例: http://192.168.1.xxx:50021）', 'warning');
           inpUrl?.focus();
           return;
         }

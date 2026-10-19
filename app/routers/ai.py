@@ -18,9 +18,7 @@ class AiTestRequest(BaseModel):
 GEMINI_MODELS = [
     {"id": "gemini-2.5-flash", "name": "gemini-2.5-flash (最新主力・高速・推奨)"},
     {"id": "gemini-2.5-pro", "name": "gemini-2.5-pro (最高峰推論・高精度)"},
-    {"id": "gemini-2.5-flash-lite", "name": "gemini-2.5-flash-lite (超軽量・即答)"},
-    {"id": "gemini-3.5-flash", "name": "gemini-3.5-flash (次世代高速)"},
-    {"id": "gemini-3.8-flash", "name": "gemini-3.8-flash (最新フラッシュ)"}
+    {"id": "gemini-2.5-flash-lite", "name": "gemini-2.5-flash-lite (超軽量・即答)"}
 ]
 
 
