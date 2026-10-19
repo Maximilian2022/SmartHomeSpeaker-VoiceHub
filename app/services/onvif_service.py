@@ -1,6 +1,4 @@
 import asyncio
-import base64
-import hashlib
 import os
 import re
 import socket
@@ -44,31 +42,6 @@ class OnvifService:
         # カメラ複数台同時再生時の go2rtc / ネットワーク飽和防止用セマフォ
         self._semaphore = asyncio.Semaphore(3)
 
-    def _build_ws_security_header(self, username: str, password: str) -> str:
-        created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        nonce_bytes = os.urandom(16)
-        nonce_b64 = base64.b64encode(nonce_bytes).decode("ascii")
-
-        # ONVIF / OASIS WS-Security UsernameToken Profile 1.0 標準規格に準拠
-        # Password_Digest = Base64( SHA-1( nonce + created + password ) )
-        # 注意: この SHA-1 は保存用パスワードハッシュではなく、ONVIF プロトコル仕様で強制されている通信認証ダイジェストです。
-        sha = hashlib.sha1(usedforsecurity=False)
-        sha.update(nonce_bytes)
-        sha.update(created.encode("ascii"))
-        sha.update(password.encode("ascii"))
-        digest_b64 = base64.b64encode(sha.digest()).decode("ascii")
-
-        return f"""
-    <wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
-                   xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
-      <wsse:UsernameToken>
-        <wsse:Username>{username}</wsse:Username>
-        <wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">{digest_b64}</wsse:Password>
-        <wsse:Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">{nonce_b64}</wsse:Nonce>
-        <wsu:Created>{created}</wsu:Created>
-      </wsse:UsernameToken>
-    </wsse:Security>"""
-
     async def send_soap(
         self,
         url_str: str,
@@ -77,14 +50,11 @@ class OnvifService:
         username: str = "",
         password: str = ""
     ) -> str:
-        sec_header = self._build_ws_security_header(username, password) if username and password else ""
+        # ONVIF Profile T 規格準拠: HTTP Digest 認証 (RFC 7616 / RFC 2617)
         soap_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
                xmlns:tds="http://www.onvif.org/ver10/device/wsdl"
                xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
-  <soap:Header>
-    {sec_header}
-  </soap:Header>
   <soap:Body>
     {body_xml}
   </soap:Body>
@@ -93,7 +63,8 @@ class OnvifService:
         headers = {
             "Content-Type": f'application/soap+xml; charset=utf-8; action="{action}"'
         }
-        async with httpx.AsyncClient(timeout=4.0, verify=False) as client:
+        auth = httpx.DigestAuth(username, password) if username and password else None
+        async with httpx.AsyncClient(auth=auth, timeout=4.0, verify=False) as client:
             resp = await client.post(url_str, content=soap_xml.encode("utf-8"), headers=headers)
             if 200 <= resp.status_code < 300:
                 return resp.text
