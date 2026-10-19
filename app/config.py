@@ -12,6 +12,7 @@ SOUND_DIR = PUBLIC_DIR / "sound"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_DIR.mkdir(parents=True, exist_ok=True)
+SOUND_DIR.mkdir(parents=True, exist_ok=True)
 
 def auto_detect_local_ip() -> str:
     """LAN内のプライベートIPアドレスを自動検出"""

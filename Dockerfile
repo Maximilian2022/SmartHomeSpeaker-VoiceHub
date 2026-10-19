@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 RUN chmod +x entrypoint.sh bin/alexa_remote_control.sh 2>/dev/null || true \
-    && mkdir -p public/voice data
+    && mkdir -p public/voice public/sound data
 
 EXPOSE 8080 8081 1984 8554
 

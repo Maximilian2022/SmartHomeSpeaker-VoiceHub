@@ -27,6 +27,8 @@ firebase*.json
 # Generated audio files & cache
 *.wav
 *.mp3
+!public/sound/*.mp3
+!public/sound/.gitkeep
 public/voice/*
 !public/voice/.gitkeep
 
