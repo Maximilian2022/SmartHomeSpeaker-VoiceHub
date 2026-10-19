@@ -507,7 +507,8 @@ async def api_tts_providers_test(req: TtsProviderTestRequest, request: Request):
             return {"success": False, "message": f"未知のプロバイダーです: {pid}"}
 
     except Exception as e:
-        return {"success": False, "message": f"テスト中にエラーが発生しました: {str(e)}"}
+        log.error(f"Error during TTS provider test ({pid}): {e}", exc_info=True)
+        return {"success": False, "message": "テスト音声の生成中にエラーが発生しました。設定やAPIキー、ログを確認してください。"}
 
 class TtsProvidersSettingsUpdateRequest(BaseModel):
     tts_providers: Dict[str, Any]

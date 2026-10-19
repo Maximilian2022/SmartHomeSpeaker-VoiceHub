@@ -49,7 +49,10 @@ class OnvifService:
         nonce_bytes = os.urandom(16)
         nonce_b64 = base64.b64encode(nonce_bytes).decode("ascii")
 
-        sha = hashlib.sha1()
+        # ONVIF / OASIS WS-Security UsernameToken Profile 1.0 標準規格に準拠
+        # Password_Digest = Base64( SHA-1( nonce + created + password ) )
+        # 注意: この SHA-1 は保存用パスワードハッシュではなく、ONVIF プロトコル仕様で強制されている通信認証ダイジェストです。
+        sha = hashlib.sha1(usedforsecurity=False)
         sha.update(nonce_bytes)
         sha.update(created.encode("ascii"))
         sha.update(password.encode("ascii"))

@@ -161,8 +161,8 @@ async def logging_and_security_middleware(request: Request, call_next):
             status_code=500,
             content={
                 "error": "Internal Server Error",
-                "message": str(exc),
-                "detail": str(exc),
+                "message": "An internal server error occurred.",
+                "detail": "An internal server error occurred.",
                 "path": path
             }
         )
@@ -216,8 +216,9 @@ app.include_router(logs.router)
 @app.api_route("/voice/{filename}", methods=["GET", "HEAD"])
 async def serve_voice_file(filename: str):
     safe_filename = Path(filename).name
-    filepath = VOICE_DIR / safe_filename
-    if not filepath.exists() or not filepath.is_file():
+    base_resolved = VOICE_DIR.resolve()
+    filepath = (VOICE_DIR / safe_filename).resolve()
+    if not filepath.is_relative_to(base_resolved) or not filepath.is_file():
         raise HTTPException(status_code=404, detail="Voice file not found")
     return FileResponse(
         path=str(filepath),

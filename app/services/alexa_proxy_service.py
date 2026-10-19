@@ -198,7 +198,7 @@ class AlexaAuthProxy:
         except Exception as e:
             self.last_error = str(e)
             print(f"[AlexaProxy] Token exchange error: {e}")
-            return web.Response(text=f"<h3>エラーが発生しました: {e}</h3>", content_type="text/html", status=500)
+            return web.Response(text="<h3>エラーが発生しました。詳細はサーバーログを確認してください。</h3>", content_type="text/html", status=500)
 
     async def exchange_code_for_token(self, auth_code: str) -> Optional[str]:
         register_url = f"https://api.{self.amazon_page}/auth/register"
@@ -378,7 +378,7 @@ class AlexaAuthProxy:
                     return resp
         except Exception as e:
             print(f"[AlexaProxy] Upstream error for {target_url}: {e}")
-            return web.Response(text=f"Proxy error: {e}", status=502)
+            return web.Response(text="Proxy error: Failed to communicate with upstream service", status=502)
 
     async def start(self):
         if self.is_running:

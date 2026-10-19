@@ -1,4 +1,5 @@
 import asyncio
+import re
 import hashlib
 import io
 import json
@@ -543,8 +544,10 @@ class TtsService:
             f.write(raw_bytes)
 
         # 2. チャイムの結合
-        chime_file = self.sound_dir / f"{chime}.mp3"
-        if chime != "none" and chime_file.exists():
+        clean_chime = re.sub(r"[^a-zA-Z0-9_\-]", "", chime or "")
+        base_sound_dir = self.sound_dir.resolve()
+        chime_file = (self.sound_dir / f"{clean_chime}.mp3").resolve()
+        if clean_chime and clean_chime != "none" and chime_file.is_relative_to(base_sound_dir) and chime_file.is_file():
             # FFmpeg concat フィルターで安全に結合
             cmd = [
                 "ffmpeg", "-y",

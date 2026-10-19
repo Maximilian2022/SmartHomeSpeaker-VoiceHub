@@ -1,3 +1,4 @@
+import re
 import xml.sax.saxutils
 from typing import List, Dict, Any, Optional
 import httpx
@@ -36,14 +37,23 @@ class AzureTtsProvider(BaseTtsProvider):
             default_voice_id=default_voice_id
         )
         self.api_key = api_key
-        self.region = region or "japaneast"
+        self.region = self._validate_region(region)
         self._cached_voices: List[Dict[str, Any]] = []
+
+    @staticmethod
+    def _validate_region(reg: Optional[str]) -> str:
+        """SSRF防止: 英数字およびハイフンのみを許可 (デフォルト: japaneast)"""
+        val = (reg or "japaneast").strip().lower()
+        if not re.match(r"^[a-z0-9\-]+$", val):
+            log.warning(f"[AzureTtsProvider] 無効なリージョン指定 '{reg}'。デフォルト 'japaneast' を使用します")
+            return "japaneast"
+        return val
 
     def update_config(self, api_key: Optional[str] = None, region: Optional[str] = None, enabled: Optional[bool] = None, timeout_seconds: Optional[float] = None, default_voice_id: Optional[str] = None):
         if api_key is not None:
             self.api_key = api_key
         if region is not None:
-            self.region = region
+            self.region = self._validate_region(region)
         if enabled is not None:
             self.enabled = enabled
         if timeout_seconds is not None:
@@ -56,7 +66,8 @@ class AzureTtsProvider(BaseTtsProvider):
         if not self.enabled or not self.api_key:
             return False
         try:
-            url = f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/voices/list"
+            safe_reg = self._validate_region(self.region)
+            url = f"https://{safe_reg}.tts.speech.microsoft.com/cognitiveservices/voices/list"
             async with httpx.AsyncClient(timeout=3.0) as client:
                 res = await client.get(url, headers={"Ocp-Apim-Subscription-Key": self.api_key})
                 return res.status_code == 200
@@ -72,7 +83,8 @@ class AzureTtsProvider(BaseTtsProvider):
         # API Key がある場合は動的に Azure API から取得
         if self.api_key:
             try:
-                url = f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/voices/list"
+                safe_reg = self._validate_region(self.region)
+                url = f"https://{safe_reg}.tts.speech.microsoft.com/cognitiveservices/voices/list"
                 async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
                     res = await client.get(url, headers={"Ocp-Apim-Subscription-Key": self.api_key})
                     if res.status_code == 200:
@@ -139,7 +151,8 @@ class AzureTtsProvider(BaseTtsProvider):
     </voice>
 </speak>"""
 
-        url = f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/v1"
+        safe_reg = self._validate_region(self.region)
+        url = f"https://{safe_reg}.tts.speech.microsoft.com/cognitiveservices/v1"
         headers = {
             "Ocp-Apim-Subscription-Key": self.api_key,
             "Content-Type": "application/ssml+xml",
