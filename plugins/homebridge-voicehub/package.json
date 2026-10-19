@@ -37,7 +37,7 @@
   "dependencies": {},
   "devDependencies": {
     "@types/node": "^22.10.1",
-    "homebridge": "^1.8.0",
+    "homebridge": "^2.4.0",
     "rimraf": "^6.0.1",
     "typescript": "^5.7.2"
   }
