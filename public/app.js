@@ -431,6 +431,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('ボイス取得失敗');
       const data = await res.json();
       state.voices = data.voices || [];
+      if (data.defaultVoice) {
+        state.defaultVoice = data.defaultVoice;
+      }
+      if (data.isAzureActive !== undefined) {
+        state.isAzureActive = !!data.isAzureActive;
+      }
 
       renderVoiceSelects();
     } catch (err) {
@@ -843,7 +849,8 @@ document.addEventListener('DOMContentLoaded', () => {
       edge: 'Edge-TTS (標準)'
     };
 
-    const isAzureActive = !!state.ttsProvidersStatus?.isAzureActive;
+    const isAzureActive = (state.isAzureActive !== undefined) ? state.isAzureActive : !!state.ttsProvidersStatus?.isAzureActive;
+    const defVoiceId = state.defaultVoice || (isAzureActive ? 'azure:ja-JP-NanamiNeural' : 'ja-JP-NanamiNeural');
 
     state.voices.forEach(v => {
       let p = (v.provider || 'edge').toLowerCase();
@@ -870,40 +877,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const label = providerLabels[p] || p.toUpperCase();
         optionsHtml += `<optgroup label="${escapeHtml(label)}">`;
         groups[p].forEach(v => {
-          const isSelected = (isAzureActive && v.id === 'azure:ja-JP-NanamiNeural') || (!isAzureActive && v.id === 'ja-JP-NanamiNeural') ? 'selected' : '';
+          const isSelected = (v.id === defVoiceId) ? 'selected' : '';
           optionsHtml += `<option value="${escapeHtml(v.id)}" ${isSelected}>${escapeHtml(v.name)}</option>`;
         });
         optionsHtml += `</optgroup>`;
       }
     });
 
-    if (el.sayVoiceSelect) {
-      const cur = el.sayVoiceSelect.value;
-      el.sayVoiceSelect.innerHTML = optionsHtml;
-      if (cur) el.sayVoiceSelect.value = cur;
-    }
-    if (el.schedVoice) {
-      const cur = el.schedVoice.value;
-      el.schedVoice.innerHTML = optionsHtml;
-      if (cur) el.schedVoice.value = cur;
-    }
-    const calVoice = document.getElementById('calVoice');
-    if (calVoice) {
-      const cur = calVoice.value;
-      calVoice.innerHTML = optionsHtml;
-      if (cur) calVoice.value = cur;
-    }
+    const setSelectValueSafely = (selectEl, customDefault = defVoiceId) => {
+      if (!selectEl) return;
+      const cur = selectEl.value;
+      selectEl.innerHTML = optionsHtml;
+      const hasCur = Array.from(selectEl.options).some(o => o.value === cur);
+      if (cur && hasCur) {
+        selectEl.value = cur;
+      } else {
+        selectEl.value = customDefault;
+      }
+    };
+
+    setSelectValueSafely(el.sayVoiceSelect);
+    setSelectValueSafely(el.schedVoice);
+    setSelectValueSafely(document.getElementById('calVoice'));
+    setSelectValueSafely(document.getElementById('modalCalVoice'));
+
     const bVoice = document.getElementById('builderVoice');
     if (bVoice) {
       const cur = bVoice.value;
-      bVoice.innerHTML = '<option value="">デフォルト (Nanami - 女性)</option>' + optionsHtml;
-      if (cur) bVoice.value = cur;
-    }
-    const modalCalVoice = document.getElementById('modalCalVoice');
-    if (modalCalVoice) {
-      const cur = modalCalVoice.value;
-      modalCalVoice.innerHTML = optionsHtml;
-      if (cur) modalCalVoice.value = cur;
+      const defLabel = isAzureActive ? 'デフォルト (Azure 七海)' : 'デフォルト (Nanami - 女性)';
+      bVoice.innerHTML = `<option value="">${defLabel}</option>` + optionsHtml;
+      const hasCur = Array.from(bVoice.options).some(o => o.value === cur);
+      if (cur && hasCur) {
+        bVoice.value = cur;
+      } else {
+        bVoice.value = '';
+      }
     }
   }
 
@@ -6958,6 +6966,8 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       }
+      state.ttsProvidersStatus = data;
+      state.isAzureActive = !!data.isAzureActive;
 
       // Edge-TTS の役割表示更新（Azure有効時は最終フォールバック待機中）
       const isAzureActive = !!data.isAzureActive;

@@ -342,8 +342,19 @@ class TestSmokeVoiceHub(unittest.TestCase):
         self.assertEqual(found_grp["port"], 32094)
         self.assertTrue(found_grp["isGroup"])
 
+    def test_azure_active_default_voice(self):
+        """Azure 有効時にデフォルト話者が azure:ja-JP-NanamiNeural になり、無効時は Edge-TTS になること"""
+        from unittest.mock import patch
+        with patch.object(tts_service, "is_azure_active", return_value=True):
+            self.assertEqual(tts_service.get_default_voice_id(), "azure:ja-JP-NanamiNeural")
+
+        with patch.object(tts_service, "is_azure_active", return_value=False), \
+             patch.object(tts_service.gcp_provider, "enabled", False):
+            self.assertEqual(tts_service.get_default_voice_id(), "ja-JP-NanamiNeural")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

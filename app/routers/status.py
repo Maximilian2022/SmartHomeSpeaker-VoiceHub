@@ -43,5 +43,7 @@ async def get_voices() -> Dict[str, Any]:
     voices = await tts_service.get_voices()
     return {
         "voices": voices,
-        "defaultVoice": settings.default_voice
+        "defaultVoice": tts_service.get_default_voice_id(),
+        "isAzureActive": tts_service.is_azure_active()
     }
+

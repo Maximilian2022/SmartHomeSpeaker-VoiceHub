@@ -207,6 +207,16 @@ class TtsService:
         # Edge-TTS (標準)
         return self.edge_provider, voice_id
 
+    def get_default_voice_id(self) -> str:
+        """現在のアクティブなプロバイダー優先順位に基づくデフォルト話者IDを取得。
+        Azure有効時は AzureのNanami (azure:ja-JP-NanamiNeural) をデフォルトとして返却。
+        """
+        if self.is_azure_active():
+            return self.azure_provider.default_voice_id
+        if self.gcp_provider.enabled:
+            return self.gcp_provider.default_voice_id
+        return self.edge_provider.default_voice_id
+
     async def get_voices(self, include_edge_fallback: bool = False, force_refresh: bool = False, cache_ttl: float = 60.0) -> List[Dict[str, Any]]:
         """有効なすべてのプロバイダーから話者一覧を非同期収集（TTLキャッシュ対応）。
         Azure有効時は、Edge-TTS を選択肢から除外（いざというときの最終手段として待機）。

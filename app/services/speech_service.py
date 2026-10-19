@@ -144,7 +144,7 @@ class SpeechService:
                     "clientName": client_name,
                     "clientIp": client_ip or "",
                     "targets": [targets] if isinstance(targets, str) else (targets or ["デフォルト"]),
-                    "voice": voice or "ja-JP-NanamiNeural",
+                    "voice": voice or tts_service.get_default_voice_id(),
                     "status": "queued",
                     "statusMessage": f"DND発動中のため保留キューに追加しました ({dnd_result.get('reason')})",
                     "urgent": urgent,
@@ -243,7 +243,7 @@ class SpeechService:
             return {"status": "error", "message": "No valid target devices found"}
 
         # 4. 音声合成 (TTS)
-        opt_voice = voice or "ja-JP-NanamiNeural"
+        opt_voice = voice or tts_service.get_default_voice_id()
         opt_rate = rate or speed or "+0%"
         opt_pitch = pitch or "+0Hz"
         opt_chime = chime or settings_manager.get().get("chime", "dingdong")
