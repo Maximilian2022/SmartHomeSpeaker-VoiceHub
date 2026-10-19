@@ -220,13 +220,14 @@ async def serve_voice_file(filename: str):
     if not re.match(r"^[a-zA-Z0-9_\-]+\.mp3$", filename):
         raise HTTPException(status_code=400, detail="Invalid voice filename format")
 
-    safe_filename = Path(filename).name
-    base_resolved = VOICE_DIR.resolve()
-    filepath = (VOICE_DIR / safe_filename).resolve()
-    if not filepath.is_relative_to(base_resolved) or not filepath.is_file():
+    base_path = os.path.realpath(str(VOICE_DIR))
+    clean_name = os.path.basename(filename)
+    fullpath = os.path.normpath(os.path.join(base_path, clean_name))
+    if not fullpath.startswith(base_path) or not os.path.isfile(fullpath):
         raise HTTPException(status_code=404, detail="Voice file not found")
+
     return FileResponse(
-        path=str(filepath),
+        path=fullpath,
         media_type="audio/mp3",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
