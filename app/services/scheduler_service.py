@@ -223,7 +223,7 @@ class SchedulerService:
                 pitch=pitch,
                 volume_level=vol_val,
                 urgent=False,
-                source="scheduler",
+                source="schedule",
                 source_label=f"定期スケジュール ({sched_name})",
                 client_name="定期スケジューラー"
             )

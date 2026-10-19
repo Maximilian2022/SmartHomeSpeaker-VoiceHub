@@ -1099,8 +1099,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // フィルター適用
     if (state.historyFilter && state.historyFilter !== 'all') {
       items = items.filter(item => {
+        if (state.historyFilter === 'schedule') {
+          return item.source === 'schedule' || item.source === 'scheduler' || item.source === 'scheduled_speech';
+        }
         if (state.historyFilter === 'api') {
-          return item.source === 'api' || item.source === 'tunnel_webhook';
+          return item.source === 'api' || item.source === 'tunnel_webhook' || item.source === 'webhook';
         }
         return item.source === state.historyFilter;
       });
@@ -4884,9 +4887,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const typeBadge = isDlna
         ? `<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>`
         : `<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>`;
-      const connUrl = isDlna
+      const rawConnUrl = isDlna
         ? (dev.controlUrl || 'UPnP AVTransport')
         : (dev.rtspUrl || 'RTSP Backchannel');
+      const connUrl = String(rawConnUrl).replace(/:([^:@/]+)@/, ':****@');
       const authUser = isDlna
         ? `<span style="color:var(--text-muted);font-size:0.8rem;">不要 (UPnP)</span>`
         : escapeHtml(dev.username || 'admin');

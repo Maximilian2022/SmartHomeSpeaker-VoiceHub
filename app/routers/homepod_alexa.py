@@ -51,6 +51,11 @@ async def set_alexa_token(req: AlexaTokenRequest):
         alexa_service.credentials_path.write_text(json.dumps(creds, indent=2), encoding="utf-8")
     except Exception:
         pass
+    # 手動登録後も直ちに Echo デバイスをスキャン・ログイン同期
+    try:
+        await alexa_service.scan_devices(force_login=True)
+    except Exception:
+        pass
     return {"success": True}
 
 @router.post("/api/alexa/logout")

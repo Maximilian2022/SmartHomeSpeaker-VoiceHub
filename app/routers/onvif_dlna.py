@@ -91,23 +91,33 @@ async def register_device(raw_req: Dict[str, Any]):
     if is_delete:
         reg_list = [d for d in reg_list if d.get("ip") != clean_ip and d.get("id") != dev_id]
     else:
-        existing = next((d for d in reg_list if d.get("ip") == clean_ip), None)
+        existing = next((d for d in reg_list if d.get("ip") == clean_ip or (dev_id and d.get("id") == dev_id)), None)
         dtype = dev_data.get("type", "onvif")
+
+        # 既存デバイスの更新時にパスワードやユーザー名が未指定・空文字なら既存の値を引き継ぐ
+        username = dev_data.get("username")
+        if (username is None or str(username).strip() == "") and existing:
+            username = existing.get("username")
+
+        password = dev_data.get("password")
+        if (password is None or str(password).strip() == "") and existing:
+            password = existing.get("password")
+
         entry = {
-            "id": dev_id or f"{dtype}_{clean_ip.replace('.', '_')}",
-            "name": dev_data.get("name") or f"{dtype.upper()} ({clean_ip})",
+            "id": dev_id or (existing.get("id") if existing else f"{dtype}_{clean_ip.replace('.', '_')}"),
+            "name": dev_data.get("name") or (existing.get("name") if existing else f"{dtype.upper()} ({clean_ip})"),
             "ip": clean_ip,
-            "port": dev_data.get("port", 8000),
-            "model": dev_data.get("model") or ("Speaker" if dtype == "onvif" else "DLNA Speaker"),
+            "port": dev_data.get("port") or (existing.get("port", 8000) if existing else 8000),
+            "model": dev_data.get("model") or (existing.get("model") if existing else ("Speaker" if dtype == "onvif" else "DLNA Speaker")),
             "type": dtype,
-            "username": dev_data.get("username"),
-            "password": dev_data.get("password"),
-            "controlUrl": dev_data.get("controlUrl"),
-            "renderingControlUrl": dev_data.get("renderingControlUrl"),
+            "username": username,
+            "password": password,
+            "controlUrl": dev_data.get("controlUrl") or (existing.get("controlUrl") if existing else None),
+            "renderingControlUrl": dev_data.get("renderingControlUrl") or (existing.get("renderingControlUrl") if existing else None),
             "enabled": dev_data.get("enabled", True)
         }
         if existing:
-            reg_list = [entry if d.get("ip") == clean_ip else d for d in reg_list]
+            reg_list = [entry if (d.get("ip") == clean_ip or (dev_id and d.get("id") == dev_id)) else d for d in reg_list]
         else:
             reg_list.append(entry)
 

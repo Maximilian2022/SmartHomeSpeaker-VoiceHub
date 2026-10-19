@@ -116,11 +116,9 @@ async def get_logs(
     """
     active_lines: List[str] = []
     if ACTIVE_LOG_FILE.exists():
-        try:
-            with open(ACTIVE_LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
-                active_lines = f.readlines()
-        except Exception as e:
-            log.warning(f"Failed to read {ACTIVE_LOG_FILE}: {e}")
+        has_filter = bool(level or module or search)
+        fetch_max = 5000 if has_filter else max(limit, 500)
+        active_lines = read_tail_lines(ACTIVE_LOG_FILE, fetch_max)
 
     total_active_lines = len(active_lines)
     file_size = ACTIVE_LOG_FILE.stat().st_size if ACTIVE_LOG_FILE.exists() else 0

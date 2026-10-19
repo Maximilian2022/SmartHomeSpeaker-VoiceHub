@@ -1,6 +1,6 @@
 {
   "name": "homebridge-voicehub",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Homebridge plugin for Smart Speaker Voice Hub (Google Cast, Alexa, HomePod, ONVIF/DLNA integration)",
   "license": "Apache-2.0",
   "author": "Maximilian2022",

@@ -71,9 +71,18 @@ async def test_summarize(req: SummarizeTestRequest = SummarizeTestRequest()):
         summary = f"留守中に {len(msgs)} 件の通知を受信しました。" + "、".join(msgs)
     return {"success": True, "summary": summary, "sampleCount": len(msgs)}
 
+class CalendarTestRequest(BaseModel):
+    promptHint: Optional[str] = None
+
 @router.post("/api/ai/calendar-test")
-async def test_calendar():
-    return {
-        "success": True,
-        "summary": "おはようございます。本日は9時30分からチームミーティング、14時から来客予定が入っています。今日も一日がんばりましょう！"
-    }
+async def test_calendar(req: CalendarTestRequest = CalendarTestRequest()):
+    sample_events = [
+        {"start": "09:30", "end": "10:00", "summary": "チーム朝会・定例ミーティング"},
+        {"start": "13:00", "end": "14:00", "summary": "設計レビュー"},
+        {"start": "16:30", "end": "17:30", "summary": "歯医者（定期検診）"},
+    ]
+    summary = await ai_service.summarize_calendar_events(sample_events, custom_prompt=req.promptHint)
+    if not summary:
+        return {"success": False, "error": "予定まとめのAI生成に失敗しました。APIキーやAI設定を確認してください。"}
+    return {"success": True, "summary": summary}
+
