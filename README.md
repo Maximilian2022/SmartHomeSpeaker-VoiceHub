@@ -34,7 +34,7 @@ Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワー
 
 ## 🚀 はじめかた
 
-最も手軽でおすすめなのは、Docker Compose を利用した起動です。Docker Hub に公開されている公式マルチアーキテクチャイメージ（amd64 / arm64 対応）により、Raspberry Pi や NAS、PC でもコンパイル待ちなしで即座に起動できます。
+最も手軽でおすすめなのは、Docker Compose を利用した起動です。[Docker Hub (madpiero/smarthomespeaker-voicehub)](https://hub.docker.com/r/madpiero/smarthomespeaker-voicehub) に公開されている公式マルチアーキテクチャイメージ（amd64 / arm64 対応）により、Raspberry Pi や NAS、PC でもコンパイル待ちなしで即座に起動できます。
 
 ### 方法 A: 一般ユーザー向け（最も簡単・リポジトリの clone 不要）
 

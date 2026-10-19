@@ -1,6 +1,6 @@
 services:
   voice-hub:
-    image: maximilian2022/smarthomespeaker-voicehub:latest
+    image: madpiero/smarthomespeaker-voicehub:latest
     container_name: SmartSpeaker-VoiceHub
     restart: unless-stopped
     network_mode: "host"
