@@ -12,7 +12,20 @@ from app.core.logger import get_logger
 log = get_logger("DND")
 DND_QUEUE_FILE = DATA_DIR / "dnd_queue.json"
 
+def _normalize_target_key(targets: Any) -> Tuple[str, ...]:
+    if targets is None:
+        return ("__default__",)
+    if isinstance(targets, str):
+        parts = [t.strip().lower() for t in targets.split(",") if t.strip()]
+    elif isinstance(targets, (list, tuple)):
+        parts = [str(t).strip().lower() for t in targets if str(t).strip()]
+    else:
+        parts = [str(targets).strip().lower()]
+    return tuple(sorted(parts)) if parts else ("__default__",)
+
+
 class DndService:
+
     def __init__(self):
         self.queue: List[Dict[str, Any]] = self._load_queue()
         self.history: List[Dict[str, Any]] = []
@@ -232,32 +245,62 @@ class DndService:
         self._save_queue()
         return cleared
 
-    async def check_and_flush_queue(self):
+    async def check_and_flush_queue(self) -> int:
         if not self.queue or not self._speaker_executor:
-            return
+            return 0
 
         items = self.clear_queue()
         log.info(f"Flushing {len(items)} queued messages after DND release...")
 
         from app.services.ai_service import ai_service
         dnd_conf = settings_manager.get().get("dnd", {})
-        messages = [it.get("text", "") for it in items if it.get("text")]
+        ai_enabled = dnd_conf.get("aiSummaryEnabled", True)
         threshold = int(dnd_conf.get("aiSummaryThreshold", 2))
 
-        if dnd_conf.get("aiSummaryEnabled", True) and len(messages) >= threshold:
-            try:
-                summary_text = await ai_service.summarize_dnd_messages(messages)
-                announce_text = f"おやすみ・会議モードが終了しました。保留されていた {len(items)} 件の通知をAIが要約してお知らせします。{summary_text}"
-                await self._speaker_executor(text=announce_text, targets="ALL", urgent=True)
-                return
-            except Exception as e:
-                log.warning(f"AI summarization failed, falling back to sequential play: {e}")
+        # 宛先ごとにグループ化 (キュー投入順を保持)
+        groups: Dict[Tuple[str, ...], List[Dict[str, Any]]] = {}
+        for item in items:
+            k = _normalize_target_key(item.get("targets"))
+            if k not in groups:
+                groups[k] = []
+            groups[k].append(item)
 
-        for it in items:
-            t = it.get("text", "")
-            if t:
-                await self._speaker_executor(text=t, targets=it.get("targets") or "ALL", urgent=True)
-                await asyncio.sleep(0.5)
+        for target_key, group_items in groups.items():
+            # 発話宛先 (元のリクエストで指定されていた targets を尊重。未指定の場合は None のまま)
+            target_speaker = None if target_key == ("__default__",) else group_items[0].get("targets")
+            messages = [it.get("text", "") for it in group_items if it.get("text")]
+
+            if ai_enabled and len(messages) >= threshold:
+                try:
+                    summary_text = await ai_service.summarize_dnd_messages(messages)
+                    if summary_text:
+                        announce_text = f"おやすみ・会議モードが終了しました。保留されていた {len(group_items)} 件の通知をAIが要約してお知らせします。{summary_text}"
+                        await self._speaker_executor(
+                            text=announce_text,
+                            targets=target_speaker,
+                            urgent=True,
+                            source="dnd_queue",
+                            source_label="DND保留再生"
+                        )
+                        await asyncio.sleep(0.5)
+                        continue
+                except Exception as e:
+                    log.warning(f"AI summarization failed for target {target_key}, falling back to sequential play: {e}")
+
+            # AI要約無効、閾値未満、または要約失敗時は個別再生
+            for it in group_items:
+                t = it.get("text", "")
+                if t:
+                    await self._speaker_executor(
+                        text=t,
+                        targets=it.get("targets"),
+                        urgent=True,
+                        source="dnd_queue",
+                        source_label="DND保留再生"
+                    )
+                    await asyncio.sleep(0.5)
+
+        return len(items)
 
     # エイリアス
     get_status = get_global_status

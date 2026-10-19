@@ -126,26 +126,6 @@ async def get_general_queue():
 
 @router.post("/api/dnd/queue/release")
 async def release_dnd_queue():
-    items = dnd_service.clear_queue()
-    if not items:
-        return {"success": True, "released": 0}
+    released = await dnd_service.check_and_flush_queue()
+    return {"success": True, "released": released or 0}
 
-    log.info(f"Manual release of {len(items)} items in DND queue.")
-    messages = [item.get("text", "") for item in items if item.get("text")]
-    dnd_conf = settings_manager.get().get("dnd", {})
-    threshold = int(dnd_conf.get("aiSummaryThreshold", 2))
-    use_ai = dnd_conf.get("aiSummaryEnabled", True) and len(messages) >= threshold
-
-    if use_ai:
-        try:
-            summary_text = await ai_service.summarize_dnd_messages(messages)
-            await speech_service.speak(text=summary_text, targets="ALL", urgent=True)
-            return {"success": True, "released": len(items)}
-        except Exception as e:
-            log.warning(f"AI summarization error on release: {e}")
-
-    for m in messages:
-        await speech_service.speak(text=m, targets="ALL", urgent=True)
-        await asyncio.sleep(0.5)
-
-    return {"success": True, "released": len(items)}

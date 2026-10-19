@@ -188,44 +188,45 @@ class AiService:
 
     async def _call_gemini_with_err(self, api_key: str, model: str, prompt: str) -> tuple[str, Optional[str]]:
         # 廃止済みモデル（Gemini 1.5/2.0等）の自動補正
-        valid_model = model or "gemini-2.5-flash"
+        valid_model = model or "gemini-3.5-flash"
         if any(p in valid_model for p in ["1.5", "1.0", "2.0"]):
-            log.warning(f"[AiService] 廃止済みモデル '{valid_model}' が指定されたため、最新推奨モデル 'gemini-2.5-flash' に自動補正します")
-            valid_model = "gemini-2.5-flash"
+            log.warning(f"[AiService] 廃止済みモデル '{valid_model}' が指定されたため、最新推奨モデル 'gemini-3.5-flash' に自動補正します")
+            valid_model = "gemini-3.5-flash"
 
+        # フォールバック候補モデル（メインモデル以外を順次試行）
+        fallback_candidates = [m for m in ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-flash-latest"] if m != valid_model]
+        models_to_try = [valid_model] + fallback_candidates[:2]
 
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{valid_model}:generateContent?key={api_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}]
-            }
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                        return text.strip(), None
-                else:
-                    err_msg = f"Gemini API エラー (HTTP {res.status_code}): {res.text}"
-                    log.warning(f"[AiService] {err_msg}")
-                    # モデル未検出等で失敗した場合、gemini-2.5-flash で自動フォールバック試行
-                    if valid_model != "gemini-2.5-flash":
-                        log.info(f"[AiService] フォールバックモデル 'gemini-2.5-flash' で再試行します...")
-                        fb_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-                        res2 = await client.post(fb_url, json=payload)
-                        if res2.status_code == 200:
-                            data2 = res2.json()
-                            candidates2 = data2.get("candidates", [])
-                            if candidates2:
-                                text2 = candidates2[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                                return text2.strip(), None
-                    return "", err_msg
-        except Exception as e:
-            log.error(f"[AiService] Gemini 例外: {e}", exc_info=True)
-            return "", str(e)
-        return "", "要約の生成に失敗しました (空の応答)"
+        last_error = "要約の生成に失敗しました"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}]
+        }
+
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            for idx, target_m in enumerate(models_to_try):
+                try:
+                    if idx > 0:
+                        log.info(f"[AiService] フォールバックモデル '{target_m}' で再試行します...")
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_m}:generateContent?key={api_key}"
+                    res = await client.post(url, json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        candidates = data.get("candidates", [])
+                        if candidates:
+                            text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                            if text.strip():
+                                return text.strip(), None
+                    else:
+                        last_error = f"Gemini API エラー ({target_m}, HTTP {res.status_code}): {res.text[:200]}"
+                        log.warning(f"[AiService] {last_error}")
+                except httpx.TimeoutException as te:
+                    last_error = f"Gemini API タイムアウト ({target_m}): {te}"
+                    log.warning(f"[AiService] {last_error}")
+                except Exception as e:
+                    last_error = f"Gemini API 例外 ({target_m}): {e}"
+                    log.error(f"[AiService] {last_error}")
+
+        return "", last_error
 
     async def _call_openai(self, api_key: str, model: str, prompt: str) -> str:
         text, _ = await self._call_openai_with_err(api_key, model, prompt)

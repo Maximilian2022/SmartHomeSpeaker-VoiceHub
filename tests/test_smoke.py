@@ -228,6 +228,73 @@ class TestSmokeVoiceHub(unittest.TestCase):
             eval_urgent = dnd_service.evaluate(urgent=True)
             self.assertFalse(eval_urgent["active"])
 
+    def test_dnd_flush_grouped_by_target(self):
+        """DND保留解除時、同一宛先のみが要約され、本来のスピーカー宛てに再生されること"""
+        from app.services.dnd_service import _normalize_target_key
+        # 1. 宛先キー正規化の検証
+        self.assertEqual(_normalize_target_key(None), ("__default__",))
+        self.assertEqual(_normalize_target_key(""), ("__default__",))
+        self.assertEqual(_normalize_target_key("living"), ("living",))
+        self.assertEqual(_normalize_target_key("Living"), ("living",))
+        self.assertEqual(_normalize_target_key("kitchen, living"), ("kitchen", "living"))
+        self.assertEqual(_normalize_target_key(["living", "kitchen"]), ("kitchen", "living"))
+
+        # 2. フラッシュ時のグルーピング発話検証
+        dnd_service.clear_queue()
+        # リビング宛て 2件 (要約対象: threshold=2)
+        dnd_service.add_to_queue({"text": "リビング通知1", "targets": "Living"})
+        dnd_service.add_to_queue({"text": "リビング通知2", "targets": "living"})
+        # 寝室宛て 1件 (個別再生対象)
+        dnd_service.add_to_queue({"text": "寝室通知1", "targets": "Bedroom"})
+        # デフォルト宛て 1件 (個別再生対象: targets=None)
+        dnd_service.add_to_queue({"text": "デフォルト通知1", "targets": None})
+
+        spoken_calls = []
+
+        async def mock_speaker(text: str, targets=None, urgent: bool = True, source: str = None, source_label: str = None):
+            spoken_calls.append({"text": text, "targets": targets, "urgent": urgent, "source": source})
+
+        dnd_service.set_speaker_executor(mock_speaker)
+
+        with patch("app.services.dnd_service.settings_manager") as mock_mgr, \
+             patch("app.services.ai_service.ai_service.summarize_dnd_messages", new_callable=AsyncMock) as mock_ai:
+            mock_mgr.get.return_value = {
+                "dnd": {
+                    "aiSummaryEnabled": True,
+                    "aiSummaryThreshold": 2
+                }
+            }
+            mock_ai.return_value = "リビング通知が2件あります。"
+
+            # 実行
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                flushed_count = loop.run_until_complete(dnd_service.check_and_flush_queue())
+            finally:
+                loop.close()
+
+            self.assertEqual(flushed_count, 4)
+            # リビング宛て要約が1回呼ばれていること
+            mock_ai.assert_called_once_with(["リビング通知1", "リビング通知2"])
+
+            # 発話回数: リビング(要約1件) + 寝室(個別1件) + デフォルト(個別1件) = 計3回
+            self.assertEqual(len(spoken_calls), 3)
+
+            # 1件目: リビング (要約文・宛先は元のLiving)
+            self.assertIn("リビング通知が2件あります。", spoken_calls[0]["text"])
+            self.assertEqual(spoken_calls[0]["targets"], "Living")
+            self.assertEqual(spoken_calls[0]["source"], "dnd_queue")
+
+            # 2件目: 寝室 (個別文・宛先はBedroom)
+            self.assertEqual(spoken_calls[1]["text"], "寝室通知1")
+            self.assertEqual(spoken_calls[1]["targets"], "Bedroom")
+
+            # 3件目: デフォルト (個別文・宛先はNone)
+            self.assertEqual(spoken_calls[2]["text"], "デフォルト通知1")
+            self.assertIsNone(spoken_calls[2]["targets"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
