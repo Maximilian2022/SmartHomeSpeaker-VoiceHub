@@ -121,6 +121,16 @@ Homebridge をご利用のご家庭向けに、本システム専用のプラグ
 
 ---
 
+## 🤝 コミュニティと開発への参加
+
+バグ報告、新機能の提案、ドキュメントの改善、プルリクエストを心よりお待ちしております！
+
+- **質問・アイデアの相談**: お気軽に **[GitHub Discussions](https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/discussions)** へお寄せください。
+- **コントリビューション方針**: 開発環境のセットアップやコーディング規約については、**[コントリビューションガイド (CONTRIBUTING.md)](CONTRIBUTING.md)** をご覧ください。
+- **セキュリティの報告**: 脆弱性のご報告は公開 Issue ではなく、**[セキュリティポリシー (SECURITY.md)](SECURITY.md)** の案内に沿って非公開でご連絡をお願いいたします。
+
+---
+
 ## 📜 ライセンスと謝辞
 
 本プロジェクトは **[MIT License](LICENSE)** のもとで公開されています。
@@ -136,4 +146,5 @@ Homebridge をご利用のご家庭向けに、本システム専用のプラグ
 - **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** - Amazon Echo コントロールの知見
 - **[go2rtc](https://github.com/AlexxIT/go2rtc)** - ネットワークカメラへの双方向音声ストリーミング
 - **[aiomqtt](https://github.com/sbtinstruments/aiomqtt)** - 非同期 MQTT 通信基盤
+
 
