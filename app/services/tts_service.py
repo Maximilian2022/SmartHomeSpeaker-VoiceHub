@@ -543,11 +543,16 @@ class TtsService:
         with open(raw_path, "wb") as f:
             f.write(raw_bytes)
 
-        # 2. チャイムの結合
-        clean_chime = re.sub(r"[^a-zA-Z0-9_\-]", "", chime or "")
-        base_sound_dir = self.sound_dir.resolve()
-        chime_file = (self.sound_dir / f"{clean_chime}.mp3").resolve()
-        if clean_chime and clean_chime != "none" and chime_file.is_relative_to(base_sound_dir) and chime_file.is_file():
+        # 2. チャイムの結合 (ホワイトリスト照合により Path Injection を構造的に遮断)
+        ALLOWED_CHIMES = {
+            "alert": self.sound_dir / "alert.mp3",
+            "announce": self.sound_dir / "announce.mp3",
+            "bell": self.sound_dir / "bell.mp3",
+            "dingdong": self.sound_dir / "dingdong.mp3",
+        }
+        chime_key = str(chime or "").strip().lower()
+        chime_file = ALLOWED_CHIMES.get(chime_key)
+        if chime_file and chime_file.is_file():
             # FFmpeg concat フィルターで安全に結合
             cmd = [
                 "ffmpeg", "-y",

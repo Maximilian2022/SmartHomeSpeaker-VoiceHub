@@ -83,16 +83,27 @@ class DlnaService:
     async def _fetch_device_info(self, client: httpx.AsyncClient, location: str) -> Optional[Dict[str, Any]]:
         try:
             parsed_url = urlparse(location)
-            if parsed_url.scheme not in ("http", "https") or not parsed_url.hostname:
+            scheme = (parsed_url.scheme or "").lower()
+            hostname = (parsed_url.hostname or "").lower()
+            if scheme not in ("http", "https") or not hostname:
                 log.warning(f"[DLNA] 不正なスキームまたはホスト名の URL を拒絶 (SSRF防止): {location}")
                 return None
 
-            resp = await client.get(location)
+            # SSRF防止: ループバックおよびクラウドメタデータアドレスをブロック
+            if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"):
+                log.warning(f"[DLNA] ローカルホストまたはメタデータ宛のリクエストを拒絶 (SSRF防止): {location}")
+                return None
+
+            port = parsed_url.port or 80
+            path = parsed_url.path or "/"
+            query = f"?{parsed_url.query}" if parsed_url.query else ""
+            clean_url = f"{scheme}://{hostname}:{port}{path}{query}"
+
+            resp = await client.get(clean_url)
             if resp.status_code != 200:
                 return None
 
-            ip = parsed_url.hostname or ""
-            port = parsed_url.port or 80
+            ip = hostname
 
             root = ET.fromstring(resp.content)
 

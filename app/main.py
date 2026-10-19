@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -215,6 +216,10 @@ app.include_router(logs.router)
 # 音声キャッシュファイルの配信 (Google Cast 等の 304 Not Modified 再生停止バグを完全に防止)
 @app.api_route("/voice/{filename}", methods=["GET", "HEAD"])
 async def serve_voice_file(filename: str):
+    # パスインジェクション防止: 英数字、ハイフン、アンダースコア + .mp3 のみ許可
+    if not re.match(r"^[a-zA-Z0-9_\-]+\.mp3$", filename):
+        raise HTTPException(status_code=400, detail="Invalid voice filename format")
+
     safe_filename = Path(filename).name
     base_resolved = VOICE_DIR.resolve()
     filepath = (VOICE_DIR / safe_filename).resolve()
