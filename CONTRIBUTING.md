@@ -55,6 +55,8 @@ cp .my.env.sample .my.env
 # 3. コンテナのビルドと起動
 docker compose up --build
 ```
+※ リポジトリ内に `docker-compose.override.yml` が同梱されているため、`docker compose up` を実行するだけで自動的にローカルのソースコード（`./app`, `./public`）がコンテナにバインドマウントされ、コードの変更が即座に反映（ホットリロード開発）されます。
+
 ブラウザで `http://localhost:8080` を開いて動作を確認します。
 
 ### ローカル Python 環境で動かす場合

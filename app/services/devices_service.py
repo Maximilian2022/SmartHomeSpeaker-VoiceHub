@@ -1,34 +1,81 @@
 import asyncio
 import re
-import subprocess
+import threading
+import time
 from typing import List, Dict, Any, Optional
+from zeroconf import Zeroconf, ServiceBrowser, ServiceListener, InterfaceChoice, IPVersion
 from app.services.settings_service import settings_manager
 from app.services.alexa_service import alexa_service
 from app.services.homepod_service import homepod_service
 
 def decode_avahi_string(s: str) -> str:
-    r"""Avahi の \DDD (10進数バイトエスケープ) を UTF-8 デコード"""
-    if not s:
-        return ""
-    try:
-        byte_arr = bytearray()
-        i = 0
-        while i < len(s):
-            if s[i] == "\\" and i + 3 < len(s) and s[i+1:i+4].isdigit():
-                byte_arr.append(int(s[i+1:i+4]))
-                i += 4
-            else:
-                byte_arr.extend(s[i].encode("utf-8"))
-                i += 1
-        return byte_arr.decode("utf-8", errors="ignore")
-    except Exception:
-        return s
+    r"""後方互換用: 文字列をそのまま返却"""
+    return s or ""
+
+class CastServiceListener(ServiceListener):
+    def __init__(self, manager: "DeviceManager"):
+        self.manager = manager
+
+    def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        self._process_service(zc, type_, name)
+
+    def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        self._process_service(zc, type_, name)
+
+    def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        pass
+
+    def _process_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        try:
+            info = zc.get_service_info(type_, name)
+            if not info:
+                return
+
+            props = {}
+            for k, v in info.properties.items():
+                key = k.decode("utf-8", "ignore") if isinstance(k, bytes) else str(k)
+                val = v.decode("utf-8", "ignore") if isinstance(v, bytes) else str(v)
+                props[key] = val
+
+            # IPv4 アドレスを優先取得
+            ip = None
+            for addr in info.parsed_scoped_addresses():
+                if "." in addr:
+                    ip = addr
+                    break
+            if not ip:
+                return
+
+            port = info.port or 8009
+            fn = props.get("fn") or name.split(".")[0]
+            md = props.get("md") or "Google Cast"
+            is_group = (md == "Google Cast Group") or name.startswith("Google-Cast-Group")
+
+            key = f"group_{ip}_{port}" if is_group else ip
+            formatted_ip = f"{ip}:{port}" if is_group else ip
+
+            dev_data = {
+                "id": f"group_{port}_{ip.replace('.', '_')}" if is_group else f"dev_{ip.replace('.', '_')}",
+                "name": fn,
+                "ip": formatted_ip,
+                "host": ip,
+                "port": port,
+                "model": md,
+                "isGroup": is_group,
+                "type": "google"
+            }
+
+            self.manager.update_device(key, dev_data)
+        except Exception as e:
+            print(f"[DeviceManager] Cast mDNS process error: {e}")
 
 class DeviceManager:
     def __init__(self):
         self.devices: Dict[str, Dict[str, Any]] = {}
-        # 初回スキャン
-        self.scan_google_devices()
+        self._lock = threading.Lock()
+        self._zc: Optional[Zeroconf] = None
+        self._browser: Optional[ServiceBrowser] = None
+        self._start_zeroconf()
 
     def get_default_device_ip(self) -> str:
         configured = settings_manager.get_default_device_id()
@@ -256,60 +303,47 @@ class DeviceManager:
 
         return None
 
-    def scan_google_devices(self):
-        """avahi-browse による Google Cast デバイス・グループ自動検出"""
+    def _start_zeroconf(self):
         try:
-            res = subprocess.run(
-                ["avahi-browse", "-r", "-t", "-p", "_googlecast._tcp"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if res.returncode != 0 or not res.stdout:
-                return
-
-            for line in res.stdout.splitlines():
-                parts = line.split(";")
-                if len(parts) > 7 and parts[0] == "=" and parts[2] == "IPv4" and parts[7]:
-                    ip = parts[7]
-                    port = int(parts[8]) if len(parts) > 8 and parts[8].isdigit() else 8009
-                    txt_raw = parts[9] if len(parts) > 9 else ""
-                    name = f"Cast-{ip}"
-                    model = "Google Cast"
-
-                    fn_m = re.search(r'"fn=([^"]+)"', txt_raw)
-                    if fn_m:
-                        name = decode_avahi_string(fn_m.group(1))
-                    elif len(parts) > 3 and parts[3]:
-                        name = decode_avahi_string(parts[3])
-
-                    md_m = re.search(r'"md=([^"]+)"', txt_raw)
-                    if md_m:
-                        model = decode_avahi_string(md_m.group(1))
-
-                    is_group = (model == "Google Cast Group") or (len(parts) > 3 and parts[3].startswith("Google-Cast-Group"))
-                    key = f"group_{ip}_{port}" if is_group else ip
-                    formatted_ip = f"{ip}:{port}" if is_group else ip
-
-                    if key in self.devices:
-                        existing = self.devices[key]
-                        if fn_m:
-                            existing["name"] = name
-                        existing["port"] = port
-                        existing["isGroup"] = is_group
-                        continue
-
-                    self.devices[key] = {
-                        "id": f"group_{port}_{ip.replace('.', '_')}" if is_group else f"dev_{ip.replace('.', '_')}",
-                        "name": name,
-                        "ip": formatted_ip,
-                        "host": ip,
-                        "port": port,
-                        "model": model,
-                        "isGroup": is_group,
-                        "type": "google"
-                    }
+            if self._zc is None:
+                self._zc = Zeroconf(interfaces=InterfaceChoice.All, ip_version=IPVersion.All)
+                self._listener = CastServiceListener(self)
+                self._browser = ServiceBrowser(self._zc, "_googlecast._tcp.local.", self._listener)
         except Exception as e:
-            print(f"[DeviceManager] Avahi scan error: {e}")
+            print(f"[DeviceManager] Zeroconf start error: {e}")
+
+    def update_device(self, key: str, data: Dict[str, Any]):
+        with self._lock:
+            if key in self.devices:
+                existing = self.devices[key]
+                if data.get("name"):
+                    existing["name"] = data["name"]
+                existing["port"] = data.get("port", existing.get("port", 8009))
+                existing["isGroup"] = data.get("isGroup", existing.get("isGroup", False))
+                existing["model"] = data.get("model", existing.get("model"))
+            else:
+                self.devices[key] = data
+
+    def scan_google_devices(self, timeout: float = 2.0):
+        """Zeroconf によるデバイス再スキャン（待機してmDNSパケット収集）"""
+        try:
+            if self._zc is None:
+                self._start_zeroconf()
+            # バックグラウンドリスナーがパケットを処理する待機時間
+            time.sleep(timeout)
+        except Exception as e:
+            print(f"[DeviceManager] Zeroconf scan error: {e}")
+
+    def close(self):
+        """リソース解放"""
+        try:
+            if self._browser:
+                self._browser.cancel()
+                self._browser = None
+            if self._zc:
+                self._zc.close()
+                self._zc = None
+        except Exception as e:
+            print(f"[DeviceManager] Zeroconf close error: {e}")
 
 device_manager = DeviceManager()

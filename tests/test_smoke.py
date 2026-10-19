@@ -294,7 +294,56 @@ class TestSmokeVoiceHub(unittest.TestCase):
             self.assertEqual(spoken_calls[2]["text"], "デフォルト通知1")
             self.assertIsNone(spoken_calls[2]["targets"])
 
+    def test_devices_zeroconf_parsing_and_lookup(self):
+        """Zeroconf によるデバイス・グループ登録と find_device 照合が正常に行われること"""
+        import threading
+        from app.services.devices_service import DeviceManager, CastServiceListener
+
+        dm = DeviceManager.__new__(DeviceManager)
+        dm.devices = {}
+        dm._lock = threading.Lock()
+        dm._zc = None
+        dm._browser = None
+
+        # 個別デバイス登録テスト
+        dev_mock = {
+            "id": "dev_192_168_11_50",
+            "name": "書斎スピーカー",
+            "ip": "192.168.11.50",
+            "host": "192.168.11.50",
+            "port": 8009,
+            "model": "Google Nest Mini",
+            "isGroup": False,
+            "type": "google"
+        }
+        dm.update_device("192.168.11.50", dev_mock)
+
+        # グループ登録テスト
+        grp_mock = {
+            "id": "group_32094_192_168_11_50",
+            "name": "家中グループ",
+            "ip": "192.168.11.50:32094",
+            "host": "192.168.11.50",
+            "port": 32094,
+            "model": "Google Cast Group",
+            "isGroup": True,
+            "type": "google"
+        }
+        dm.update_device("group_192.168.11.50_32094", grp_mock)
+
+        # 検索照合
+        found_dev = dm.find_device("書斎スピーカー")
+        self.assertIsNotNone(found_dev)
+        self.assertEqual(found_dev["host"], "192.168.11.50")
+        self.assertFalse(found_dev["isGroup"])
+
+        found_grp = dm.find_device("家中グループ")
+        self.assertIsNotNone(found_grp)
+        self.assertEqual(found_grp["port"], 32094)
+        self.assertTrue(found_grp["isGroup"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

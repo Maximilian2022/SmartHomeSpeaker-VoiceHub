@@ -34,27 +34,34 @@ Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワー
 
 ## 🚀 はじめかた
 
-最も手軽でおすすめなのは、Docker Compose を利用した起動です。
+最も手軽でおすすめなのは、Docker Compose を利用した起動です。Docker Hub に公開されている公式マルチアーキテクチャイメージ（amd64 / arm64 対応）により、Raspberry Pi や NAS、PC でもコンパイル待ちなしで即座に起動できます。
 
-### 1. 準備するもの
-- Docker および Docker Compose が動作する環境（PC、Raspberry Pi、NAS、自宅サーバー等）
-- スピーカー機器と同じ家庭内ネットワーク (LAN) への接続
+### 方法 A: 一般ユーザー向け（最も簡単・リポジトリの clone 不要）
 
-### 2. 設定ファイルの作成
-サンプル設定ファイルをコピーして、設定用のファイルを作成します。
+適当な作業ディレクトリを作成し、`docker-compose.yml` をダウンロードして起動するだけです。
 
 ```bash
-cp .my.env.sample .my.env
+# 1. 作業ディレクトリの作成
+mkdir -p voicehub && cd voicehub
+
+# 2. docker-compose.yml のダウンロード
+curl -O https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/docker-compose.yml
+
+# 3. コンテナの起動（Docker Hub から自動 pull して即起動）
+docker compose up -d
 ```
 
-※ 通常は初期設定のままでも起動いただけます。必要に応じてポート番号やスピーカーのIPアドレス等を編集してください。
+### 方法 B: 開発者向け（ソースコードを変更・開発したい場合）
 
-### 3. 起動
-Docker Compose コマンドでバックエンドサーバーを起動します。
+リポジトリをクローンして起動すると、自動的にローカルビルドとソースコードのバインドマウントが適用され、コードのホットリロード開発が行えます。
 
 ```bash
+git clone https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub.git
+cd SmartHomeSpeaker-VoiceHub
 docker compose up -d --build
 ```
+
+---
 
 起動が完了したら、ブラウザから以下の URL にアクセスしてください。
 

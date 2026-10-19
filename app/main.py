@@ -93,6 +93,8 @@ async def lifespan(app: FastAPI):
     # 終了時処理 (明示的なシステム終了/シャットダウンバナーログ)
     sys_log.info("🛑 [VoiceHub] システム終了 / シャットダウン処理開始 (Shutting down...)")
     await mqtt_service.stop()
+    from app.services.devices_service import device_manager
+    device_manager.close()
     sys_log.info("✅ [VoiceHub] シャットダウン完了")
 
 

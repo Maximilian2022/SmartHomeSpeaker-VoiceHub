@@ -1,6 +1,6 @@
 services:
   voice-hub:
-    build: .
+    image: maximilian2022/smarthomespeaker-voicehub:latest
     container_name: SmartSpeaker-VoiceHub
     restart: unless-stopped
     network_mode: "host"
@@ -8,21 +8,16 @@ services:
       - path: ./.my.env
         required: false
     volumes:
-      - ./entrypoint.sh:/app/entrypoint.sh
-      - ./app:/app/app
-      - ./public:/app/public
       - voice_data:/app/data
       - voice_cache:/app/public/voice
       - voice_logs:/logs
-      # ホストの D-Bus / Avahi ソケット（デバイス自動検出用）
-      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
-      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/api/status > /dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
 
   cloudflared:
     image: cloudflare/cloudflared:latest

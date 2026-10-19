@@ -14,7 +14,6 @@ RUN echo "precedence ::ffff:0:0/96 100" > /etc/gai.conf
 
 # 必須システムパッケージのインストール (Python のみ)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    avahi-utils \
     jq \
     curl \
     tzdata \
