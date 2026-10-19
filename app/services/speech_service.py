@@ -96,6 +96,14 @@ class SpeechService:
 
         if dnd_result.get("active"):
             action = dnd_result.get("action", "skip")
+            target_str = ",".join(targets) if isinstance(targets, list) else str(targets or "デフォルト")
+            dnd_service.record_history(
+                text=text,
+                reason=dnd_result.get("reason", "DND"),
+                action=action,
+                target=target_str
+            )
+
             if action == "skip":
                 self.record_history({
                     "text": text,
@@ -235,22 +243,29 @@ class SpeechService:
             return {"status": "error", "message": "No valid target devices found"}
 
         # 4. 音声合成 (TTS)
-        opt_voice = voice or "ja-JP-NanamiNeural"
-        opt_rate = rate or speed or "+0%"
-        opt_pitch = pitch or "+0Hz"
-        opt_chime = chime or settings_manager.get().get("chime", "dingdong")
+        # 宛先がすべて Alexa の場合、MP3 音声は一切使用されないため合成処理・チャイム結合をスキップして高速化
+        only_alexa = all(d.get("type") == "alexa" for d in unique_targets)
+        if only_alexa:
+            log.info(f"Target is exclusively Alexa device(s) ({len(unique_targets)} dev). Skipping TTS audio synthesis & chime concatenation.")
+            speech = {"filename": "", "filepath": "", "duration": 0.0, "cached": False, "voice": "alexa", "fallback": False}
+            audio_url = ""
+        else:
+            opt_voice = voice or "ja-JP-NanamiNeural"
+            opt_rate = rate or speed or "+0%"
+            opt_pitch = pitch or "+0Hz"
+            opt_chime = chime or settings_manager.get().get("chime", "dingdong")
 
-        speech = await tts_service.synthesize(
-            text=text,
-            voice=opt_voice,
-            rate=opt_rate,
-            pitch=opt_pitch,
-            chime=opt_chime,
-            urgent=urgent
-        )
+            speech = await tts_service.synthesize(
+                text=text,
+                voice=opt_voice,
+                rate=opt_rate,
+                pitch=opt_pitch,
+                chime=opt_chime,
+                urgent=urgent
+            )
+            audio_url = f"{self.server_base_url}/voice/{speech['filename']}"
 
         effective_vol = self._get_effective_volume(volume_level)
-        audio_url = f"{self.server_base_url}/voice/{speech['filename']}"
 
         # 5. 各プラットフォームへの並列ディスパッチ
         tasks = []

@@ -159,14 +159,18 @@ class MCPService:
             del self.sessions[session_id]
             log.info(f"[MCP] Session removed: {session_id}")
 
-    def verify_auth(self, token_candidate: Optional[str], client_ip: Optional[str] = None) -> bool:
-        """Webhook トークンとの照合 (宅内プライベートIPからのアクセスは未指定時免除、外部は必須)"""
-        configured_token = settings_manager.get().get("webhookToken", "").strip()
+    def verify_auth(self, token_candidate: Optional[str], client_ip: Optional[str] = None, is_tunnel: bool = False) -> bool:
+        """Webhook トークンとの照合 (Cloudflare Tunnel 経由時はトークン必須。宅内LAN直アクセスのみ未指定時免除)"""
+        from app.config import settings
+        configured_token = settings_manager.get().get("webhookToken", "").strip() or (settings.webhook_token or "").strip()
         if not configured_token:
             return True
         if token_candidate:
             return hmac.compare_digest(token_candidate, configured_token)
-        # トークン未指定の場合: プライベートIP（宅内LAN）からのアクセスであれば免除
+        # トンネル経由の場合はトークン必須（免除不可）
+        if is_tunnel:
+            return False
+        # トークン未指定の場合: プライベートIP（宅内LAN直接）からのアクセスであれば免除
         if client_ip and is_private_ip(client_ip):
             return True
         return False
@@ -321,7 +325,7 @@ class MCPService:
                 dnd_conf = settings_manager.get().get("dnd", {})
                 if enabled:
                     now_ts = time.time()
-                    until_ts = (now_ts + (float(duration) * 60)) if duration else None
+                    until_ts = (now_ts + (float(duration) * 60)) if duration else (now_ts + (365 * 24 * 3600))
                     settings_manager.update({
                         "dnd": {
                             **dnd_conf,

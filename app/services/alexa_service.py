@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from app.config import DATA_DIR, BASE_DIR, settings
@@ -24,6 +25,7 @@ class AlexaService:
         self.proxy_url: Optional[str] = None
         self.proxy_error: Optional[str] = None
         self.devices_cache: List[Dict[str, Any]] = []
+        self._last_devices_fetch_time: float = 0.0
         # Amazon Alexa レートリミット (Rate exceeded) 防止用セマフォ (最大2並列)
         self._semaphore = asyncio.Semaphore(2)
 
@@ -186,10 +188,28 @@ class AlexaService:
             log.error(f"❌ Failed to speak to Alexa device {clean_name}: {e}")
             return False
 
-    async def list_devices(self) -> List[Dict[str, Any]]:
+    async def set_volume(self, device_name: str, volume: int) -> bool:
+        clean_name = device_name.replace("alexa:", "").strip()
+        clean_name = re.sub(r"^Alexa \((.+)\)$", r"\1", clean_name)
+        vol_int = max(0, min(100, int(volume)))
+        try:
+            await self._run_command(["-d", clean_name, "-e", f"vol:{vol_int}"])
+            log.info(f"✅ Successfully set Alexa volume to {vol_int}%: {clean_name}")
+            return True
+        except Exception as e:
+            log.error(f"❌ Failed to set Alexa volume for {clean_name}: {e}")
+            return False
+
+    async def list_devices(self, force_refresh: bool = False, cache_ttl: float = 300.0) -> List[Dict[str, Any]]:
         if not self.is_configured():
             log.info("Alexa not configured, skipping device listing.")
             return []
+
+        now = time.time()
+        if not force_refresh and self.devices_cache and (now - self._last_devices_fetch_time < cache_ttl):
+            log.debug(f"Returning {len(self.devices_cache)} cached Alexa devices (TTL: {int(cache_ttl - (now - self._last_devices_fetch_time))}s left)")
+            return self.devices_cache
+
         try:
             out = await self._run_command(["-a"], retry_on_rate_limit=False)
             devices = []
@@ -209,10 +229,11 @@ class AlexaService:
                     "isGroup": is_grp
                 })
             self.devices_cache = devices
+            self._last_devices_fetch_time = now
             log.info(f"Discovered {len(devices)} Alexa device(s) (including groups).")
             return devices
         except Exception as e:
             log.error(f"Failed to list Alexa devices: {e}")
-            return []
+            return self.devices_cache
 
 alexa_service = AlexaService()

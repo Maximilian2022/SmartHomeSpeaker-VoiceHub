@@ -9,12 +9,18 @@ if [ ! -f "/app/data/go2rtc.yaml" ]; then
 api:
   listen: "127.0.0.1:1984"
 rtsp:
-  listen: ":8554"
+  listen: "127.0.0.1:8554"
 webrtc:
-  listen: ":8555"
+  listen: "127.0.0.1:8555"
 EOF
 fi
-/usr/local/bin/go2rtc -c /app/data/go2rtc.yaml &
+(
+    while true; do
+        /usr/local/bin/go2rtc -c /app/data/go2rtc.yaml || true
+        echo "[VoiceHub Entrypoint] go2rtc exited, restarting in 2s..."
+        sleep 2
+    done
+) &
 
 # go2rtc の起動待ち (最大5秒)
 for i in {1..10}; do

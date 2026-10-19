@@ -27,9 +27,12 @@ async def get_dnd_status():
 @router.post("/api/dnd/mute")
 async def mute_dnd(req: MuteRequest = MuteRequest()):
     now_ts = time.time()
-    until_ts = req.until
-    if req.durationMinutes:
+    if req.until:
+        until_ts = req.until
+    elif req.durationMinutes:
         until_ts = now_ts + (req.durationMinutes * 60)
+    else:
+        until_ts = now_ts + (365 * 24 * 3600)  # 時間省略時は無期限手動ミュート
 
     dnd_conf = settings_manager.get().get("dnd", {})
     settings_manager.update({

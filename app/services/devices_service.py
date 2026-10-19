@@ -82,7 +82,10 @@ class DeviceManager:
         if alexa_service.is_enabled():
             try:
                 alexa_devs = await alexa_service.list_devices()
-                results.extend(alexa_devs)
+                for ad in alexa_devs:
+                    d = dict(ad)
+                    d["isDefault"] = (d.get("ip") == default_ip or d.get("id") == default_ip)
+                    results.append(d)
             except Exception as e:
                 print(f"[DeviceManager] Alexa list error: {e}")
 
@@ -113,7 +116,7 @@ class DeviceManager:
                         "model": dev.get("model") or ("ONVIF Speaker" if dtype == "onvif" else "DLNA Speaker"),
                         "type": dtype,
                         "username": dev.get("username"),
-                        "password": dev.get("password"),
+                        "hasPassword": bool(dev.get("password")),
                         "controlUrl": dev.get("controlUrl"),
                         "renderingControlUrl": dev.get("renderingControlUrl"),
                         "isDefault": (prefix == default_ip)
@@ -170,16 +173,33 @@ class DeviceManager:
                 "type": "homepod"
             }
 
-        # Alexa
-        if norm.startswith("alexa:") or "alexa" in norm_lower or "echo" in norm_lower:
-            alexa_target = norm.replace("alexa:", "")
+        # Alexa (二重ラップ防止 ＆ キャッシュ照合)
+        m_alexa = re.match(r"^Alexa \((.+)\)$", norm, re.IGNORECASE)
+        clean_alexa = m_alexa.group(1) if m_alexa else norm.replace("alexa:", "")
+
+        if norm.startswith("alexa:") or "alexa" in norm_lower or "echo" in norm_lower or m_alexa:
             return {
-                "id": f"alexa_{alexa_target.replace(' ', '_')}",
-                "name": f"Alexa ({alexa_target})",
-                "ip": f"alexa:{alexa_target}",
+                "id": f"alexa_{clean_alexa.replace(' ', '_')}",
+                "name": f"Alexa ({clean_alexa})",
+                "ip": f"alexa:{clean_alexa}",
                 "model": "Amazon Echo",
                 "type": "alexa"
             }
+
+        # Alexa キャッシュ内の名前照合（カスタムグループ名等で "echo" や "alexa" を含まない場合でもヒットさせる）
+        if alexa_service.is_enabled() and alexa_service.devices_cache:
+            for ad in alexa_service.devices_cache:
+                raw_name = ad.get("rawName") or ad.get("name", "")
+                ad_name = ad.get("name", "")
+                if norm_lower in (raw_name.lower(), ad_name.lower(), ad.get("id", "").lower()):
+                    c_name = raw_name or ad_name.replace("Alexa (", "").rstrip(")")
+                    return {
+                        "id": ad.get("id") or f"alexa_{c_name.replace(' ', '_')}",
+                        "name": f"Alexa ({c_name})",
+                        "ip": f"alexa:{c_name}",
+                        "model": "Amazon Echo",
+                        "type": "alexa"
+                    }
 
         # 登録済み ONVIF / DLNA の名前一致
         for d in reg_devices:

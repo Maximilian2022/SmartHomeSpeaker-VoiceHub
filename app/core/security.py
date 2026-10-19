@@ -37,16 +37,18 @@ def check_tunnel_access(request: Request):
             )
 
 def validate_webhook_token(request: Request, body_token: Optional[str] = None):
-    expected_token = settings.webhook_token
+    from app.services.settings_service import settings_manager
+    expected_token = settings_manager.get().get("webhookToken") or settings.webhook_token
     if not expected_token:
         return True
 
-    # 1. 宅内ブラウザGUIからの同一オリジンアクセスは自動免除
-    client_host = request.client.host if request.client else ""
-    sec_fetch_site = request.headers.get("sec-fetch-site", "")
-    referer = request.headers.get("referer", "")
-    if is_private_ip(client_host) and (sec_fetch_site in ("same-origin", "same-site") or referer):
-        return True
+    # 1. 宅内ブラウザGUIからの同一オリジンアクセスは自動免除 (※Cloudflare Tunnel 経由時は絶対に免除しない)
+    if not is_tunnel_request(request):
+        client_host = request.client.host if request.client else ""
+        sec_fetch_site = request.headers.get("sec-fetch-site", "")
+        referer = request.headers.get("referer", "")
+        if is_private_ip(client_host) and (sec_fetch_site in ("same-origin", "same-site") or (referer and is_private_ip(referer.split("://")[-1].split(":")[0].split("/")[0]))):
+            return True
 
     # 2. Authorization: Bearer <token>
     auth_header = request.headers.get("authorization", "")

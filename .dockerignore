@@ -22,9 +22,12 @@ env/
 scratch/
 .agents/
 
+# Data & Persistence
+data/
+
 # Logs & Temporary Files
 *.log
-logs/*.log
+logs/
 *.bak
 *.patch
 test_*.mp3

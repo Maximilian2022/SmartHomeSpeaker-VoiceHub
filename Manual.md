@@ -879,10 +879,10 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
   Cloudflare Tunnel 判定、管理者セッション Cookie 検証、Webhook Bearer トークン認証を担当。
 - **`deduplication.py`**:
   メモリ内キャッシュを用いた連呼防止エンジン。同一クライアントからの同一テキストをクールダウン秒数判定して重複排除。
-- **`sync_engine.py`**:
-  各スピーカーの RTT 計測結果に基づき、指数移動平均（EMA）で音ズレ補正オフセットを動的に計算。
-- **`queue_manager.py`**:
-  `asyncio.Queue` とディスク上の WAL（Write-Ahead Log）ファイルを同期させ、プロセス再起動時にも未処理メッセージを安全に復元。
+- **`sync_offsets` (静的ディレイ制御)**:
+  `settings.json` の `syncOffsets` 設定に基づき、Alexa / HomePod / Google Cast の発話タイミングを静的オフセットで調整。
+- **`dnd_service` (キュー制御)**:
+  `asyncio.Queue` を用いた DND 発動中メッセージのインメモリ保留および解除時の一括フラッシュ。
 
 ### 15.2 サービスモジュール (`app/services/`)
 - **`tts_service.py`**:

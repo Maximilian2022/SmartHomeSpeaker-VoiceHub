@@ -420,8 +420,11 @@ class SettingsManager:
         return self.settings
 
     def update(self, new_data: Dict[str, Any]) -> Dict[str, Any]:
+        OVERWRITE_COLLECTIONS = {"deviceGroups", "ipAliases", "dndScheduleRules"}
         for k, v in new_data.items():
-            if isinstance(v, dict) and k in self.settings and isinstance(self.settings[k], dict):
+            if k in OVERWRITE_COLLECTIONS:
+                self.settings[k] = v
+            elif isinstance(v, dict) and k in self.settings and isinstance(self.settings[k], dict):
                 self.settings[k] = {**self.settings[k], **v}
             else:
                 self.settings[k] = v

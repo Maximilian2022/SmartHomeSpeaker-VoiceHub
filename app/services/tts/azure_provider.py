@@ -97,7 +97,7 @@ class AzureTtsProvider(BaseTtsProvider):
                             self._cached_voices = voices
                             return voices
             except Exception as e:
-                logger.warning(f"[AzureTtsProvider] Azure API 話者動的取得失敗、プリセットを使用: {e}")
+                log.warning(f"[AzureTtsProvider] Azure API 話者動的取得失敗、プリセットを使用: {e}")
 
         # フォールバックプリセット
         preset = []

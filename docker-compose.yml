@@ -17,16 +17,28 @@ services:
       # ホストの D-Bus / Avahi ソケット（デバイス自動検出用）
       - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/api/status > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared-SmartSpeaker-VoiceHub
     restart: unless-stopped
     network_mode: "host"
-    command: tunnel --no-autoupdate run
+    command: tunnel --no-autoupdate --metrics 127.0.0.1:20245 run
     env_file:
       - path: ./.my.env
         required: false
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:20245", "ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 volumes:
   voice_data:

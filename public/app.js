@@ -11,8 +11,35 @@ document.addEventListener('DOMContentLoaded', () => {
     schedules: [],
     history: [],
     historyFilter: 'all',
-    historySearch: ''
+    historySearch: '',
+    settings: null,
+    settingsPromise: null
   };
+
+  // 設定のシングルトン一括取得 (初期ロード時の多重fetch統合)
+  async function fetchSettings(forceRefresh = false) {
+    if (!forceRefresh && state.settings) {
+      return state.settings;
+    }
+    if (!forceRefresh && state.settingsPromise) {
+      return state.settingsPromise;
+    }
+    state.settingsPromise = fetch('/api/settings')
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        state.settings = data;
+        state.settingsPromise = null;
+        return data;
+      })
+      .catch(err => {
+        state.settingsPromise = null;
+        throw err;
+      });
+    return state.settingsPromise;
+  }
 
   // DOM要素
   const el = {
@@ -2754,9 +2781,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // カレンダー設定の読み込み
   async function loadCalendarSettings() {
     try {
-      const res = await fetch('/api/settings');
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await fetchSettings();
+      if (!data) return;
       const cal = data.calendar || {};
 
       state.calendarData = {
@@ -3530,9 +3556,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadDndSettings() {
     try {
-      const res = await fetch('/api/settings');
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await fetchSettings();
+      if (!data) return;
       const dnd = data.dnd || {};
       state.dndConfig = dnd;
 
@@ -4233,9 +4258,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ================= 8. 拡張・システム設定 (チャイム、重複ブロック、カスタムグループ、自動音量、IPエイリアス) =================
   async function loadSettings() {
     try {
-      const res = await fetch('/api/settings');
-      if (!res.ok) throw new Error('設定取得失敗');
-      const data = await res.json();
+      const data = await fetchSettings();
       state.settings = data;
       state.ipAliases = data.ipAliases || {};
       state.deviceGroups = data.deviceGroups || {};
@@ -6513,7 +6536,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const badge = document.getElementById('disasterStatusBadge');
       const statusText = document.getElementById('disasterStatusText');
       if (statusText) {
-        if (status.wsConnected) {
+        const isConnected = status.isWsConnected ?? status.connected ?? status.wsConnected ?? false;
+        if (isConnected) {
           statusText.textContent = 'P2P地震速報: 接続中 (リアルタイム監視)';
           if (badge) badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
         } else {

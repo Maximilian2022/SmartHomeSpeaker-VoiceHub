@@ -368,8 +368,11 @@ class OnvifService:
         await asyncio.sleep(delay_sec)
         try:
             async with httpx.AsyncClient(timeout=4.0) as client:
+                # 1. アクティブなコンシューマ切断
                 await client.post(f"{self.go2rtc_api_url}/api/streams", params={"dst": stream_name, "src": ""})
-                log.info(f"Stream session cleared for {stream_name}")
+                # 2. カメラのRTSP認証情報を含むストリーム定義自体の削除 (情報漏洩防止)
+                await client.delete(f"{self.go2rtc_api_url}/api/streams", params={"src": stream_name})
+                log.info(f"Stream session and definition cleared for {stream_name}")
         except Exception as e:
             log.warning(f"ONVIF stream cleanup warning for {stream_name}: {e}")
 

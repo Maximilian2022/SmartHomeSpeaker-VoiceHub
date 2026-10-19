@@ -111,6 +111,7 @@ class DisasterService:
         self._last_processed_earthquake_id: Optional[str] = None
         self._active_eew_events: Dict[str, Dict[str, Any]] = {}
         self._last_known_warnings: set = set()
+        self._is_first_warning_check: bool = True
         self.area_data_cache: Optional[Dict[str, Any]] = None
         self.is_ws_connected: bool = False
 
@@ -246,18 +247,22 @@ class DisasterService:
                         temp_max = temps[0]
 
                 # 4. アドバイス生成
+                daily_conf = settings.get("dailyWeather", {})
+                include_advice = daily_conf.get("includeAdvice", True)
                 advice = ""
-                if max_pop >= 50:
-                    advice = "傘を必ずお持ちください。"
-                elif max_pop >= 30:
-                    advice = "折りたたみ傘があると安心です。"
-                elif temp_max is not None and temp_max >= 30:
-                    advice = "熱中症対策を万全にしてください。"
-                elif temp_min is not None and temp_min <= 5:
-                    advice = "防寒対策をしっかりしてお出かけください。"
+                if include_advice:
+                    if max_pop >= 50:
+                        advice = "傘を必ずお持ちください。"
+                    elif max_pop >= 30:
+                        advice = "折りたたみ傘があると安心です。"
+                    elif temp_max is not None and temp_max >= 30:
+                        advice = "熱中症対策を万全にしてください。"
+                    elif temp_min is not None and temp_min <= 5:
+                        advice = "防寒対策をしっかりしてお出かけください。"
 
                 temp_str = f"、最高気温は{temp_max}度" if temp_max is not None else ""
-                summary_text = f"今日の{city_name}の天気は{today_weather}{temp_str}、降水確率は{max_pop}%です。{advice}"
+                advice_str = f" {advice}" if advice else ""
+                summary_text = f"今日の{city_name}の天気は{today_weather}{temp_str}、降水確率は{max_pop}%です。{advice_str}".strip()
 
                 return {
                     "areaName": city_name,
@@ -374,7 +379,37 @@ class DisasterService:
             return
 
         hypocenter = eq.get("hypocenter", {}).get("name", "各地")
-        scale_text = SCALE_MAP.get(max_scale, f"震度{max_scale // 10}")
+        user_area = settings.get("area", {})
+        target_scope = eq_config.get("targetScope", "all")
+        target_pref = user_area.get("prefName", "")
+
+        display_scale = max_scale
+        if target_scope == "local" and target_pref:
+            points = data.get("points", [])
+            matched_point = False
+            local_max = 0
+            if points:
+                for p in points:
+                    p_pref = p.get("pref", "")
+                    p_addr = p.get("addr", "")
+                    if target_pref in p_pref or p_pref in target_pref or target_pref in p_addr:
+                        p_scale = int(p.get("scale", 0))
+                        if p_scale > local_max:
+                            local_max = p_scale
+                if local_max >= min_scale:
+                    matched_point = True
+                    display_scale = local_max
+
+            if not matched_point:
+                if (target_pref in hypocenter or hypocenter in target_pref) and max_scale >= min_scale:
+                    matched_point = True
+                    display_scale = max_scale
+
+            if not matched_point:
+                log.info(f"Quake report ignored: targetScope=local ({target_pref}) did not match points or hypocenter ({hypocenter}).")
+                return
+
+        scale_text = SCALE_MAP.get(display_scale, f"震度{display_scale // 10}")
         text = f"地震情報です。{hypocenter}で最大{scale_text}の地震が発生しました。"
         log.warning(f"Quake report alert: {text}")
         await self.speak(text=text, urgent=bool(eq_config.get("reportUrgent", False)))
@@ -387,7 +422,9 @@ class DisasterService:
                 await self.check_weather_warnings()
             except Exception as e:
                 log.warning(f"Weather warning poll error: {e}")
-            await asyncio.sleep(300) # 5分ごと
+            settings = settings_manager.get().get("disaster", {})
+            interval_m = int(settings.get("weatherWarning", {}).get("checkIntervalMinutes", 5))
+            await asyncio.sleep(max(1, interval_m) * 60)
 
     async def check_weather_warnings(self):
         settings = settings_manager.get().get("disaster", {})
@@ -434,6 +471,13 @@ class DisasterService:
                     warn_info = JMA_WARNING_CODES.get(code)
                     if warn_info and warn_info.get("level") in allowed_levels:
                         current_warnings.add(warn_info["name"])
+
+            # 初回ポーリング時は既存警報の音声通知を抑制し、ベースラインとして記録するのみ
+            if self._is_first_warning_check:
+                self._last_known_warnings = current_warnings
+                self._is_first_warning_check = False
+                log.info(f"Initial weather warnings baseline recorded: {current_warnings}")
+                return
 
             # 差分判定
             new_warnings = current_warnings - self._last_known_warnings

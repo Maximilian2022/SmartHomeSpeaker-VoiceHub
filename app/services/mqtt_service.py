@@ -326,6 +326,18 @@ class MQTTBrokerWorker:
                     }
                 })
                 log.info(f"[MQTT Worker:{self.name} -> DND] Enabled DND mode")
+            elif cmd.isdigit() and int(cmd) > 0:
+                mins = int(cmd)
+                now_ts = time.time()
+                until_ts = now_ts + (mins * 60)
+                settings_manager.update({
+                    "dnd": {
+                        **dnd_conf,
+                        "manualUntil": until_ts,
+                        "manualReason": f"MQTT ({self.name}) からの {mins}分間タイマーミュート"
+                    }
+                })
+                log.info(f"[MQTT Worker:{self.name} -> DND] Enabled DND mode for {mins} minutes")
             elif cmd in ("OFF", "FALSE", "0", "DISABLE"):
                 settings_manager.update({
                     "dnd": {

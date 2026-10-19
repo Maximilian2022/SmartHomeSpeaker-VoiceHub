@@ -113,7 +113,7 @@ class GcpTtsProvider(BaseTtsProvider):
                             self._cached_voices = voices
                             return voices
             except Exception as e:
-                logger.warning(f"[GcpTtsProvider] GCP API 話者動的取得失敗、プリセットを使用: {e}")
+                log.warning(f"[GcpTtsProvider] GCP API 話者動的取得失敗、プリセットを使用: {e}")
 
         # フォールバックプリセット
         preset = []

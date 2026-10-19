@@ -5,6 +5,8 @@ from fastapi import APIRouter, Request, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
 from app.services.mcp_service import mcp_service, MCPSession
+from app.core.security import is_tunnel_request
+from app.routers.speech import extract_client_ip
 from app.core.logger import get_logger
 
 router = APIRouter()
@@ -33,16 +35,17 @@ def resolve_or_create_session(request: Request, explicit_id: Optional[str] = Non
         if session:
             return session
 
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = extract_client_ip(request)
     user_agent = request.headers.get("user-agent", "Unknown MCP Client")
     return mcp_service.create_session(client_ip, user_agent)
 
 async def handle_jsonrpc_post(request: Request, explicit_id: Optional[str] = None) -> Response:
     """Streamable HTTP および messages エンドポイント共通の JSON-RPC POST ハンドラ"""
     token = get_token_from_request(request)
-    client_ip = request.client.host if request.client else "unknown"
-    if not mcp_service.verify_auth(token, client_ip):
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP token")
+    client_ip = extract_client_ip(request)
+    is_tunnel = is_tunnel_request(request)
+    if not mcp_service.verify_auth(token, client_ip, is_tunnel=is_tunnel):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing MCP token")
 
     session = resolve_or_create_session(request, explicit_id)
 
@@ -122,9 +125,10 @@ def create_sse_response(request: Request, session: MCPSession, token: Optional[s
 async def mcp_sse_get(request: Request):
     """Classic MCP SSE トランスポート接続 (GET)"""
     token = get_token_from_request(request)
-    client_ip = request.client.host if request.client else "unknown"
-    if not mcp_service.verify_auth(token, client_ip):
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP token")
+    client_ip = extract_client_ip(request)
+    is_tunnel = is_tunnel_request(request)
+    if not mcp_service.verify_auth(token, client_ip, is_tunnel=is_tunnel):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing MCP token")
 
     session = resolve_or_create_session(request)
     return create_sse_response(request, session, token)
@@ -132,12 +136,14 @@ async def mcp_sse_get(request: Request):
 @router.get("/mcp")
 async def mcp_root_get(request: Request):
     """/mcp へのアクセス: SSE ヘッダーがあれば SSE 接続、それ以外はステータス JSON"""
+    token = get_token_from_request(request)
+    client_ip = extract_client_ip(request)
+    is_tunnel = is_tunnel_request(request)
+    if not mcp_service.verify_auth(token, client_ip, is_tunnel=is_tunnel):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing MCP token")
+
     accept = request.headers.get("accept", "").lower()
     if "text/event-stream" in accept:
-        token = get_token_from_request(request)
-        client_ip = request.client.host if request.client else "unknown"
-        if not mcp_service.verify_auth(token, client_ip):
-            raise HTTPException(status_code=401, detail="Unauthorized: Invalid MCP token")
         session = resolve_or_create_session(request)
         return create_sse_response(request, session, token)
     return mcp_service.get_status()
@@ -166,6 +172,12 @@ async def mcp_messages_post(request: Request, sessionId: Optional[str] = Query(N
 @router.delete("/mcp/messages")
 async def mcp_delete(request: Request, sessionId: Optional[str] = Query(None)):
     """MCP セッション終了"""
+    token = get_token_from_request(request)
+    client_ip = extract_client_ip(request)
+    is_tunnel = is_tunnel_request(request)
+    if not mcp_service.verify_auth(token, client_ip, is_tunnel=is_tunnel):
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing MCP token")
+
     sid = sessionId or request.headers.get("mcp-session-id") or request.headers.get("x-session-id")
     if sid:
         mcp_service.remove_session(sid)

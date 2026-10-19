@@ -111,10 +111,19 @@ class CalendarService:
 
     def get_today_events(self) -> List[Dict[str, Any]]:
         today = date.today()
-        return [
-            ev for ev in self.cached_events
-            if ev["start"].date() == today
-        ]
+        res = []
+        for ev in self.cached_events:
+            s_date = ev["start"].date()
+            e_date = ev["end"].date()
+            if ev.get("isAllDay"):
+                # 終日予定: start <= today < end (end が start と同じなら start == today)
+                if s_date <= today < e_date or (s_date == e_date and s_date == today):
+                    res.append(ev)
+            else:
+                # 時間指定予定: 今日を跨いでいるか、今日開始・終了
+                if s_date <= today <= e_date:
+                    res.append(ev)
+        return res
 
     # ================= 朝の予定まとめサマリー発話 =================
     async def speak_daily_summary(self, config_override: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
@@ -48,8 +49,18 @@ class TtsService:
             "gcp": self.gcp_provider
         }
 
+        # インメモリキャッシュ (音声再生時間 & 話者リスト)
+        self._duration_cache: Dict[str, float] = {}
+        self._cached_voices: Optional[List[Dict[str, Any]]] = None
+        self._cached_voices_time: float = 0.0
+
         # 設定のロードと適用
         self.sync_settings()
+
+    def invalidate_voices_cache(self):
+        """話者キャッシュを破棄"""
+        self._cached_voices = None
+        self._cached_voices_time = 0.0
 
     def is_azure_active(self) -> bool:
         """Azure Speech が有効かつ API キーが設定されているかを判定"""
@@ -57,6 +68,7 @@ class TtsService:
 
     def sync_settings(self):
         """settings_manager の設定を各プロバイダーに反映（動的エンジン群の追加・更新・削除を含む）"""
+        self.invalidate_voices_cache()
         conf = settings_manager.get().get("tts_providers", {})
 
         # 1. Azure
@@ -188,10 +200,14 @@ class TtsService:
         # Edge-TTS (標準)
         return self.edge_provider, voice_id
 
-    async def get_voices(self, include_edge_fallback: bool = False) -> List[Dict[str, Any]]:
-        """有効なすべてのプロバイダーから話者一覧を非同期収集。
+    async def get_voices(self, include_edge_fallback: bool = False, force_refresh: bool = False, cache_ttl: float = 60.0) -> List[Dict[str, Any]]:
+        """有効なすべてのプロバイダーから話者一覧を非同期収集（TTLキャッシュ対応）。
         Azure有効時は、Edge-TTS を選択肢から除外（いざというときの最終手段として待機）。
         """
+        now = time.time()
+        if not force_refresh and self._cached_voices is not None and (now - self._cached_voices_time < cache_ttl):
+            return self._cached_voices
+
         self.sync_settings()
         azure_active = self.is_azure_active()
 
@@ -222,6 +238,8 @@ class TtsService:
             elif isinstance(r, Exception):
                 log.error(f"[TtsService] 話者取得タスク例外: {r}")
 
+        self._cached_voices = all_voices
+        self._cached_voices_time = now
         return all_voices
 
     def get_fallback_candidates(self, exclude_provider_id: Optional[str] = None) -> List[Tuple[BaseTtsProvider, str]]:
@@ -313,7 +331,11 @@ class TtsService:
         return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
     async def get_audio_duration(self, filepath: Path) -> float:
-        """ffprobe を使用して音声ファイルの正確な秒数を取得"""
+        """ffprobe を使用して音声ファイルの正確な秒数を取得（インメモリキャッシュ対応）"""
+        cache_key = str(filepath)
+        if cache_key in self._duration_cache:
+            return self._duration_cache[cache_key]
+
         try:
             cmd = [
                 "ffprobe", "-v", "error",
@@ -328,6 +350,7 @@ class TtsService:
             )
             stdout, _ = await proc.communicate()
             dur = float(stdout.decode().strip())
+            self._duration_cache[cache_key] = dur
             return dur
         except Exception:
             return 3.0
@@ -475,6 +498,10 @@ class TtsService:
 
         # キャッシュヒットチェック
         if final_path.exists() and final_path.stat().st_size > 0:
+            try:
+                os.utime(final_path, None)
+            except Exception:
+                pass
             duration = await self.get_audio_duration(final_path)
             log.info(f"[TTS] 音声キャッシュ HIT: key={key[:8]}..., voice={voice}, dur={duration:.1f}s, text='{text[:25]}...'")
             return {

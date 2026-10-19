@@ -38,6 +38,7 @@ async def get_disaster_status():
     return {
         "connected": is_ws_active,
         "isWsConnected": is_ws_active,
+        "wsConnected": is_ws_active,
         "p2pQuake": {
             "connected": is_ws_active,
             "lastEvent": None

@@ -37,7 +37,11 @@ class CastService:
 
         try:
             if volume_level is not None:
-                cast.set_volume(max(0.0, min(1.0, float(volume_level))), timeout=2.0)
+                try:
+                    vol_f = float(volume_level)
+                    cast.set_volume(max(0.0, min(1.0, vol_f)), timeout=2.0)
+                except (ValueError, TypeError):
+                    pass
 
             mc: MediaController = cast.media_controller
             mc.play_media(media_url, "audio/mp3")
@@ -47,6 +51,23 @@ class CastService:
         except Exception as e:
             log.error(f"Play failed on {host}:{port}: {e}")
             return False
+
+    def _sync_set_volume(self, host: str, port: int, volume_level: float) -> bool:
+        cast = self._get_cast(host, port)
+        if not cast:
+            return False
+        try:
+            vol_f = max(0.0, min(1.0, float(volume_level)))
+            cast.set_volume(vol_f, timeout=2.0)
+            log.info(f"Set volume to {vol_f*100:.0f}% on {host}:{port}")
+            return True
+        except Exception as e:
+            log.error(f"Set volume failed on {host}:{port}: {e}")
+            return False
+
+    async def set_volume(self, host: str, port: int = 8009, volume_level: float = 0.5) -> bool:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._sync_set_volume, host, port, volume_level)
 
     async def play_audio(
         self,

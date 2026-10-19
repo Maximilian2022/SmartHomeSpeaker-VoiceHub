@@ -229,6 +229,13 @@ class ScheduledSpeechService:
 
         # 未来の日時 -> 予約タスクとして保存
         task_id = f"speech_{uuid.uuid4().hex[:10]}"
+        vol_val = None
+        if volume_level is not None and str(volume_level).strip() != "":
+            try:
+                vol_val = float(volume_level)
+            except ValueError:
+                pass
+
         task = {
             "id": task_id,
             "text": text,
@@ -236,7 +243,7 @@ class ScheduledSpeechService:
             "voice": voice,
             "rate": rate,
             "pitch": pitch,
-            "volume_level": float(volume_level) if volume_level is not None else None,
+            "volume_level": vol_val,
             "chime": chime,
             "urgent": urgent,
             "client_name": client_name or "Webhook",

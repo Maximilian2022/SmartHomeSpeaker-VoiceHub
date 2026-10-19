@@ -206,6 +206,13 @@ class SchedulerService:
         rate = sched.get("rate", "+0%")
         pitch = sched.get("pitch", "+0Hz")
 
+        vol_val = None
+        if vol is not None and str(vol).strip() != "":
+            try:
+                vol_val = float(vol)
+            except ValueError:
+                pass
+
         try:
             res = await speech_service.speak(
                 text=text,
@@ -213,7 +220,7 @@ class SchedulerService:
                 voice=voice,
                 rate=rate,
                 pitch=pitch,
-                volume_level=float(vol) if vol is not None else None,
+                volume_level=vol_val,
                 urgent=False
             )
             hist = {

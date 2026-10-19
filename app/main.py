@@ -2,7 +2,7 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -108,10 +108,16 @@ import traceback
 
 log = get_logger("API")
 
-# CORS (宅内WebGUIおよびローカル連携用)
+# CORS (宅内WebGUIおよびローカル連携用: RFC 1918 プライベートIP、localhost、設定されたトンネルドメインを許可)
+cors_regex = r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$"
+if settings.tunnel_domain:
+    import re
+    escaped_domain = re.escape(settings.tunnel_domain)
+    cors_regex = rf"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|{escaped_domain})(:\d+)?$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=cors_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,12 +126,19 @@ app.add_middleware(
 # アクセス＆エラー監視ミドルウェア
 @app.middleware("http")
 async def logging_and_security_middleware(request: Request, call_next):
-    # Tunnel 境界チェック
-    check_tunnel_access(request)
-    # 管理者認証チェック
-    check_admin_auth(request)
-
     path = request.url.path
+
+    # Tunnel 境界チェック ＆ 管理者認証チェック (ミドルウェア内の HTTPException 500 化を防止)
+    try:
+        check_tunnel_access(request)
+        check_admin_auth(request)
+    except HTTPException as exc:
+        log.warning(f"[{request.method}] {path} -> HTTP {exc.status_code} ({exc.detail}) (Client: {request.client.host if request.client else 'unknown'})")
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail, "detail": exc.detail}
+        )
+
     # 頻繁なステータスポーリング (/api/dnd/status, /api/logs 等) は DEBUG レベル相当にする (ログ肥大化防止)
     is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/api/logs", "/favicon.ico")
 
@@ -136,6 +149,11 @@ async def logging_and_security_middleware(request: Request, call_next):
         elif not is_frequent_poll:
             log.info(f"[{request.method}] {path} -> HTTP {response.status_code}")
         return response
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail, "detail": exc.detail}
+        )
     except Exception as exc:
         tb = traceback.format_exc()
         log.error(f"Unhandled Exception on [{request.method}] {path}:\n{tb}")
