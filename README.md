@@ -127,6 +127,7 @@ Homebridge をご利用のご家庭向けに、本システム専用のプラグ
 
 - **質問・アイデアの相談**: お気軽に **[GitHub Discussions](https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/discussions)** へお寄せください。
 - **コントリビューション方針**: 開発環境のセットアップやコーディング規約については、**[コントリビューションガイド (CONTRIBUTING.md)](CONTRIBUTING.md)** をご覧ください。
+- **行動規範**: コミュニティ内での対話や貢献にあたっては、**[行動規範 (CODE_OF_CONDUCT.md)](CODE_OF_CONDUCT.md)** の遵守をお願いいたします。
 - **セキュリティの報告**: 脆弱性のご報告は公開 Issue ではなく、**[セキュリティポリシー (SECURITY.md)](SECURITY.md)** の案内に沿って非公開でご連絡をお願いいたします。
 
 ---
