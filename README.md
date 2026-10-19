@@ -123,7 +123,8 @@ Homebridge をご利用のご家庭向けに、本システム専用のプラグ
 
 ## 📜 ライセンスと謝辞
 
-本プロジェクトは **MIT License** のもとで公開されています。
+本プロジェクトは **[MIT License](LICENSE)** のもとで公開されています。
+本ソフトウェアが利用・参照しているオープンソースソフトウェアのライセンスおよび詳細な著作権表記については、**[サードパーティライセンス一覧 (THIRD_PARTY_LICENSES.md)](THIRD_PARTY_LICENSES.md)** をご覧ください。
 
 ### 心より感謝申し上げます
 本ソフトウェアの開発にあたり、スマートホームおよび音声合成の分野で貴重な知見やオープンソースライブラリを公開してくださっている開発者・コミュニティの皆様に深く敬意を表します。
@@ -135,3 +136,4 @@ Homebridge をご利用のご家庭向けに、本システム専用のプラグ
 - **[alexa-remote-control](https://github.com/thorsten-gehrig/alexa-remote-control)** - Amazon Echo コントロールの知見
 - **[go2rtc](https://github.com/AlexxIT/go2rtc)** - ネットワークカメラへの双方向音声ストリーミング
 - **[aiomqtt](https://github.com/sbtinstruments/aiomqtt)** - 非同期 MQTT 通信基盤
+
