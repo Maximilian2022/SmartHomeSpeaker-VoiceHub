@@ -8,6 +8,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   # Docker Hub 上のリポジトリ名（<ユーザー名>/<IMAGE_NAME> となります）
   # 変更したい場合は以下を書き換えてください。
