@@ -450,6 +450,52 @@ class SpeakLogRotator:
                     continue
             return results
 
+    def update_entries(self, updates_map: Dict[str, Dict[str, Any]]) -> int:
+        """speak.log 内の既存エントリ (id一致) をアトミックに一括更新"""
+        if not updates_map or not self.active_file.exists():
+            return 0
+        with self.lock:
+            try:
+                if self._file_stream and not self._file_stream.closed:
+                    self._file_stream.flush()
+                    self._file_stream.close()
+                    self._file_stream = None
+
+                temp_path = self.active_file.with_suffix(".tmp")
+                updated_count = 0
+                with open(self.active_file, "r", encoding="utf-8", errors="replace") as fin, \
+                     open(temp_path, "w", encoding="utf-8") as fout:
+                    for line in fin:
+                        stripped = line.strip()
+                        if not stripped:
+                            continue
+                        try:
+                            obj = json.loads(stripped)
+                            if isinstance(obj, dict) and obj.get("id") in updates_map:
+                                obj.update(updates_map[obj["id"]])
+                                fout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+                                updated_count += 1
+                                continue
+                        except Exception:
+                            pass
+                        fout.write(line if line.endswith("\n") else line + "\n")
+
+                if updated_count > 0:
+                    temp_path.replace(self.active_file)
+                else:
+                    if temp_path.exists():
+                        temp_path.unlink()
+                self._open_active_file()
+                return updated_count
+            except Exception as e:
+                sys.__stderr__.write(f"[SpeakLogRotator] update_entries error: {e}\n")
+                self._open_active_file()
+                return 0
+
+    def update_entry(self, entry_id: str, updates: Dict[str, Any]) -> bool:
+        """単一エントリの更新"""
+        return self.update_entries({entry_id: updates}) > 0
+
     def manual_flush_archive(self):
         with self.lock:
             self._rotate_active_to_archive()

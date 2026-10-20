@@ -116,6 +116,51 @@ class HistoryManager:
     def get_history(self, limit: int = 100) -> List[Dict[str, Any]]:
         return self.history[:limit]
 
+    def update_entry(self, entry_id: str, updates: Dict[str, Any]) -> bool:
+        """メモリ上の履歴、speak.log、および history.json を同期更新"""
+        if not entry_id or not updates:
+            return False
+        found = False
+        for item in self.history:
+            if item.get("id") == entry_id:
+                item.update(updates)
+                found = True
+                break
+        if found:
+            self.rotator.update_entry(entry_id, updates)
+            self.save_history()
+            log.info(f"Updated history entry {entry_id}: {updates}")
+        return found
+
+    def update_entries(self, updates_map: Dict[str, Dict[str, Any]]) -> int:
+        """複数件の一括更新"""
+        if not updates_map:
+            return 0
+        updated_count = 0
+        for item in self.history:
+            eid = item.get("id")
+            if eid in updates_map:
+                item.update(updates_map[eid])
+                updated_count += 1
+        if updated_count > 0:
+            self.rotator.update_entries(updates_map)
+            self.save_history()
+            log.info(f"Updated {updated_count} history entries: {list(updates_map.keys())}")
+        return updated_count
+
+    def mark_queued_as_released(self, history_ids: List[str], note: str = "DND保留再生完了"):
+        """DND保留中エントリを再生完了（送信成功）に更新"""
+        if not history_ids:
+            return
+        updates = {
+            hid: {
+                "status": "success",
+                "wasQueued": True,
+                "statusMessage": note
+            }
+            for hid in history_ids if hid
+        }
+        self.update_entries(updates)
 
     def clear(self):
         self.history = []

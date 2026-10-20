@@ -130,7 +130,8 @@ class SpeechService:
         source_label: Optional[str] = None,
         urgent: bool = False,
         was_queued: bool = False,
-        speed: Optional[str] = None
+        speed: Optional[str] = None,
+        existing_history_id: Optional[str] = None
     ) -> Dict[str, Any]:
         text = text.strip()
         if not text:
@@ -189,16 +190,7 @@ class SpeechService:
                     "results": []
                 }
             elif action == "queue":
-                dnd_service.add_to_queue({
-                    "text": text,
-                    "targets": targets,
-                    "voice": voice,
-                    "client": client_name,
-                    "client_ip": client_ip,
-                    "source": effective_source,
-                    "source_label": source_label
-                })
-                self.record_history({
+                hist_record = self.record_history({
                     "text": text,
                     "source": effective_source,
                     "sourceLabel": source_label,
@@ -211,6 +203,16 @@ class SpeechService:
                     "urgent": urgent,
                     "wasQueued": True,
                     "results": []
+                })
+                dnd_service.add_to_queue({
+                    "history_id": hist_record.get("id"),
+                    "text": text,
+                    "targets": targets,
+                    "voice": voice,
+                    "client": client_name,
+                    "client_ip": client_ip,
+                    "source": effective_source,
+                    "source_label": source_label
                 })
                 return {
                     "success": True,
@@ -358,27 +360,46 @@ class SpeechService:
 
         # 6. 永続化履歴記録
         saved_audio_url = f"/voice/{speech['filename']}" if speech.get("filename") else ""
-        history_entry = {
-            "text": text,
-            "source": effective_source,
-            "sourceLabel": source_label,
-            "clientName": client_name,
-            "clientIp": client_ip or "",
-            "wasQueued": was_queued,
-            "targets": [d.get("name") or d.get("ip") for d in unique_targets],
-            "voice": opt_voice,
-            "actualVoice": speech.get("voice", opt_voice),
-            "fallback": bool(speech.get("fallback", False)),
-            "rate": opt_rate,
-            "pitch": opt_pitch,
-            "audioUrl": saved_audio_url,
-            "duration": speech["duration"],
-            "status": history_status,
-            "statusMessage": history_msg,
-            "urgent": urgent,
-            "results": detailed_results
-        }
-        self.record_history(history_entry)
+        if existing_history_id:
+            history_manager.update_entry(existing_history_id, {
+                "status": history_status,
+                "statusMessage": f"DND保留再生完了 ({history_msg})",
+                "audioUrl": saved_audio_url,
+                "duration": speech.get("duration", 0),
+                "actualVoice": speech.get("voice", opt_voice),
+                "fallback": bool(speech.get("fallback", False)),
+                "results": detailed_results,
+                "wasQueued": True
+            })
+            history_entry = {
+                "id": existing_history_id,
+                "text": text,
+                "audioUrl": saved_audio_url,
+                "duration": speech.get("duration", 0),
+                "status": history_status
+            }
+        else:
+            history_entry = {
+                "text": text,
+                "source": effective_source,
+                "sourceLabel": source_label,
+                "clientName": client_name,
+                "clientIp": client_ip or "",
+                "wasQueued": was_queued,
+                "targets": [d.get("name") or d.get("ip") for d in unique_targets],
+                "voice": opt_voice,
+                "actualVoice": speech.get("voice", opt_voice),
+                "fallback": bool(speech.get("fallback", False)),
+                "rate": opt_rate,
+                "pitch": opt_pitch,
+                "audioUrl": saved_audio_url,
+                "duration": speech["duration"],
+                "status": history_status,
+                "statusMessage": history_msg,
+                "urgent": urgent,
+                "results": detailed_results
+            }
+            self.record_history(history_entry)
 
         return {
             "success": has_success,

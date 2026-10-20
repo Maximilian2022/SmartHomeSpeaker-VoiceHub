@@ -1,9 +1,11 @@
 import unittest
 import json
 import tempfile
+import asyncio
 from pathlib import Path
 from app.core.log_rotator import SpeakLogRotator, MAX_ACTIVE_LINES
 from app.services.history_service import HistoryManager
+from app.services.dnd_service import DndService
 
 class TestSpeakLog(unittest.TestCase):
     def test_speak_log_rotator_basic(self):
@@ -83,6 +85,80 @@ class TestSpeakLog(unittest.TestCase):
                 self.assertEqual(entries[0]["text"], "統合テスト音声")
             finally:
                 rotator.close()
+
+    def test_history_manager_mark_queued_as_released(self):
+        """DND保留エントリが再生完了（status: success, wasQueued: True）に更新されること"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            rotator = SpeakLogRotator(log_dir=tmp_path)
+            try:
+                manager = HistoryManager()
+                manager.rotator = rotator
+                manager.history = []
+
+                rec1 = manager.add_entry({
+                    "text": "保留メッセージ1",
+                    "status": "queued",
+                    "wasQueued": True,
+                    "statusMessage": "DND保留中"
+                })
+                rec2 = manager.add_entry({
+                    "text": "即時メッセージ2",
+                    "status": "success",
+                    "wasQueued": False
+                })
+
+                self.assertEqual(manager.get_history()[1]["status"], "queued")
+
+                # 保留解除を実行
+                manager.mark_queued_as_released([rec1["id"]], note="DND保留再生完了")
+
+                # メモリ上での更新確認
+                updated_rec1 = next(item for item in manager.get_history() if item["id"] == rec1["id"])
+                self.assertEqual(updated_rec1["status"], "success")
+                self.assertTrue(updated_rec1["wasQueued"])
+                self.assertEqual(updated_rec1["statusMessage"], "DND保留再生完了")
+
+                # ディスク上の speak.log から読み直しても反映されていること
+                persisted_entries = rotator.read_latest_entries(limit=10)
+                persisted_rec1 = next(item for item in persisted_entries if item["id"] == rec1["id"])
+                self.assertEqual(persisted_rec1["status"], "success")
+                self.assertTrue(persisted_rec1["wasQueued"])
+            finally:
+                rotator.close()
+
+    def test_dnd_flush_queue_updates_history(self):
+        """DNDキューをフラッシュした際に既存の履歴IDが指定されて再生・更新されること"""
+        dnd = DndService()
+        dnd.queue = []
+
+        executed_calls = []
+
+        async def mock_speaker_executor(text: str, **kwargs):
+            executed_calls.append({"text": text, **kwargs})
+            return {"success": True}
+
+        dnd.set_speaker_executor(mock_speaker_executor)
+
+        # テストキュー投入
+        dnd.add_to_queue({
+            "history_id": "hist_test_999",
+            "text": "お風呂が沸きました",
+            "targets": ["リビングTapo"]
+        })
+
+        self.assertEqual(len(dnd.get_queue()), 1)
+
+        # フラッシュ実行
+        flushed_count = asyncio.run(dnd.check_and_flush_queue())
+        self.assertEqual(flushed_count, 1)
+        self.assertEqual(len(dnd.get_queue()), 0)
+
+        # mock_speaker_executor に existing_history_id が渡されたこと
+        self.assertEqual(len(executed_calls), 1)
+        self.assertEqual(executed_calls[0]["existing_history_id"], "hist_test_999")
+        self.assertEqual(executed_calls[0]["text"], "お風呂が沸きました")
+        self.assertTrue(executed_calls[0]["was_queued"])
 
 if __name__ == "__main__":
     unittest.main()

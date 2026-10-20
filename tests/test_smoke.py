@@ -251,8 +251,8 @@ class TestSmokeVoiceHub(unittest.TestCase):
 
         spoken_calls = []
 
-        async def mock_speaker(text: str, targets=None, urgent: bool = True, source: str = None, source_label: str = None):
-            spoken_calls.append({"text": text, "targets": targets, "urgent": urgent, "source": source})
+        async def mock_speaker(text: str, targets=None, urgent: bool = True, source: str = None, source_label: str = None, **kwargs):
+            spoken_calls.append({"text": text, "targets": targets, "urgent": urgent, "source": source, **kwargs})
 
         dnd_service.set_speaker_executor(mock_speaker)
 
