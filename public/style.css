@@ -435,6 +435,11 @@ body {
   border-color: rgba(6, 182, 212, 0.45);
 }
 
+.speaker-chip.tapo-chip.checked {
+  background: rgba(0, 180, 216, 0.15);
+  border-color: rgba(0, 180, 216, 0.45);
+}
+
 .speaker-chip-name {
   font-size: 0.85rem;
   font-weight: 500;
@@ -493,6 +498,12 @@ body {
   background: rgba(6, 182, 212, 0.15);
   color: #22d3ee;
   border: 1px solid rgba(6, 182, 212, 0.35);
+}
+
+.speaker-chip-badge.tapo-badge {
+  background: rgba(0, 180, 216, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(0, 180, 216, 0.35);
 }
 
 .speaker-chip-badge.default-badge {

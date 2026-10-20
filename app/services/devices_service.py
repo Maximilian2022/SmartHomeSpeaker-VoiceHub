@@ -113,6 +113,7 @@ class DeviceManager:
             if dtype == "homepod": return 6
             if dtype == "dlna": return 7
             if dtype == "onvif": return 8
+            if dtype == "tapo": return 9
             return 4
 
     async def get_devices(self) -> List[Dict[str, Any]]:
@@ -146,24 +147,26 @@ class DeviceManager:
         except Exception as e:
             print(f"[DeviceManager] HomePod list error: {e}")
 
-        # 4. ONVIF & DLNA 登録済みデバイス
+        # 4. ONVIF & DLNA & Tapo 登録済みデバイス
         onvif_config = settings_manager.get().get("onvif", {})
         if onvif_config.get("enabled", True):
             for dev in onvif_config.get("registeredDevices", []):
                 if dev.get("enabled", True):
                     dtype = dev.get("type", "onvif")
-                    raw_ip = dev.get("ip", "")
+                    raw_ip = str(dev.get("ip", "")).replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
                     prefix = f"{dtype}:{raw_ip}"
+                    default_model = "Tapo Camera" if dtype == "tapo" else ("ONVIF Speaker" if dtype == "onvif" else "DLNA Speaker")
                     results.append({
                         "id": dev.get("id") or f"{dtype}_{raw_ip.replace('.', '_')}",
                         "name": dev.get("name") or dev.get("friendlyName") or f"{dtype.upper()} ({raw_ip})",
                         "ip": prefix,
                         "rawIp": raw_ip,
                         "port": dev.get("port", 8000),
-                        "model": dev.get("model") or ("ONVIF Speaker" if dtype == "onvif" else "DLNA Speaker"),
+                        "model": dev.get("model") or default_model,
                         "type": dtype,
                         "username": dev.get("username"),
-                        "hasPassword": bool(dev.get("password")),
+                        "hasPassword": bool(dev.get("password") or dev.get("passwordHash")),
+                        "passwordHash": dev.get("passwordHash"),
                         "controlUrl": dev.get("controlUrl"),
                         "renderingControlUrl": dev.get("renderingControlUrl"),
                         "isDefault": (prefix == default_ip)
@@ -187,21 +190,24 @@ class DeviceManager:
         onvif_config = settings_manager.get().get("onvif", {})
         reg_devices = [d for d in onvif_config.get("registeredDevices", []) if d.get("enabled", True)]
 
-        # ONVIF / DLNA プレフィックス
-        if norm.startswith("onvif:") or norm.startswith("dlna:"):
+        # ONVIF / DLNA / TAPO プレフィックス
+        if norm.startswith("onvif:") or norm.startswith("dlna:") or norm.startswith("tapo:"):
             dtype, target_ip = norm.split(":", 1)
-            found = next((d for d in reg_devices if (d.get("ip") == target_ip or d.get("id") == target_ip) and d.get("type", "onvif") == dtype), None)
+            target_ip = target_ip.replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
+            found = next((d for d in reg_devices if (str(d.get("ip")).replace("onvif:", "").replace("dlna:", "").replace("tapo:", "") == target_ip or d.get("id") == target_ip) and d.get("type", "onvif") == dtype), None)
             if found:
+                clean_ip = str(found["ip"]).replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
                 return {
-                    "id": found.get("id") or f"{dtype}_{found['ip'].replace('.', '_')}",
-                    "name": found.get("name") or f"{dtype.upper()} ({found['ip']})",
-                    "ip": f"{dtype}:{found['ip']}",
-                    "rawIp": found["ip"],
+                    "id": found.get("id") or f"{dtype}_{clean_ip.replace('.', '_')}",
+                    "name": found.get("name") or f"{dtype.upper()} ({clean_ip})",
+                    "ip": f"{dtype}:{clean_ip}",
+                    "rawIp": clean_ip,
                     "port": found.get("port", 8000),
                     "model": found.get("model", ""),
                     "type": dtype,
                     "username": found.get("username"),
                     "password": found.get("password"),
+                    "passwordHash": found.get("passwordHash"),
                     "controlUrl": found.get("controlUrl"),
                     "renderingControlUrl": found.get("renderingControlUrl")
                 }
@@ -248,20 +254,22 @@ class DeviceManager:
                         "type": "alexa"
                     }
 
-        # 登録済み ONVIF / DLNA の名前一致
+        # 登録済み ONVIF / DLNA / Tapo の名前一致
         for d in reg_devices:
-            if (d.get("name") and d["name"].lower() == norm_lower) or d.get("ip") == norm:
+            clean_ip = str(d.get("ip", "")).replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
+            if (d.get("name") and d["name"].lower() == norm_lower) or clean_ip == norm or d.get("ip") == norm:
                 dtype = d.get("type", "onvif")
                 return {
-                    "id": d.get("id") or f"{dtype}_{d['ip'].replace('.', '_')}",
+                    "id": d.get("id") or f"{dtype}_{clean_ip.replace('.', '_')}",
                     "name": d.get("name"),
-                    "ip": f"{dtype}:{d['ip']}",
-                    "rawIp": d["ip"],
+                    "ip": f"{dtype}:{clean_ip}",
+                    "rawIp": clean_ip,
                     "port": d.get("port", 8000),
                     "model": d.get("model", ""),
                     "type": dtype,
                     "username": d.get("username"),
                     "password": d.get("password"),
+                    "passwordHash": d.get("passwordHash"),
                     "controlUrl": d.get("controlUrl"),
                     "renderingControlUrl": d.get("renderingControlUrl")
                 }

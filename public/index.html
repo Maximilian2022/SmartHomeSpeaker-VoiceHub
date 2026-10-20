@@ -510,6 +510,7 @@
           <div class="history-toolbar">
             <div class="history-filter-pills" id="historyFilterGroup">
               <button type="button" class="history-filter-pill active" data-filter="all">すべて</button>
+              <button type="button" class="history-filter-pill" data-filter="queued">⏳ DND保留中</button>
               <button type="button" class="history-filter-pill" data-filter="web_ui">Web UI (即時)</button>
               <button type="button" class="history-filter-pill" data-filter="schedule">スケジュール</button>
               <button type="button" class="history-filter-pill" data-filter="calendar">カレンダー</button>
@@ -1414,21 +1415,7 @@
             </form>
           </div>
 
-          <!-- 5. サイレント履歴ログ (直近50件) -->
-          <div class="card glass-card">
-            <div class="card-header flex-between">
-              <div>
-                <h3>📜 サイレント履歴ログ (直近50件)</h3>
-                <span class="card-sub">会議中やおやすみモード中にスキップ・囁き・保留された通知の履歴です</span>
-              </div>
-              <button type="button" id="btnClearDndHistory" class="btn-text text-sub">履歴をクリア</button>
-            </div>
-            <div class="card-body">
-              <ul id="dndHistoryList" class="history-list">
-                <li class="empty-msg">サイレント履歴はまだありません</li>
-              </ul>
-            </div>
-          </div>
+
         </div>
         </div>
 
@@ -1831,7 +1818,7 @@
 
             <div class="card-body">
               <!-- 基本認証設定 (デフォルトID/PW - ONVIFカメラ用) -->
-              <div class="settings-grid" style="margin-bottom: 20px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 8px;">
+              <div class="settings-grid" style="margin-bottom: 14px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); padding: 14px; border-radius: 8px;">
                 <div class="form-group" style="margin: 0;">
                   <label for="onvifDefaultUser" class="form-label">デフォルト ONVIF ユーザー名</label>
                   <input type="text" id="onvifDefaultUser" class="form-input" value="admin" placeholder="例: admin">
@@ -1845,6 +1832,41 @@
                   <button type="button" id="btnSaveOnvifDefaultAuth" class="btn btn-secondary btn-sm">デフォルト認証を保存</button>
                 </div>
               </div>
+
+              <!-- Tapo クラウド認証設定 (Profile S スピーカーハック用アコーディオン) -->
+              <details id="tapoAuthAccordion" class="tapo-accordion" style="margin-bottom: 20px; background: rgba(0, 180, 216, 0.04); border: 1px solid rgba(0, 180, 216, 0.2); border-radius: 8px; padding: 0; overflow: hidden;">
+                <summary style="padding: 12px 14px; cursor: pointer; font-weight: 600; font-size: 0.9rem; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; user-select: none;">
+                  <span style="display: flex; align-items: center; gap: 8px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    📹 TP-Link Tapo クラウド認証設定 (Profile S スピーカーハック)
+                  </span>
+                  <span id="tapoAuthStatusBadge" class="speaker-chip-badge" style="background: rgba(255,255,255,0.08); color: var(--text-muted); font-size: 0.75rem; font-weight: 500;">未設定</span>
+                </summary>
+                <div style="padding: 14px; border-top: 1px solid rgba(0, 180, 216, 0.15); background: rgba(0,0,0,0.15);">
+                  <p style="margin: 0 0 10px 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5;">
+                    Tapo カメラ（Profile S 機種）は標準規格上音声バックチャネルを持ちませんが、TP-Link クラウドアカウント認証（メールアドレス＆パスワード）により、<strong>カメラ内部の設定名（リビング、庭など）を自動取得</strong>し、独自通話プロトコル（ポート8800）連携でクリアなスピーカー発声を可能にします。
+                  </p>
+                  <div style="margin-bottom: 12px; padding: 8px 12px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 6px; font-size: 0.8rem; color: #fbbf24; line-height: 1.4;">
+                    ⚠️ <strong>Tapoアプリ側の事前設定:</strong> Tapoアプリ内の「<strong>わたし ＞ Tapo Lab ＞ サードパーティ互換性</strong>」を <strong>ON</strong> に設定しておく必要があります。
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end;">
+                    <div class="form-group" style="margin: 0;">
+                      <label for="tapoCloudEmail" class="form-label" style="font-size: 0.8rem;">TP-Link ID (メールアドレス)</label>
+                      <input type="email" id="tapoCloudEmail" class="form-input" placeholder="例: user@example.com">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                      <label for="tapoCloudPassword" class="form-label" style="font-size: 0.8rem;">クラウドパスワード</label>
+                      <input type="password" id="tapoCloudPassword" class="form-input" placeholder="Tapoアプリのログインパスワード">
+                    </div>
+                    <div>
+                      <button type="button" id="btnSaveTapoAuth" class="btn btn-secondary btn-sm" style="height: 38px;">
+                        認証情報を保存
+                      </button>
+                    </div>
+                  </div>
+                  <div id="tapoAuthSavedMsg" style="font-size: 0.8rem; color: #34d399; margin-top: 8px; display: none;">✓ Tapoクラウドアカウント認証情報を保存しました</div>
+                </div>
+              </details>
 
               <!-- スキャン進行インジケーター (スキャン実行時に表示) -->
               <div id="onvifScanProgressBox" class="scan-progress-box">
@@ -1899,6 +1921,7 @@
                     <select id="manualDevType" class="form-input">
                       <option value="dlna">🎵 DLNA スピーカー (MediaRenderer)</option>
                       <option value="onvif">📷 ONVIF カメラ (Profile T 双方向音声)</option>
+                      <option value="tapo">📹 Tapo カメラ (Profile S 音声ハック)</option>
                     </select>
                   </div>
                   <div class="form-group" style="margin: 0;">
@@ -3092,8 +3115,8 @@ Body:
 
           <div id="onvifAuthBlock" class="form-group" style="margin-top: 10px; padding: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
             <div class="flex-between" style="margin-bottom: 6px;">
-              <label class="form-label" style="margin: 0; font-size: 0.85rem;">カメラ個別認証 (ONVIFのみ)</label>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">空欄時はデフォルト設定を使用</span>
+              <label id="onvifAuthLabel" class="form-label" style="margin: 0; font-size: 0.85rem;">カメラ個別認証 (ONVIFのみ)</label>
+              <span id="onvifAuthHint" style="font-size: 0.75rem; color: var(--text-muted);">空欄時はデフォルト設定を使用</span>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
               <input type="text" id="onvifRegUser" class="form-input" placeholder="ユーザー名 (空欄でデフォルト)">
@@ -3360,6 +3383,6 @@ Body:
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="app.js?v=2.6"></script>
+  <script src="app.js?v=2.8"></script>
 </body>
 </html>

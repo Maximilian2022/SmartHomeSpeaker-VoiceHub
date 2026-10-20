@@ -70,7 +70,26 @@ class OnvifService:
                 return resp.text
             raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:300]}")
 
+    def _fetch_tapo_alias_sync(self, ip: str, email: str, raw_password: str) -> Optional[str]:
+        """Tapo カメラの管理API (ポート443 / pytapo) から device_alias を自動取得"""
+        if not email or not raw_password:
+            return None
+        try:
+            from pytapo import Tapo
+            tapo = Tapo(ip, email, raw_password, cloudPassword=raw_password)
+            info = tapo.getBasicInfo()
+            if isinstance(info, dict):
+                alias = info.get("device_info", {}).get("basic_info", {}).get("device_alias")
+                if alias:
+                    return str(alias).strip()
+        except Exception as e:
+            log.warning(f"Tapo device_alias fetch failed for {ip}: {e}")
+        return None
+
+
+
     async def scan_devices(
+
         self,
         timeout_ms: int = 3500,
         username: str = "",
@@ -173,7 +192,37 @@ class OnvifService:
             u = (reg and reg.get("username")) or default_user
             p = (reg and reg.get("password")) or default_pass
 
-            if p:
+            # Tapo デバイスの判定
+            is_tapo = (port == 2020) or (
+                reg and reg.get("type") == "tapo"
+            ) or any(
+                any(k in s.lower() for k in ("tapo", "c200", "c210", "c212", "c310", "c320", "tc70"))
+                for s in info["scopes"]
+            ) or ("tapo" in model.lower()) or (model in ("C200", "C210", "C212", "C310", "C320WS", "TC70"))
+
+            if is_tapo:
+                # Tapo は独自プロトコル (ポート8800) で双方向音声をサポート
+                is_profile_t = True
+                if model != "ONVIF Camera" and not model.endswith("(Tapo)"):
+                    model = f"{model} (Tapo)"
+                elif model == "ONVIF Camera":
+                    model = "Tapo Camera"
+
+                # Tapo クラウドアカウント情報で名前 (device_alias) を自動解決
+                tapo_email = onvif_config.get("tapoEmail") or onvif_config.get("tapoUsername") or (reg and reg.get("tapoEmail"))
+                tapo_raw_pass = onvif_config.get("tapoPassword") or (reg and reg.get("tapoPassword"))
+                if tapo_email and tapo_raw_pass:
+                    tapo_alias = await loop.run_in_executor(None, self._fetch_tapo_alias_sync, ip, tapo_email, tapo_raw_pass)
+                    if tapo_alias:
+                        custom_name = tapo_alias
+                        auth_status = "ok"
+
+                # Tapo 認証情報の有無確認
+                tapo_cred = (reg and reg.get("passwordHash")) or (reg and reg.get("password")) or onvif_config.get("tapoPasswordHash") or onvif_config.get("tapoPassword")
+                if tapo_cred:
+                    auth_status = "ok"
+
+            if p and not is_tapo:
                 try:
                     scopes_xml = await self.send_soap(
                         onvif_url,
@@ -211,11 +260,31 @@ class OnvifService:
                 except Exception as e:
                     auth_status = "unauthorized" if "401" in str(e) else "error"
 
-            friendly_name = custom_name or generic_name or ""
-            display_name = friendly_name or (model if model != "ONVIF Camera" else f"Camera-{ip}")
+            # 表示名の決定:
+            # 1. ユーザー登録済みの名前があれば最優先
+            # 2. pytapo または ONVIF スコープから取得したカスタム名 (ウッドスロープ等)
+            # 3. Tapo未登録で名前未取得の場合は "Tapo <機種名> (.<IP末尾>)" で区別
+            # 4. その他は generic_name または IP付き名称
+            registered_name = (reg and reg.get("name")) or ""
+            if registered_name:
+                friendly_name = registered_name
+                display_name = registered_name
+            elif custom_name:
+                friendly_name = custom_name
+                display_name = custom_name
+            elif is_tapo:
+                clean_model = model.replace(" (Tapo)", "").replace("Tapo ", "").strip()
+                ip_suffix = ip.split(".")[-1]
+                friendly_name = f"Tapo {clean_model} (.{ip_suffix})"
+                display_name = friendly_name
+            else:
+                friendly_name = generic_name or ""
+                display_name = friendly_name or (model if model != "ONVIF Camera" else f"Camera-{ip}")
 
+
+            dtype = "tapo" if is_tapo else "onvif"
             results.append({
-                "id": f"onvif_{ip.replace('.', '_')}",
+                "id": f"{dtype}_{ip.replace('.', '_')}",
                 "ip": ip,
                 "port": port,
                 "onvifUrl": onvif_url,
@@ -227,7 +296,7 @@ class OnvifService:
                 "hasProfileT": is_profile_t,
                 "supportsAudio": is_profile_t,
                 "audioBackchannelSupported": is_profile_t,
-                "type": "onvif",
+                "type": dtype,
                 "category": "onvif",
                 "isRegistered": any(r.get("ip") == ip and r.get("enabled", True) for r in registered_list)
             })
@@ -269,6 +338,11 @@ class OnvifService:
     ) -> Dict[str, Any]:
         onvif_config = settings_manager.get().get("onvif", {})
         raw_ip = camera.get("rawIp") or camera.get("ip", "").replace("onvif:", "")
+        dev_type = camera.get("type", "onvif")
+
+        if dev_type == "tapo":
+            return await self._play_tapo_audio(camera, raw_ip, audio_url_or_path, duration, volume_level, onvif_config)
+
         username = camera.get("username")
         password = camera.get("password")
         if not password or not username:
@@ -348,6 +422,91 @@ class OnvifService:
 
         return {"success": True, "message": "Playback started"}
 
+    async def _play_tapo_audio(
+        self,
+        camera: Dict[str, Any],
+        raw_ip: str,
+        audio_url_or_path: str,
+        duration: float,
+        volume_level: Optional[float],
+        onvif_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Tapo カメラ独自プロトコル (ポート8800) を使用した音声再生 (G.711 A-law / PCMA)"""
+        import hashlib
+        password_hash = camera.get("passwordHash") or onvif_config.get("tapoPasswordHash", "")
+        if not password_hash:
+            raw_p = camera.get("password") or onvif_config.get("tapoPassword", "")
+            if raw_p:
+                raw_s = str(raw_p).strip()
+                if len(raw_s) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_s):
+                    password_hash = raw_s.upper()
+                else:
+                    password_hash = hashlib.sha256(raw_s.encode("utf-8")).hexdigest().upper()
+
+        if not password_hash:
+            raise RuntimeError(f"Tapoカメラ ({raw_ip}) の認証情報 (SHA256ハッシュ) が未設定です。設定画面のTapo連携設定をご確認ください。")
+
+        stream_name = f"tapo_{raw_ip.replace('.', '_')}"
+        tapo_url = f"tapo://admin:{password_hash}@{raw_ip}"
+        await self._ensure_go2rtc_tapo_stream(stream_name, tapo_url)
+
+        # 音量調整
+        resolved_url = audio_url_or_path
+        if volume_level is not None:
+            norm_vol = volume_level / 100.0 if volume_level > 1.0 else volume_level
+            norm_vol = max(0.01, min(2.0, norm_vol))
+            if norm_vol != 1.0:
+                resolved_url = await tts_service.adjust_volume(audio_url_or_path, norm_vol)
+
+        if not resolved_url.startswith(("http://", "https://")):
+            filename = os.path.basename(resolved_url)
+            resolved_url = f"http://127.0.0.1:8080/voice/{filename}"
+
+        # Tapo の双方向音声は G.711 A-law (8kHz PCMA)
+        src_param = f"ffmpeg:{resolved_url}#audio=pcma#input=file"
+        params = {"dst": stream_name, "src": src_param}
+        push_url = f"{self.go2rtc_api_url}/api/streams"
+
+        log.info(f"Starting Tapo audio playback on {camera.get('name', raw_ip)} ({raw_ip}) URL: {resolved_url}")
+
+        async with self._semaphore:
+            last_err = None
+            for attempt in range(2):
+                try:
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        resp = await client.post(push_url, params=params)
+                        if resp.status_code == 200:
+                            last_err = None
+                            break
+                        err_text = resp.text
+                        if "consumer" in err_text and attempt == 0:
+                            log.warning(f"go2rtc Tapo consumer not ready yet for {stream_name}, retrying stream register and waiting 0.8s...")
+                            await self._ensure_go2rtc_tapo_stream(stream_name, tapo_url)
+                            await asyncio.sleep(0.8)
+                            continue
+                        raise RuntimeError(f"go2rtc Tapo 再生リクエスト失敗 (HTTP {resp.status_code}): {err_text}")
+                except Exception as e:
+                    last_err = e
+                    if attempt == 0:
+                        await asyncio.sleep(0.8)
+                        continue
+                    raise
+
+            if last_err:
+                raise last_err
+
+        play_sec = max(3.0, duration + 1.5)
+        asyncio.create_task(self._cleanup_stream_session(stream_name, play_sec))
+        return {"success": True, "message": "Tapo playback started"}
+
+    async def _ensure_go2rtc_tapo_stream(self, stream_name: str, tapo_url: str):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                put_url = f"{self.go2rtc_api_url}/api/streams"
+                await client.put(put_url, params={"name": stream_name, "src": tapo_url})
+        except Exception as e:
+            log.warning(f"go2rtc Tapo Stream Register Warning for {stream_name}: {e}")
+
     async def _cleanup_stream_session(self, stream_name: str, delay_sec: float):
         await asyncio.sleep(delay_sec)
         try:
@@ -368,5 +527,6 @@ class OnvifService:
                 await client.put(put_url, params={"name": stream_name, "src": [rtsp_url, onvif_url]})
         except Exception as e:
             log.warning(f"go2rtc Stream Register Warning for {stream_name}: {e}")
+
 
 onvif_service = OnvifService()

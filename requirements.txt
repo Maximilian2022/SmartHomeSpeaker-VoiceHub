@@ -12,3 +12,4 @@ recurring-ical-events>=3.8.2
 python-multipart>=0.0.32
 paho-mqtt>=2.1.0
 aiomqtt>=2.5.1
+pytapo>=3.3.43

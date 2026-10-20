@@ -37,6 +37,12 @@ class DefaultAuthRequest(BaseModel):
     defaultUsername: str = "admin"
     defaultPassword: Optional[str] = ""
 
+class TapoAuthRequest(BaseModel):
+    email: Optional[str] = None
+    password: Optional[str] = None
+    passwordHash: Optional[str] = None
+
+
 @router.get("/api/onvif/scan")
 @router.post("/api/onvif/scan")
 @router.get("/api/onvif-dlna/scan")
@@ -81,7 +87,7 @@ async def probe_dlna(payload: Dict[str, Any]):
 async def register_device(raw_req: Dict[str, Any]):
     # { device: { ... } } 形式またはフラット形式の両方を吸収
     dev_data = raw_req.get("device", raw_req)
-    clean_ip = str(dev_data.get("ip", "")).replace("onvif:", "").replace("dlna:", "")
+    clean_ip = str(dev_data.get("ip", "")).replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
     dev_id = dev_data.get("id") or raw_req.get("id")
     is_delete = raw_req.get("delete") or dev_data.get("delete", False)
 
@@ -103,15 +109,30 @@ async def register_device(raw_req: Dict[str, Any]):
         if (password is None or str(password).strip() == "") and existing:
             password = existing.get("password")
 
+        # Tapo カメラの場合は平文パスワードを不可逆 SHA256 大文字ハッシュに変換
+        password_hash = dev_data.get("passwordHash") or (existing.get("passwordHash") if existing else "")
+        if dtype == "tapo":
+            if password:
+                raw_s = str(password).strip()
+                if len(raw_s) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_s):
+                    password_hash = raw_s.upper()
+                else:
+                    import hashlib
+                    password_hash = hashlib.sha256(raw_s.encode("utf-8")).hexdigest().upper()
+                password = None  # 平文は破棄
+            username = username or "admin"
+
+        default_model = "Speaker" if dtype == "onvif" else ("Tapo Camera" if dtype == "tapo" else "DLNA Speaker")
         entry = {
             "id": dev_id or (existing.get("id") if existing else f"{dtype}_{clean_ip.replace('.', '_')}"),
             "name": dev_data.get("name") or (existing.get("name") if existing else f"{dtype.upper()} ({clean_ip})"),
             "ip": clean_ip,
-            "port": dev_data.get("port") or (existing.get("port", 8000) if existing else 8000),
-            "model": dev_data.get("model") or (existing.get("model") if existing else ("Speaker" if dtype == "onvif" else "DLNA Speaker")),
+            "port": dev_data.get("port") or (existing.get("port", 8000 if dtype == "onvif" else (2020 if dtype == "tapo" else 80)) if existing else (8000 if dtype == "onvif" else (2020 if dtype == "tapo" else 80))),
+            "model": dev_data.get("model") or (existing.get("model") if existing else default_model),
             "type": dtype,
             "username": username,
             "password": password,
+            "passwordHash": password_hash,
             "controlUrl": dev_data.get("controlUrl") or (existing.get("controlUrl") if existing else None),
             "renderingControlUrl": dev_data.get("renderingControlUrl") or (existing.get("renderingControlUrl") if existing else None),
             "enabled": dev_data.get("enabled", True)
@@ -129,7 +150,7 @@ async def register_device(raw_req: Dict[str, Any]):
 async def test_playback(req: TestRequest):
     onvif_conf = settings_manager.get().get("onvif", {})
     reg_list = onvif_conf.get("registeredDevices", [])
-    clean_ip = req.ip.replace("onvif:", "").replace("dlna:", "")
+    clean_ip = req.ip.replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
 
     target_dev = next((d for d in reg_list if d.get("ip") == clean_ip or d.get("id") == req.ip), None)
     if not target_dev:
@@ -167,3 +188,44 @@ async def save_default_auth(req: DefaultAuthRequest):
 
     settings_manager.update({"onvif": update_data})
     return {"success": True}
+
+@router.get("/api/onvif/config")
+async def get_onvif_config():
+    onvif_conf = settings_manager.get().get("onvif", {})
+    return {
+        "enabled": onvif_conf.get("enabled", True),
+        "defaultUsername": onvif_conf.get("defaultUsername", "admin"),
+        "tapoAuthConfigured": bool(onvif_conf.get("tapoPasswordHash") or onvif_conf.get("tapoPassword")),
+        "tapoEmail": onvif_conf.get("tapoEmail") or "",
+        "registeredCount": len(onvif_conf.get("registeredDevices", []))
+    }
+
+@router.post("/api/onvif/tapo-auth")
+async def save_tapo_auth(req: TapoAuthRequest):
+    import hashlib
+    onvif_conf = settings_manager.get().get("onvif", {})
+    tapo_hash = req.passwordHash
+    raw_pass = (req.password or "").strip()
+    if not tapo_hash and raw_pass:
+        if len(raw_pass) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_pass):
+            tapo_hash = raw_pass.upper()
+        else:
+            tapo_hash = hashlib.sha256(raw_pass.encode("utf-8")).hexdigest().upper()
+
+    email = (req.email or "").strip()
+    update_data = {
+        **onvif_conf,
+        "tapoPasswordHash": tapo_hash or onvif_conf.get("tapoPasswordHash", ""),
+        "tapoEmail": email or onvif_conf.get("tapoEmail", "")
+    }
+    if raw_pass and not (len(raw_pass) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_pass)):
+        update_data["tapoPassword"] = raw_pass
+
+    settings_manager.update({"onvif": update_data})
+    return {
+        "success": True,
+        "hasTapoAuth": bool(update_data.get("tapoPasswordHash")),
+        "tapoEmail": update_data.get("tapoEmail")
+    }
+
+

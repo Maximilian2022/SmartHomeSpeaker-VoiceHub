@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from app.config import DATA_DIR
 from app.core.logger import get_logger
+from app.core.log_rotator import get_speak_log_rotator
 
 log = get_logger("History")
 HISTORY_FILE = DATA_DIR / "history.json"
@@ -13,29 +14,44 @@ MAX_HISTORY_ENTRIES = 100
 
 class HistoryManager:
     def __init__(self):
+        self.rotator = get_speak_log_rotator()
         self.history: List[Dict[str, Any]] = []
         self.load_history()
 
     def load_history(self):
         try:
+            # 1. /logs/speak.log (および speak-archive.log) から最新100件を読み込み
+            entries = self.rotator.read_latest_entries(MAX_HISTORY_ENTRIES)
+            if entries:
+                self.history = entries
+                log.info(f"Loaded {len(self.history)} history entries from speak.log")
+                return
+
+            # 2. speak.log が空で旧 history.json が存在する場合、speak.log へ初回自動移行
             if HISTORY_FILE.exists():
                 text = HISTORY_FILE.read_text(encoding="utf-8")
                 parsed = json.loads(text)
-                if isinstance(parsed, list):
+                if isinstance(parsed, list) and parsed:
+                    # 古い順に speak.log へ追記して移行
+                    for item in reversed(parsed[:MAX_HISTORY_ENTRIES]):
+                        self.rotator.write_entry(item)
                     self.history = parsed[:MAX_HISTORY_ENTRIES]
-                    log.info(f"Loaded {len(self.history)} history entries from {HISTORY_FILE}")
+                    log.info(f"Migrated {len(self.history)} history entries from {HISTORY_FILE} to speak.log")
+                    return
         except Exception as e:
-            log.warning(f"Failed to load history from {HISTORY_FILE}: {e}")
+            log.warning(f"Failed to load history from speak.log or {HISTORY_FILE}: {e}")
             self.history = []
 
     def save_history(self):
+        # 既存の history.json への同期バックアップ (後方互換性)
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             temp_file = HISTORY_FILE.with_suffix(".tmp")
             temp_file.write_text(json.dumps(self.history, ensure_ascii=False), encoding="utf-8")
             temp_file.replace(HISTORY_FILE)
         except Exception as e:
-            log.error(f"Failed to save history to {HISTORY_FILE}: {e}")
+            log.error(f"Failed to save legacy history backup: {e}")
+
 
     def derive_source_label(self, source: str) -> str:
         mapping = {
@@ -91,12 +107,15 @@ class HistoryManager:
         if len(self.history) > MAX_HISTORY_ENTRIES:
             self.history = self.history[:MAX_HISTORY_ENTRIES]
 
+        # /logs/speak.log へ追記 (JSON Lines)
+        self.rotator.write_entry(record)
         self.save_history()
         log.info(f"Recorded history entry: '{record['text'][:30]}' -> {record['targets']} [{record['status']}]")
         return record
 
     def get_history(self, limit: int = 100) -> List[Dict[str, Any]]:
         return self.history[:limit]
+
 
     def clear(self):
         self.history = []

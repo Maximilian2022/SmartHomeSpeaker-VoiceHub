@@ -1,17 +1,21 @@
 import os
 import sys
 import time
+import json
 import shutil
 import logging
 import threading
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 # ログディレクトリとファイル定義
 LOG_DIR = Path("/logs")
 ACTIVE_LOG_FILE = LOG_DIR / "container.log"
 ARCHIVE_LOG_FILE = LOG_DIR / "container-archive.log"
+ACTIVE_SPEAK_LOG_FILE = LOG_DIR / "speak.log"
+ARCHIVE_SPEAK_LOG_FILE = LOG_DIR / "speak-archive.log"
+
 
 MAX_ACTIVE_LINES = 1000
 MAX_ARCHIVE_BYTES = 100 * 1024 * 1024  # 100MB
@@ -272,3 +276,205 @@ class StdStreamTee:
         if hasattr(self.original_stream, "isatty"):
             return self.original_stream.isatty()
         return False
+
+
+class SpeakLogRotator:
+    """
+    /logs/speak.log 専用の JSON Lines ログローテーション管理クラス
+    - /logs/speak.log に 1行1JSON (JSONL) で追記
+    - 行数が 1000 行を超えるか、日付が変わったら speak-archive.log に移動（退避追記）
+    - speak-archive.log が 100MB を超えたら zstd 圧縮して最大 10 世代保持
+    - 最新 N 件 (最新100件) の発言エントリを末尾から高速読み出し
+    """
+
+    def __init__(self, log_dir: Path = LOG_DIR):
+        self.log_dir = log_dir
+        self.active_file = log_dir / "speak.log"
+        self.archive_file = log_dir / "speak-archive.log"
+        self.lock = threading.RLock()
+
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            sys.__stderr__.write(f"[SpeakLogRotator] Failed to create log dir: {e}\n")
+
+        self._current_date = date.today()
+        self._current_line_count = self._count_lines_safe(self.active_file)
+        self._file_stream = None
+        self._open_active_file()
+
+    def _open_active_file(self):
+        try:
+            if self._file_stream and not self._file_stream.closed:
+                self._file_stream.close()
+            self._file_stream = open(self.active_file, "a", encoding="utf-8", errors="replace", buffering=1)
+        except Exception as e:
+            sys.__stderr__.write(f"[SpeakLogRotator] Failed to open {self.active_file}: {e}\n")
+            self._file_stream = None
+
+    def _count_lines_safe(self, path: Path) -> int:
+        if not path.exists():
+            return 0
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return sum(1 for _ in f)
+        except Exception:
+            return 0
+
+    def write_entry(self, record: Dict[str, Any]):
+        """辞書オブジェクトを 1行の JSON 文字列として speak.log に追記"""
+        try:
+            line = json.dumps(record, ensure_ascii=False) + "\n"
+            self.write_raw(line)
+        except Exception as e:
+            sys.__stderr__.write(f"[SpeakLogRotator] write_entry JSON dump error: {e}\n")
+
+    def write_raw(self, text: str):
+        """生のテキスト行を speak.log に書き込み、必要に応じてローテーション"""
+        with self.lock:
+            today = date.today()
+            if today != self._current_date or self._current_line_count >= MAX_ACTIVE_LINES:
+                self._rotate_active_to_archive()
+
+            if not self._file_stream or self._file_stream.closed:
+                self._open_active_file()
+
+            if self._file_stream:
+                try:
+                    self._file_stream.write(text)
+                    self._file_stream.flush()
+                    lines_in_text = text.count("\n")
+                    self._current_line_count += max(1, lines_in_text)
+                except Exception as e:
+                    sys.__stderr__.write(f"[SpeakLogRotator] Write failed: {e}\n")
+
+            if self._current_line_count >= MAX_ACTIVE_LINES:
+                self._rotate_active_to_archive()
+
+    def _rotate_active_to_archive(self):
+        """speak.log を speak-archive.log に追記移動し、speak.log を空にする"""
+        try:
+            if self._file_stream and not self._file_stream.closed:
+                self._file_stream.flush()
+                self._file_stream.close()
+                self._file_stream = None
+
+            if self.active_file.exists() and self.active_file.stat().st_size > 0:
+                with open(self.active_file, "rb") as f_src, open(self.archive_file, "ab") as f_dst:
+                    shutil.copyfileobj(f_src, f_dst)
+
+                with open(self.active_file, "wb") as f_trunc:
+                    f_trunc.truncate(0)
+
+            self._current_line_count = 0
+            self._current_date = date.today()
+            self._open_active_file()
+
+            self._check_archive_rotation()
+        except Exception as e:
+            sys.__stderr__.write(f"[SpeakLogRotator] Active rotation error: {e}\n")
+            self._open_active_file()
+
+    def _check_archive_rotation(self):
+        """speak-archive.log が 100MB を超えたら zstd 圧縮して世代管理"""
+        try:
+            if not self.archive_file.exists():
+                return
+
+            archive_size = self.archive_file.stat().st_size
+            if archive_size < MAX_ARCHIVE_BYTES:
+                return
+
+            gen10 = self.log_dir / f"speak-archive.log.{MAX_ARCHIVE_GENERATIONS}.zst"
+            if gen10.exists():
+                try:
+                    gen10.unlink()
+                except Exception:
+                    pass
+
+            for i in range(MAX_ARCHIVE_GENERATIONS - 1, 0, -1):
+                src = self.log_dir / f"speak-archive.log.{i}.zst"
+                dst = self.log_dir / f"speak-archive.log.{i + 1}.zst"
+                if src.exists():
+                    try:
+                        src.rename(dst)
+                    except Exception:
+                        pass
+
+            dest_gen1 = self.log_dir / "speak-archive.log.1.zst"
+            success = compress_file_zstd(self.archive_file, dest_gen1)
+            if success:
+                with open(self.archive_file, "wb") as f_trunc:
+                    f_trunc.truncate(0)
+            else:
+                sys.__stderr__.write("[SpeakLogRotator] Failed to compress archive, keeping raw file\n")
+        except Exception as e:
+            sys.__stderr__.write(f"[SpeakLogRotator] Archive compression rotation error: {e}\n")
+
+    def _read_tail_lines(self, path: Path, num_lines: int) -> List[str]:
+        if not path.exists() or path.stat().st_size == 0:
+            return []
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+                return lines[-num_lines:] if len(lines) > num_lines else lines
+        except Exception as e:
+            sys.__stderr__.write(f"[SpeakLogRotator] Read tail lines error on {path}: {e}\n")
+            return []
+
+    def read_latest_entries(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """最新 N 件の発言履歴エントリを降順 (最新が先頭) で取得"""
+        with self.lock:
+            # 1. speak.log から末尾行を取得
+            lines = self._read_tail_lines(self.active_file, limit)
+
+            # 2. 不足していてアーカイブが存在する場合は補完
+            if len(lines) < limit and self.archive_file.exists():
+                needed = limit - len(lines)
+                archive_lines = self._read_tail_lines(self.archive_file, needed)
+                lines = archive_lines + lines
+
+            # 3. 逆順 (最新順) にパース
+            results: List[Dict[str, Any]] = []
+            for raw_line in reversed(lines):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    if isinstance(obj, dict):
+                        results.append(obj)
+                        if len(results) >= limit:
+                            break
+                except Exception:
+                    continue
+            return results
+
+    def manual_flush_archive(self):
+        with self.lock:
+            self._rotate_active_to_archive()
+
+    def close(self):
+        with self.lock:
+            if self._file_stream and not self._file_stream.closed:
+                try:
+                    self._file_stream.flush()
+                    self._file_stream.close()
+                except Exception:
+                    pass
+                self._file_stream = None
+
+
+# シングルトンインスタンス
+_speak_rotator: Optional[SpeakLogRotator] = None
+_speak_rotator_lock = threading.Lock()
+
+
+def get_speak_log_rotator() -> SpeakLogRotator:
+    global _speak_rotator
+    if _speak_rotator is None:
+        with _speak_rotator_lock:
+            if _speak_rotator is None:
+                _speak_rotator = SpeakLogRotator()
+    return _speak_rotator
+

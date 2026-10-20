@@ -54,6 +54,67 @@ class SpeechService:
                     return float(r.get("volume", 50)) / 100.0
         return None
 
+    async def resolve_targets(
+        self,
+        target_list: List[str],
+        all_devices: Optional[List[Dict[str, Any]]] = None
+    ) -> List[Dict[str, Any]]:
+        if all_devices is None:
+            all_devices = await device_manager.get_devices()
+
+        expanded_devices: List[Dict[str, Any]] = []
+        groups = settings_manager.get().get("deviceGroups", {})
+
+        for tgt in target_list:
+            norm_tgt = tgt.upper()
+            if norm_tgt in ("ALL", "*"):
+                expanded_devices.extend(all_devices)
+            elif norm_tgt in ("GH:ALL", "GOOGLE:ALL"):
+                expanded_devices.extend([d for d in all_devices if d.get("type") == "google"])
+            elif norm_tgt in ("AL:ALL", "ALEXA:ALL"):
+                expanded_devices.extend([d for d in all_devices if d.get("type") == "alexa"])
+            elif norm_tgt in ("HP:ALL", "HOMEPOD:ALL"):
+                expanded_devices.extend([d for d in all_devices if d.get("type") == "homepod"])
+            elif norm_tgt in ("CAM:ALL", "ONVIF:ALL", "TAPO:ALL"):
+                expanded_devices.extend([d for d in all_devices if d.get("type") in ("onvif", "tapo")])
+            elif norm_tgt in ("DLNA:ALL",):
+                expanded_devices.extend([d for d in all_devices if d.get("type") == "dlna"])
+            elif tgt in groups:
+                for member_name in groups[tgt]:
+                    found = device_manager.find_device(member_name)
+                    if found:
+                        expanded_devices.append(found)
+            elif tgt == "default":
+                def_ip = device_manager.get_default_device_ip()
+                found = device_manager.find_device(def_ip) if def_ip else None
+                if found:
+                    expanded_devices.append(found)
+                elif all_devices:
+                    expanded_devices.append(all_devices[0])
+            else:
+                found = device_manager.find_device(tgt)
+                if found:
+                    expanded_devices.append(found)
+
+        # 重複排除 (同一IDまたは同一IP)
+        unique_targets: List[Dict[str, Any]] = []
+        seen_keys = set()
+        for d in expanded_devices:
+            key = d.get("id") or d.get("ip")
+            if key not in seen_keys:
+                seen_keys.add(key)
+                unique_targets.append(d)
+
+        # Google Cast ネイティブグループ集約
+        has_all = any(t.upper() in ("ALL", "*", "GH:ALL", "GOOGLE:ALL") for t in target_list)
+        google_devs = [d for d in unique_targets if d.get("type") == "google"]
+        if has_all and len(google_devs) > 1:
+            cast_group = next((d for d in google_devs if d.get("isGroup")), None)
+            if cast_group:
+                unique_targets = [d for d in unique_targets if d.get("type") != "google" or d == cast_group]
+
+        return unique_targets
+
     async def speak(
         self,
         text: str,
@@ -173,61 +234,7 @@ class SpeechService:
             target_list = ["default"]
 
         all_devices = await device_manager.get_devices()
-        expanded_devices: List[Dict[str, Any]] = []
-
-        # グループ定義
-        groups = settings_manager.get().get("deviceGroups", {})
-
-        for tgt in target_list:
-            norm_tgt = tgt.upper()
-            if norm_tgt in ("ALL", "*"):
-                # 全スピーカー
-                expanded_devices.extend(all_devices)
-            elif norm_tgt in ("GH:ALL", "GOOGLE:ALL"):
-                expanded_devices.extend([d for d in all_devices if d.get("type") == "google"])
-            elif norm_tgt in ("AL:ALL", "ALEXA:ALL"):
-                expanded_devices.extend([d for d in all_devices if d.get("type") == "alexa"])
-            elif norm_tgt in ("HP:ALL", "HOMEPOD:ALL"):
-                expanded_devices.extend([d for d in all_devices if d.get("type") == "homepod"])
-            elif norm_tgt in ("CAM:ALL", "ONVIF:ALL"):
-                expanded_devices.extend([d for d in all_devices if d.get("type") == "onvif"])
-            elif norm_tgt in ("DLNA:ALL",):
-                expanded_devices.extend([d for d in all_devices if d.get("type") == "dlna"])
-            elif tgt in groups:
-                # カスタムグループ
-                for member_name in groups[tgt]:
-                    found = device_manager.find_device(member_name)
-                    if found:
-                        expanded_devices.append(found)
-            elif tgt == "default":
-                def_ip = device_manager.get_default_device_ip()
-                found = device_manager.find_device(def_ip) if def_ip else None
-                if found:
-                    expanded_devices.append(found)
-                elif all_devices:
-                    expanded_devices.append(all_devices[0])
-            else:
-                found = device_manager.find_device(tgt)
-                if found:
-                    expanded_devices.append(found)
-
-        # 重複排除 (同一IDまたは同一IP)
-        unique_targets: List[Dict[str, Any]] = []
-        seen_keys = set()
-        for d in expanded_devices:
-            key = d.get("id") or d.get("ip")
-            if key not in seen_keys:
-                seen_keys.add(key)
-                unique_targets.append(d)
-
-        # Google Cast ネイティブグループ集約
-        has_all = any(t.upper() in ("ALL", "*", "GH:ALL", "GOOGLE:ALL") for t in target_list)
-        google_devs = [d for d in unique_targets if d.get("type") == "google"]
-        if has_all and len(google_devs) > 1:
-            # ネイティブグループが存在すれば個別Google端末を除去してグループ1つに集約
-            cast_group = next((d for d in google_devs if d.get("isGroup")), None)
-            if cast_group:
-                unique_targets = [d for d in unique_targets if d.get("type") != "google" or d == cast_group]
+        unique_targets = await self.resolve_targets(target_list, all_devices)
 
         # Alexa ネイティブグループ集約 (Amazon Rate Limit 防止 & 全室同期発声)
         has_alexa_all = any(t.upper() in ("ALL", "*", "AL:ALL", "ALEXA:ALL") for t in target_list)
@@ -307,8 +314,8 @@ class SpeechService:
             elif dtype == "dlna":
                 log.info(f"[Dispatch -> DLNA] {dev_name} ({dev.get('ip')}) URL: {audio_url}")
                 tasks.append(dlna_service.play_audio(dev, audio_url, effective_vol))
-            elif dtype == "onvif":
-                log.info(f"[Dispatch -> ONVIF] {dev_name} ({dev.get('ip')}) file: {speech['filepath']}")
+            elif dtype in ("onvif", "tapo"):
+                log.info(f"[Dispatch -> {dtype.upper()}] {dev_name} ({dev.get('ip')}) file: {speech['filepath']}")
                 tasks.append(onvif_service.play_audio(dev, speech["filepath"], speech["duration"], effective_vol))
             elif dtype == "alexa":
                 log.info(f"[Dispatch -> Alexa] {dev_name} text: '{text[:30]}' (delay={alexa_delay}ms)")

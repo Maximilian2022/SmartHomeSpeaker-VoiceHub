@@ -243,7 +243,6 @@ document.addEventListener('DOMContentLoaded', () => {
       loadCalendarEvents(),
       loadDndStatus(),
       loadDndSettings(),
-      loadDndHistory(),
       loadSettings(),
       loadAiSettings(),
       loadDisasterSettings()
@@ -673,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (macro === 'HP:ALL') {
               match = (type === 'homepod');
             } else if (macro === 'CAM:ALL') {
-              match = (type === 'onvif');
+              match = (type === 'onvif' || type === 'tapo');
             } else if (groups[macro]) {
               const members = (groups[macro] || []).map(m => String(m).toLowerCase());
               match = members.some(m => m === devIp || m === c.value || devName.includes(m) || devIp.includes(m));
@@ -735,10 +734,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDefault = dev.ip === defaultIp;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
+      const isTapo = dev.type === 'tapo' || dev.ip.startsWith('tapo:');
       const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
       const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
-      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isOnvif ? 'onvif' : 'google')));
-      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isOnvif ? 'onvif-chip' : 'google-chip')));
+      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isTapo ? 'tapo' : (isOnvif ? 'onvif' : 'google'))));
+      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'))));
       const displayName = formatSpeakerDisplayName(dev.name);
 
       let badgeHtml = '';
@@ -760,6 +760,8 @@ document.addEventListener('DOMContentLoaded', () => {
           badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
         } else if (isDlna) {
           badgeHtml += '<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>';
+        } else if (isTapo) {
+          badgeHtml += '<span class="speaker-chip-badge tapo-badge">📹 Tapo</span>';
         } else if (isOnvif) {
           badgeHtml += '<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>';
         } else {
@@ -1045,6 +1047,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const isGroup = catOrder <= 3;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
+      const isTapo = dev.type === 'tapo' || dev.ip.startsWith('tapo:');
+      const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
+      const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
       const displayName = formatSpeakerDisplayName(dev.name);
 
       let groupBadge = '';
@@ -1059,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       cardsHtml += `
-        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : ''}">
+        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''} ${isTapo ? 'tapo-dev' : ''} ${isOnvif ? 'onvif-dev' : ''} ${isDlna ? 'dlna-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : ''}">
           <div class="device-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
             <div style="min-width:0;flex:1;">
               <span class="device-card-title" style="font-size:1.05rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;">${escapeHtml(displayName)}</span>
@@ -1067,9 +1072,12 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">
               ${isDef ? '<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.7rem;padding:2px 6px;">★ 標準</span>' : ''}
               ${isGroup ? groupBadge : `
-                ${!isAlexa && !isHomePod ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
                 ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
                 ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
+                ${isTapo ? '<span class="device-tag tapo" style="background:rgba(6,182,212,0.15);color:#22d3ee;border:1px solid rgba(6,182,212,0.3);font-size:0.7rem;padding:2px 6px;">📹 Tapo</span>' : ''}
+                ${isOnvif ? '<span class="device-tag onvif" style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.3);font-size:0.7rem;padding:2px 6px;">📷 ONVIF</span>' : ''}
+                ${isDlna ? '<span class="device-tag dlna" style="background:rgba(234,179,8,0.15);color:#facc15;border:1px solid rgba(234,179,8,0.3);font-size:0.7rem;padding:2px 6px;">🎵 DLNA</span>' : ''}
+                ${!isAlexa && !isHomePod && !isTapo && !isOnvif && !isDlna ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
               `}
             </div>
           </div>
@@ -1107,6 +1115,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // フィルター適用
     if (state.historyFilter && state.historyFilter !== 'all') {
       items = items.filter(item => {
+        if (state.historyFilter === 'queued') {
+          return item.status === 'queued' || (item.wasQueued && item.status !== 'success');
+        }
         if (state.historyFilter === 'schedule') {
           return item.source === 'schedule' || item.source === 'scheduler' || item.source === 'scheduled_speech';
         }
@@ -1649,7 +1660,7 @@ document.addEventListener('DOMContentLoaded', () => {
           await loadScheduledSpeeches();
         } else if (data.dndSuppressed) {
           showToast('【DND発動中】おやすみ・会議モード中のため発話を抑制しました', 'info');
-          loadDndHistory();
+          loadHistory();
         } else {
           const successCount = data.results?.filter(r => r.status === 'success').length || 0;
           const totalRequested = selectedSpeakers.length;
@@ -2390,9 +2401,11 @@ document.addEventListener('DOMContentLoaded', () => {
     state.devices.forEach(dev => {
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
       const isHomePod = dev.type === 'homepod' || dev.ip.startsWith('homepod:');
-      const isOnvif = dev.type === 'onvif';
-      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isOnvif ? 'onvif' : 'google'));
-      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'));
+      const isTapo = dev.type === 'tapo' || dev.ip.startsWith('tapo:');
+      const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
+      const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
+      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isTapo ? 'tapo' : (isOnvif ? 'onvif' : 'google'))));
+      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'))));
       const displayName = formatSpeakerDisplayName(dev.name);
 
       // 初期値: デフォルトまたは最初のスピーカーを選択
@@ -2406,6 +2419,10 @@ document.addEventListener('DOMContentLoaded', () => {
         badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
       } else if (isHomePod) {
         badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+      } else if (isDlna) {
+        badgeHtml += '<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>';
+      } else if (isTapo) {
+        badgeHtml += '<span class="speaker-chip-badge tapo-badge">📹 Tapo</span>';
       } else if (isOnvif) {
         badgeHtml += '<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>';
       } else {
@@ -2628,7 +2645,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (macro === 'GH:ALL') match = (type === 'google');
             else if (macro === 'AL:ALL') match = (type === 'alexa');
             else if (macro === 'HP:ALL') match = (type === 'homepod');
-            else if (macro === 'CAM:ALL') match = (type === 'onvif');
+            else if (macro === 'CAM:ALL') match = (type === 'onvif' || type === 'tapo');
             c.checked = match;
             c.closest('.speaker-chip')?.classList.toggle('checked', match);
           });
@@ -3749,55 +3766,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderSpeakersCheckboxes(container, 'dndSpeaker', current);
   }
 
-  async function loadDndHistory() {
-    try {
-      const res = await fetch('/api/dnd/history');
-      if (!res.ok) return;
-      const data = await res.json();
-      state.dndHistory = data;
-      renderDndHistory();
-    } catch (e) {
-      console.warn('DND履歴取得失敗:', e);
-    }
-  }
 
-  function renderDndHistory() {
-    const container = document.getElementById('dndHistoryList');
-    if (!container) return;
-    const list = state.dndHistory || [];
-
-    if (!list.length) {
-      container.innerHTML = `<li class="empty-msg">サイレント履歴はまだありません</li>`;
-      return;
-    }
-
-    let html = '';
-    list.forEach(item => {
-      const t = new Date(item.timestamp).toLocaleTimeString();
-      let actionBadge = `<span style="font-size:0.75rem; padding:2px 8px; border-radius:999px; background:rgba(239,68,68,0.15); color:#f87171; border:1px solid rgba(239,68,68,0.3);">${escapeHtml(item.handledAs || 'スキップ')}</span>`;
-      if (item.action === 'whisper') {
-        actionBadge = `<span style="font-size:0.75rem; padding:2px 8px; border-radius:999px; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3);">${escapeHtml(item.handledAs || '極小音量')}</span>`;
-      } else if (item.action === 'queue') {
-        actionBadge = `<span style="font-size:0.75rem; padding:2px 8px; border-radius:999px; background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3);">${escapeHtml(item.handledAs || '保留キュー')}</span>`;
-      }
-
-      html += `
-        <li class="history-item" style="padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; flex-direction:column; gap:4px;">
-          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:0.8rem; color:var(--text-muted); font-family:var(--font-mono);">${t}</span>
-              ${actionBadge}
-              <span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:1px 6px; border-radius:4px;">理由: ${escapeHtml(item.reason || '')}</span>
-            </div>
-            <span style="font-size:0.8rem; color:var(--text-muted);">${escapeHtml(item.targetDevice || '全室')}</span>
-          </div>
-          <div style="font-size:0.9rem; color:var(--text-color); margin-top:2px;">${escapeHtml(item.text || '')}</div>
-        </li>
-      `;
-    });
-
-    container.innerHTML = html;
-  }
 
   async function saveDndSettingsInternal() {
     const spk = getSelectedSpeakers(document.getElementById('dndSpeakersContainer'));
@@ -4172,19 +4141,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // 履歴クリア
-    document.getElementById('btnClearDndHistory')?.addEventListener('click', async () => {
-      if (confirm('サイレント履歴をクリアしてもよろしいですか？')) {
-        try {
-          await fetch('/api/dnd/history', { method: 'DELETE' });
-          state.dndHistory = [];
-          renderDndHistory();
-          showToast('サイレント履歴をクリアしました', 'success');
-        } catch (e) {
-          showToast('履歴クリア失敗: ' + e.message, 'error');
-        }
-      }
-    });
+
   }
 
   // ================= 6. ユーティリティ =================
@@ -4659,6 +4616,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ================= ONVIF カメラスピーカー設定 =================
   let discoveredOnvifDevices = [];
+  let isTapoAuthConfigured = false;
 
   function renderDiscoveredOnvifTable() {
     const tbody = document.getElementById('onvifDiscoveredTableBody');
@@ -4674,12 +4632,15 @@ document.addEventListener('DOMContentLoaded', () => {
     tbody.innerHTML = discoveredOnvifDevices.map(dev => {
       const isReg = registered.some(r => r.ip === dev.ip);
       const isDlna = (dev.category === 'dlna' || dev.type === 'dlna');
-      const isSupported = isDlna || !!(dev.isProfileT || dev.hasProfileT || dev.supportsAudio);
+      const isTapo = (dev.category === 'tapo' || dev.type === 'tapo');
+      const isSupported = isDlna || isTapo || !!(dev.isProfileT || dev.hasProfileT || dev.supportsAudio);
       const rowStyle = !isSupported ? 'opacity: 0.55;' : '';
 
       let typeBadge = '';
       if (isDlna) {
         typeBadge = `<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>`;
+      } else if (isTapo) {
+        typeBadge = `<span class="speaker-chip-badge tapo-badge">📹 Tapo</span>`;
       } else {
         typeBadge = `<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>`;
       }
@@ -4687,6 +4648,8 @@ document.addEventListener('DOMContentLoaded', () => {
       let profileBadge = '';
       if (isDlna) {
         profileBadge = `<span class="speaker-chip-badge" style="background:rgba(6,182,212,0.2);color:#22d3ee;border:1px solid rgba(6,182,212,0.4);font-weight:600;">🎵 UPnP AVTransport</span>`;
+      } else if (isTapo) {
+        profileBadge = `<span class="speaker-chip-badge" style="background:rgba(0,180,216,0.2);color:#38bdf8;border:1px solid rgba(0,180,216,0.4);font-weight:600;">📹 Profile S (双方向通話ハック)</span>`;
       } else if (isSupported) {
         profileBadge = `<span class="speaker-chip-badge" style="background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-weight:600;">📷 Profile T (双方向音声対応)</span>`;
       } else {
@@ -4696,6 +4659,11 @@ document.addEventListener('DOMContentLoaded', () => {
       let authStatus = '';
       if (isDlna) {
         authStatus = `<span style="color:#22d3ee;font-size:0.8rem;">✓ 認証不要 (UPnP)</span>`;
+      } else if (isTapo) {
+        const hasTapoHash = !!(state.settings?.onvif?.tapoPasswordHash || isTapoAuthConfigured);
+        authStatus = hasTapoHash
+          ? `<span style="color:#34d399;font-size:0.8rem;">✓ クラウド認証設定済</span>`
+          : `<span style="color:#fbbf24;font-size:0.8rem;">要クラウド認証設定</span>`;
       } else if (dev.status === 'ok') {
         authStatus = `<span style="color:#34d399;font-size:0.8rem;">✓ 認証・通信確認済</span>`;
       } else if (dev.status === 'unauthorized') {
@@ -4713,12 +4681,12 @@ document.addEventListener('DOMContentLoaded', () => {
         actionHtml = `<button type="button" class="btn btn-primary btn-sm btn-open-onvif-modal" data-ip="${escapeHtml(dev.ip)}">＋ 連携登録</button>`;
       }
 
-      const primaryName = dev.friendlyName || dev.name || (isDlna ? 'DLNA Speaker' : 'ONVIF Camera');
+      const primaryName = dev.friendlyName || dev.name || (isTapo ? 'Tapo Camera' : (isDlna ? 'DLNA Speaker' : 'ONVIF Camera'));
       const subInfo = (dev.model && dev.model !== primaryName)
         ? `${escapeHtml(dev.model)}`
-        : (isDlna ? 'MediaRenderer' : 'Camera');
+        : (isTapo ? 'Tapo Series' : (isDlna ? 'MediaRenderer' : 'Camera'));
 
-      const icon = isDlna ? '🎵' : '📷';
+      const icon = isDlna ? '🎵' : (isTapo ? '📹' : '📷');
 
       return `
         <tr style="${rowStyle}">
@@ -4727,7 +4695,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <strong>${icon} ${escapeHtml(primaryName)}</strong>
             <div style="font-size:0.75rem;color:var(--text-muted);">${subInfo} ${dev.serialNumber ? '(' + escapeHtml(dev.serialNumber) + ')' : ''}</div>
           </td>
-          <td><code>${escapeHtml(dev.ip)}:${dev.port || 80}</code></td>
+          <td><code>${escapeHtml(dev.ip)}:${dev.port || (isDlna ? 80 : (isTapo ? 8800 : 8000))}</code></td>
           <td>${profileBadge}</td>
           <td>${authStatus}</td>
           <td>${actionHtml}</td>
@@ -4754,6 +4722,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const titleEl = document.getElementById('modalOnvifTitle');
     const alertEl = document.getElementById('modalOnvifAlert');
     const authBlock = document.getElementById('onvifAuthBlock');
+    const authLabel = document.getElementById('onvifAuthLabel');
+    const authHint = document.getElementById('onvifAuthHint');
     const nameInput = document.getElementById('onvifRegName');
     const ipInput = document.getElementById('onvifRegIp');
     const modelInput = document.getElementById('onvifRegModel');
@@ -4761,31 +4731,47 @@ document.addEventListener('DOMContentLoaded', () => {
     const passInput = document.getElementById('onvifRegPass');
 
     const isDlna = (dev.category === 'dlna' || dev.type === 'dlna');
-    const defaultName = dev.friendlyName || dev.name || (dev.model ? `${dev.model}_${dev.ip.split('.').pop()}` : (isDlna ? 'DLNAスピーカー' : '防犯カメラ'));
+    const isTapo = (dev.category === 'tapo' || dev.type === 'tapo');
+    const defaultName = dev.friendlyName || dev.name || (dev.model ? `${dev.model}_${dev.ip.split('.').pop()}` : (isTapo ? 'リビングTapo' : (isDlna ? 'DLNAスピーカー' : '防犯カメラ')));
 
     if (titleEl) {
-      titleEl.textContent = isDlna ? '🎵 DLNAスピーカー連携登録' : '📷 カメラスピーカー連携登録';
+      titleEl.textContent = isDlna ? '🎵 DLNAスピーカー連携登録' : (isTapo ? '📹 Tapoカメラスピーカー連携登録' : '📷 ONVIFカメラスピーカー連携登録');
     }
     if (alertEl) {
-      alertEl.textContent = isDlna
-        ? 'この DLNA / UPnP MediaRenderer スピーカーを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。'
-        : 'このカメラを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。';
+      if (isDlna) {
+        alertEl.textContent = 'この DLNA / UPnP MediaRenderer スピーカーを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。';
+      } else if (isTapo) {
+        alertEl.textContent = 'この Tapo カメラを音声案内スピーカーとして登録します。TP-Link独自通話プロトコル（ポート8800）を介して高音質音声アナウンスを流します。';
+      } else {
+        alertEl.textContent = 'このカメラを音声案内スピーカーとして登録します。登録後は各アナウンスや部屋グループ選択で通常のスマートスピーカーと同様に利用できます。';
+      }
     }
     if (authBlock) {
       authBlock.style.display = isDlna ? 'none' : 'block';
     }
+    if (authLabel) {
+      authLabel.textContent = isTapo ? 'Tapo 個別クラウドパスワード' : 'カメラ個別認証 (ONVIFのみ)';
+    }
+    if (authHint) {
+      authHint.textContent = isTapo ? '空欄時は保存済みのデフォルトハッシュを使用' : '空欄時はデフォルト設定を使用';
+    }
 
     if (nameInput) nameInput.value = defaultName;
-    if (ipInput) ipInput.value = `${dev.ip}:${dev.port || (isDlna ? 80 : 8000)}`;
-    if (modelInput) modelInput.value = isDlna ? `${dev.model || 'DLNA'} (UPnP AVTransport)` : `${dev.model || 'ONVIF'} (Profile T 双方向音声)`;
+    if (ipInput) ipInput.value = `${dev.ip}:${dev.port || (isDlna ? 80 : (isTapo ? 8800 : 8000))}`;
+    if (modelInput) {
+      if (isDlna) modelInput.value = `${dev.model || 'DLNA'} (UPnP AVTransport)`;
+      else if (isTapo) modelInput.value = `${dev.model || 'Tapo'} (独自通話ハック)`;
+      else modelInput.value = `${dev.model || 'ONVIF'} (Profile T 双方向音声)`;
+    }
     if (userInput) {
-      userInput.value = '';
-      userInput.placeholder = isDlna ? '不要 (DLNA)' : 'ユーザー名 (空欄でデフォルト)';
-      userInput.disabled = isDlna;
+      userInput.value = isTapo ? 'admin' : '';
+      userInput.placeholder = isDlna ? '不要 (DLNA)' : (isTapo ? 'admin固定' : 'ユーザー名 (空欄でデフォルト)');
+      userInput.disabled = isDlna || isTapo;
+      userInput.style.display = isTapo ? 'none' : 'block';
     }
     if (passInput) {
       passInput.value = '';
-      passInput.placeholder = isDlna ? '不要 (DLNA)' : 'パスワード (空欄でデフォルト)';
+      passInput.placeholder = isDlna ? '不要 (DLNA)' : (isTapo ? '個別パスワード (空欄でデフォルト使用)' : 'パスワード (空欄でデフォルト)');
       passInput.disabled = isDlna;
     }
 
@@ -4830,11 +4816,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const isDlna = (dev.category === 'dlna' || dev.type === 'dlna');
+      const isTapo = (dev.category === 'tapo' || dev.type === 'tapo');
       const defaultUser = document.getElementById('onvifDefaultUser')?.value.trim() || 'admin';
       const defaultPass = document.getElementById('onvifDefaultPass')?.value || '';
 
-      const username = isDlna ? '' : (userInput?.value.trim() || defaultUser);
-      const password = isDlna ? '' : (passInput?.value || defaultPass);
+      const username = isDlna ? '' : (isTapo ? 'admin' : (userInput?.value.trim() || defaultUser));
+      const password = isDlna ? '' : (passInput?.value || (isTapo ? '' : defaultPass));
 
       try {
         btnSubmit.disabled = true;
@@ -4849,11 +4836,11 @@ document.addEventListener('DOMContentLoaded', () => {
               name,
               username,
               password,
-              port: dev.port || (isDlna ? 80 : 8000),
-              model: dev.model || (isDlna ? 'DLNA MediaRenderer' : 'ONVIF Camera'),
+              port: dev.port || (isDlna ? 80 : (isTapo ? 8800 : 8000)),
+              model: dev.model || (isDlna ? 'DLNA MediaRenderer' : (isTapo ? 'Tapo Camera' : 'ONVIF Camera')),
               controlUrl: dev.controlUrl || '',
               renderingControlUrl: dev.renderingControlUrl || '',
-              type: isDlna ? 'dlna' : 'onvif'
+              type: isDlna ? 'dlna' : (isTapo ? 'tapo' : 'onvif')
             }
           })
         });
@@ -4865,7 +4852,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.settings.onvif) state.settings.onvif = {};
         state.settings.onvif.registeredDevices = data.registeredDevices;
 
-        showToast(`「${name}」を${isDlna ? 'DLNA' : 'カメラ'}スピーカーとして登録しました`, 'success');
+        const devTypeLabel = isDlna ? 'DLNA' : (isTapo ? 'Tapo' : 'カメラ');
+        showToast(`「${name}」を${devTypeLabel}スピーカーとして登録しました`, 'success');
         closeOnvifRegisterModal();
         await loadDevices();
         renderRegisteredOnvifTable();
@@ -4891,17 +4879,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tbody.innerHTML = list.map(dev => {
       const isDlna = (dev.type === 'dlna');
-      const icon = isDlna ? '🎵' : '📷';
-      const typeBadge = isDlna
-        ? `<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>`
-        : `<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>`;
-      const rawConnUrl = isDlna
-        ? (dev.controlUrl || 'UPnP AVTransport')
-        : (dev.rtspUrl || 'RTSP Backchannel');
+      const isTapo = (dev.type === 'tapo');
+      const icon = isDlna ? '🎵' : (isTapo ? '📹' : '📷');
+      let typeBadge = '';
+      if (isDlna) {
+        typeBadge = `<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>`;
+      } else if (isTapo) {
+        typeBadge = `<span class="speaker-chip-badge tapo-badge">📹 Tapo</span>`;
+      } else {
+        typeBadge = `<span class="speaker-chip-badge onvif-badge">📷 ONVIF</span>`;
+      }
+
+      let rawConnUrl = '';
+      if (isDlna) {
+        rawConnUrl = dev.controlUrl || 'UPnP AVTransport';
+      } else if (isTapo) {
+        rawConnUrl = `tapo://admin:***@${dev.ip}:8800`;
+      } else {
+        rawConnUrl = dev.rtspUrl || 'RTSP Backchannel';
+      }
       const connUrl = String(rawConnUrl).replace(/:([^:@/]+)@/, ':****@');
-      const authUser = isDlna
-        ? `<span style="color:var(--text-muted);font-size:0.8rem;">不要 (UPnP)</span>`
-        : escapeHtml(dev.username || 'admin');
+
+      let authUser = '';
+      if (isDlna) {
+        authUser = `<span style="color:var(--text-muted);font-size:0.8rem;">不要 (UPnP)</span>`;
+      } else if (isTapo) {
+        authUser = `<span style="color:#38bdf8;font-size:0.8rem;">TP-Link Cloud (SHA256)</span>`;
+      } else {
+        authUser = escapeHtml(dev.username || 'admin');
+      }
 
       return `
         <tr>
@@ -4959,7 +4965,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const dev = list.find(d => d.ip === ip);
         const name = dev?.name || ip;
         const isDlna = (dev?.type === 'dlna');
-        if (!confirm(`「${name}」の${isDlna ? 'DLNA' : 'カメラ'}スピーカー連携を解除しますか？`)) return;
+        const isTapo = (dev?.type === 'tapo');
+        const devLabel = isDlna ? 'DLNA' : (isTapo ? 'Tapo' : 'カメラ');
+        if (!confirm(`「${name}」の${devLabel}スピーカー連携を解除しますか？`)) return;
 
         try {
           const res = await fetch('/api/onvif/register', {
@@ -4992,6 +5000,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const authSavedMsg = document.getElementById('onvifAuthSavedMsg');
     const btnManualAdd = document.getElementById('btnManualAddDevice');
 
+    // Tapo クラウド認証要素
+    const btnSaveTapoAuth = document.getElementById('btnSaveTapoAuth');
+    const inputTapoEmail = document.getElementById('tapoCloudEmail');
+    const inputTapoPass = document.getElementById('tapoCloudPassword');
+    const tapoAuthStatusBadge = document.getElementById('tapoAuthStatusBadge');
+    const tapoAuthSavedMsg = document.getElementById('tapoAuthSavedMsg');
+
     const onvifConfig = state.settings?.onvif || {};
     setupOnvifRegisterModal();
     if (inputUser && onvifConfig.defaultUsername) {
@@ -5000,6 +5015,80 @@ document.addEventListener('DOMContentLoaded', () => {
     if (inputPass && onvifConfig.defaultPassword) {
       inputPass.value = onvifConfig.defaultPassword;
     }
+    if (inputTapoEmail && onvifConfig.tapoEmail) {
+      inputTapoEmail.value = onvifConfig.tapoEmail;
+    }
+
+    // Tapo 認証ステータス更新関数
+    async function refreshTapoAuthStatus() {
+      try {
+        const res = await fetch('/api/onvif/config');
+        if (res.ok) {
+          const cfg = await res.json();
+          isTapoAuthConfigured = !!cfg.tapoAuthConfigured;
+          if (inputTapoEmail && cfg.tapoEmail && !inputTapoEmail.value) {
+            inputTapoEmail.value = cfg.tapoEmail;
+          }
+          if (tapoAuthStatusBadge) {
+            if (isTapoAuthConfigured) {
+              const emailLabel = cfg.tapoEmail ? ` (${cfg.tapoEmail})` : '';
+              tapoAuthStatusBadge.textContent = `🔒 クラウド認証設定済み${emailLabel}`;
+              tapoAuthStatusBadge.style.background = 'rgba(16,185,129,0.2)';
+              tapoAuthStatusBadge.style.color = '#34d399';
+              tapoAuthStatusBadge.style.border = '1px solid rgba(16,185,129,0.4)';
+            } else {
+              tapoAuthStatusBadge.textContent = '未設定';
+              tapoAuthStatusBadge.style.background = 'rgba(255,255,255,0.08)';
+              tapoAuthStatusBadge.style.color = 'var(--text-muted)';
+              tapoAuthStatusBadge.style.border = '1px solid rgba(255,255,255,0.15)';
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Tapo auth status fetch error:', e);
+      }
+    }
+    refreshTapoAuthStatus();
+
+    // Tapo クラウド認証保存
+    btnSaveTapoAuth?.addEventListener('click', async () => {
+      const email = inputTapoEmail?.value.trim() || '';
+      const password = inputTapoPass?.value.trim() || '';
+      if (!password && !isTapoAuthConfigured) {
+        showToast('Tapoクラウドアカウントのパスワードを入力してください', 'warning');
+        inputTapoPass?.focus();
+        return;
+      }
+
+      const origText = btnSaveTapoAuth.textContent;
+      btnSaveTapoAuth.disabled = true;
+      btnSaveTapoAuth.textContent = '保存中...';
+
+      try {
+        const res = await fetch('/api/onvif/tapo-auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '保存に失敗しました');
+
+        if (inputTapoPass) inputTapoPass.value = '';
+        if (tapoAuthSavedMsg) {
+          tapoAuthSavedMsg.style.display = 'block';
+          setTimeout(() => { tapoAuthSavedMsg.style.display = 'none'; }, 4000);
+        }
+        await refreshTapoAuthStatus();
+        renderDiscoveredOnvifTable();
+        showToast('Tapoクラウドアカウント認証情報を保存しました（名前自動解決＆音声通話連携）', 'success');
+      } catch (err) {
+        showToast('Tapo認証保存エラー: ' + err.message, 'error');
+      } finally {
+        btnSaveTapoAuth.disabled = false;
+        btnSaveTapoAuth.textContent = origText;
+      }
+    });
+
 
     btnSaveAuth?.addEventListener('click', async () => {
       const user = inputUser?.value.trim() || 'admin';
@@ -5043,7 +5132,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const ip = document.getElementById('manualDevIp')?.value.trim();
       let port = parseInt(document.getElementById('manualDevPort')?.value, 10);
       if (isNaN(port) || port <= 0) {
-        port = (type === 'dlna' ? 80 : 8000);
+        port = (type === 'dlna' ? 80 : (type === 'tapo' ? 8800 : 8000));
       }
 
       if (!name) {
@@ -5060,14 +5149,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const defaultUser = inputUser?.value.trim() || 'admin';
       const defaultPass = inputPass?.value || '';
 
+      let devModel = 'ONVIF Camera (手動登録)';
+      if (type === 'dlna') devModel = 'DLNA MediaRenderer (手動登録)';
+      else if (type === 'tapo') devModel = 'Tapo Camera (手動登録)';
+
       const devPayload = {
         ip,
         name,
         port,
         type,
-        model: type === 'dlna' ? 'DLNA MediaRenderer (手動登録)' : 'ONVIF Camera (手動登録)',
-        username: type === 'dlna' ? '' : defaultUser,
-        password: type === 'dlna' ? '' : defaultPass,
+        model: devModel,
+        username: type === 'dlna' ? '' : (type === 'tapo' ? 'admin' : defaultUser),
+        password: type === 'dlna' ? '' : (type === 'tapo' ? '' : defaultPass),
         controlUrl: type === 'dlna' ? `http://${ip}:${port}/upnp/control/rendertr1` : '',
         enabled: true
       };
@@ -5088,7 +5181,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!state.settings.onvif) state.settings.onvif = {};
         state.settings.onvif.registeredDevices = data.registeredDevices;
 
-        showToast(`「${name}」を${type === 'dlna' ? 'DLNA' : 'カメラ'}スピーカーとして手動登録しました`, 'success');
+        const typeLabel = type === 'dlna' ? 'DLNA' : (type === 'tapo' ? 'Tapo' : 'カメラ');
+        showToast(`「${name}」を${typeLabel}スピーカーとして手動登録しました`, 'success');
         document.getElementById('manualDevName').value = '';
         document.getElementById('manualDevIp').value = '';
         document.getElementById('manualDevPort').value = '';
