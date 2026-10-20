@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const state = {
     serverInfo: null,
     devices: [],
+    favoriteDevices: [],
     voices: [],
     schedules: [],
     history: [],
@@ -346,16 +347,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function isDeviceFavorite(dev) {
+    if (!dev) return false;
+    if (dev.isFavorite) return true;
+    const ip = dev.ip || '';
+    const id = dev.id || '';
+    const name = dev.name || '';
+    const favs = state.favoriteDevices || [];
+    return favs.includes(ip) || favs.includes(id) || favs.includes(name);
+  }
+
   function sortDevicesList(devices) {
     const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || '';
     return [...devices].sort((a, b) => {
+      const favA = isDeviceFavorite(a);
+      const favB = isDeviceFavorite(b);
+      if (favA && !favB) return -1;
+      if (!favA && favB) return 1;
+
       const orderA = getDeviceCategoryOrder(a);
       const orderB = getDeviceCategoryOrder(b);
       if (orderA !== orderB) return orderA - orderB;
+
       const isDefA = a.ip === defaultIp || a.isDefault;
       const isDefB = b.ip === defaultIp || b.isDefault;
       if (isDefA && !isDefB) return -1;
       if (!isDefA && isDefB) return 1;
+
       return (a.name || '').localeCompare(b.name || '', 'ja');
     });
   }
@@ -410,6 +428,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/devices');
       if (!res.ok) throw new Error('デバイス取得失敗');
       const data = await res.json();
+      if (Array.isArray(data.favorites)) {
+        state.favoriteDevices = data.favorites;
+        try { localStorage.setItem('voicehub_favorites', JSON.stringify(data.favorites)); } catch (e) {}
+      } else {
+        try { state.favoriteDevices = JSON.parse(localStorage.getItem('voicehub_favorites') || '[]'); } catch (e) { state.favoriteDevices = []; }
+      }
       state.devices = sortDevicesList(data.devices || []);
 
       renderDevicesGrid();
@@ -729,6 +753,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     state.devices.forEach(dev => {
       const isChecked = selectedValues.includes(dev.ip) ? 'checked' : '';
+      const isFav = isDeviceFavorite(dev);
       const catOrder = getDeviceCategoryOrder(dev);
       const isGroup = catOrder <= 3;
       const isDefault = dev.ip === defaultIp;
@@ -738,12 +763,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
       const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
       const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isTapo ? 'tapo' : (isOnvif ? 'onvif' : 'google'))));
-      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'))));
+      let chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'))));
+      if (isFav) chipClass += ' favorite-chip';
       const displayName = formatSpeakerDisplayName(dev.name);
 
       let badgeHtml = '';
+      if (isFav) {
+        badgeHtml += '<span class="speaker-chip-badge fav-badge" title="お気に入りスピーカー" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>';
+      }
       if (isDefault) {
-        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">★</span>';
+        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">標準</span>';
       }
       if (isGroup) {
         if (isAlexa) {
@@ -1043,6 +1072,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let cardsHtml = '';
     state.devices.forEach(dev => {
       const isDef = dev.ip === defaultIp;
+      const isFav = isDeviceFavorite(dev);
       const catOrder = getDeviceCategoryOrder(dev);
       const isGroup = catOrder <= 3;
       const isAlexa = dev.type === 'alexa' || dev.ip.startsWith('alexa:');
@@ -1064,13 +1094,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       cardsHtml += `
-        <div class="device-card ${isDef ? 'default-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''} ${isTapo ? 'tapo-dev' : ''} ${isOnvif ? 'onvif-dev' : ''} ${isDlna ? 'dlna-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : ''}">
+        <div class="device-card ${isDef ? 'default-dev' : ''} ${isFav ? 'favorite-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''} ${isTapo ? 'tapo-dev' : ''} ${isOnvif ? 'onvif-dev' : ''} ${isDlna ? 'dlna-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : (isFav ? 'border-color: rgba(245, 158, 11, 0.3);' : '')}">
           <div class="device-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-            <div style="min-width:0;flex:1;">
-              <span class="device-card-title" style="font-size:1.05rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;">${escapeHtml(displayName)}</span>
+            <div style="min-width:0;flex:1;display:flex;align-items:center;gap:6px;">
+              <button type="button" class="btn-fav-star ${isFav ? 'active' : ''}" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" title="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}" aria-label="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}">
+                <span class="fav-star-icon">${isFav ? '★' : '☆'}</span>
+              </button>
+              <span class="device-card-title" style="font-size:1.05rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">
               ${isDef ? '<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.7rem;padding:2px 6px;">★ 標準</span>' : ''}
+              ${isFav && !isDef ? '<span class="device-tag fav" style="background:rgba(245,158,11,0.12);color:#fbbf24;border:1px solid rgba(245,158,11,0.25);font-size:0.7rem;padding:2px 6px;">★ お気に入り</span>' : ''}
               ${isGroup ? groupBadge : `
                 ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
                 ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
@@ -1105,6 +1139,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     el.devicesGrid.innerHTML = cardsHtml;
+  }
+
+  // お気に入り切り替え処理
+  async function toggleDeviceFavorite(ip, name) {
+    if (!ip) return;
+    const isCurrentlyFav = isDeviceFavorite({ ip, name });
+    const newStatus = !isCurrentlyFav;
+
+    if (newStatus) {
+      if (!state.favoriteDevices.includes(ip)) {
+        state.favoriteDevices.push(ip);
+      }
+    } else {
+      state.favoriteDevices = state.favoriteDevices.filter(x => x !== ip && x !== name);
+    }
+
+    try {
+      localStorage.setItem('voicehub_favorites', JSON.stringify(state.favoriteDevices));
+    } catch (e) {}
+
+    // state.devices の該当デバイスの isFavorite も更新
+    state.devices.forEach(d => {
+      if (d.ip === ip || d.id === ip || d.name === name) {
+        d.isFavorite = newStatus;
+      }
+    });
+
+    // お気に入り最優先で並び替え
+    state.devices = sortDevicesList(state.devices);
+
+    // 全UI再描画 (接続デバイス一覧・即時発言・送信先セレクター全般)
+    renderDevicesGrid();
+    renderAllSpeakerSelectors();
+
+    showToast(newStatus ? `★「${name}」をお気に入りに追加しました` : `☆「${name}」のお気に入りを解除しました`, 'info');
+
+    // バックエンドへ非同期保存
+    try {
+      const res = await fetch('/api/devices/favorite/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.favorites)) {
+          state.favoriteDevices = data.favorites;
+          try {
+            localStorage.setItem('voicehub_favorites', JSON.stringify(data.favorites));
+          } catch (e) {}
+        }
+      }
+    } catch (err) {
+      console.warn('お気に入りサーバー同期エラー (ローカルでは保持されています):', err);
+    }
   }
 
   function renderFullHistory() {
@@ -1756,6 +1845,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // デバイス一覧内クイックテストボタン (イベント委譲)
     el.devicesGrid.addEventListener('click', async (e) => {
+      // 0. お気に入り切り替えボタン
+      const favBtn = e.target.closest('.btn-fav-star');
+      if (favBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const ip = favBtn.getAttribute('data-ip');
+        const name = favBtn.getAttribute('data-name') || ip;
+        await toggleDeviceFavorite(ip, name);
+        return;
+      }
+
       // 1. テスト発声ボタン
       const pingBtn = e.target.closest('.btn-quick-ping');
       if (pingBtn) {
@@ -1842,6 +1942,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/devices/rescan-all', { method: 'POST' });
         const data = await res.json();
         if (data.success) {
+          if (Array.isArray(data.favorites)) {
+            state.favoriteDevices = data.favorites;
+          }
           state.devices = sortDevicesList(data.devices || []);
           renderDevicesGrid();
           renderAllSpeakerSelectors();
@@ -2405,15 +2508,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
       const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
       const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isTapo ? 'tapo' : (isOnvif ? 'onvif' : 'google'))));
-      const chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'))));
+      const isFav = isDeviceFavorite(dev);
+      let chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'))));
+      if (isFav) chipClass += ' favorite-chip';
       const displayName = formatSpeakerDisplayName(dev.name);
 
       // 初期値: デフォルトまたは最初のスピーカーを選択
       const isChecked = dev.isDefault || (!state.devices.some(d => d.isDefault) && state.devices[0]?.ip === dev.ip);
 
       let badgeHtml = '';
+      if (isFav) {
+        badgeHtml += '<span class="speaker-chip-badge fav-badge" title="お気に入りスピーカー" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>';
+      }
       if (dev.isDefault) {
-        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">★</span>';
+        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">標準</span>';
       }
       if (isAlexa) {
         badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';

@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
 from pydantic import BaseModel
 from app.services.devices_service import device_manager
@@ -11,12 +11,20 @@ class DefaultDeviceRequest(BaseModel):
     id: Optional[str] = None
     ip: Optional[str] = None
 
+class DeviceFavoritesRequest(BaseModel):
+    favorites: List[str]
+
+class DeviceFavoriteToggleRequest(BaseModel):
+    ip: Optional[str] = None
+    id: Optional[str] = None
+
 @router.get("/api/devices")
 async def get_devices():
     devs = await device_manager.get_devices()
     return {
         "devices": devs,
-        "defaultIp": device_manager.get_default_device_ip()
+        "defaultIp": device_manager.get_default_device_ip(),
+        "favorites": settings_manager.get_favorite_devices()
     }
 
 @router.post("/api/devices/rescan-all")
@@ -28,7 +36,8 @@ async def rescan_all_devices():
         "success": True,
         "count": len(devs),
         "devices": devs,
-        "defaultIp": device_manager.get_default_device_ip()
+        "defaultIp": device_manager.get_default_device_ip(),
+        "favorites": settings_manager.get_favorite_devices()
     }
 
 @router.get("/api/devices/default")
@@ -40,6 +49,28 @@ async def set_default_device(req: DefaultDeviceRequest):
     dev_id = req.id or req.ip or ""
     saved = device_manager.set_default_device_ip(dev_id)
     return {"success": True, "defaultDeviceId": saved}
+
+@router.get("/api/devices/favorites")
+async def get_favorite_devices():
+    return {"favorites": settings_manager.get_favorite_devices()}
+
+@router.post("/api/devices/favorites")
+async def set_favorite_devices(req: DeviceFavoritesRequest):
+    saved = settings_manager.set_favorite_devices(req.favorites)
+    return {"success": True, "favorites": saved}
+
+@router.post("/api/devices/favorite/toggle")
+async def toggle_favorite_device(req: DeviceFavoriteToggleRequest):
+    target = req.ip or req.id or ""
+    if not target:
+        return {"success": False, "error": "ip or id is required"}
+    is_fav = settings_manager.toggle_favorite_device(target)
+    return {
+        "success": True,
+        "target": target,
+        "isFavorite": is_fav,
+        "favorites": settings_manager.get_favorite_devices()
+    }
 
 @router.get("/api/groups")
 async def get_device_groups():

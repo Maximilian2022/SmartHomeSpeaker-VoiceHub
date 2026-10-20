@@ -118,12 +118,14 @@ class DeviceManager:
 
     async def get_devices(self) -> List[Dict[str, Any]]:
         default_ip = self.get_default_device_ip()
+        favs = set(settings_manager.get_favorite_devices())
         results: List[Dict[str, Any]] = []
 
         # 1. Google Cast デバイス
         for dev in self.devices.values():
             d = dict(dev)
             d["isDefault"] = (d["ip"] == default_ip)
+            d["isFavorite"] = (d.get("ip") in favs or d.get("id") in favs or d.get("name") in favs)
             results.append(d)
 
         # 2. Alexa デバイス
@@ -133,6 +135,7 @@ class DeviceManager:
                 for ad in alexa_devs:
                     d = dict(ad)
                     d["isDefault"] = (d.get("ip") == default_ip or d.get("id") == default_ip)
+                    d["isFavorite"] = (d.get("ip") in favs or d.get("id") in favs or d.get("name") in favs)
                     results.append(d)
             except Exception as e:
                 print(f"[DeviceManager] Alexa list error: {e}")
@@ -143,6 +146,7 @@ class DeviceManager:
             for hd in hp_devs:
                 d = dict(hd)
                 d["isDefault"] = (d["ip"] == default_ip)
+                d["isFavorite"] = (d.get("ip") in favs or d.get("id") in favs or d.get("name") in favs)
                 results.append(d)
         except Exception as e:
             print(f"[DeviceManager] HomePod list error: {e}")
@@ -156,9 +160,12 @@ class DeviceManager:
                     raw_ip = str(dev.get("ip", "")).replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
                     prefix = f"{dtype}:{raw_ip}"
                     default_model = "Tapo Camera" if dtype == "tapo" else ("ONVIF Speaker" if dtype == "onvif" else "DLNA Speaker")
+                    dev_id = dev.get("id") or f"{dtype}_{raw_ip.replace('.', '_')}"
+                    dev_name = dev.get("name") or dev.get("friendlyName") or f"{dtype.upper()} ({raw_ip})"
+                    is_fav = (prefix in favs or raw_ip in favs or dev_id in favs or dev_name in favs)
                     results.append({
-                        "id": dev.get("id") or f"{dtype}_{raw_ip.replace('.', '_')}",
-                        "name": dev.get("name") or dev.get("friendlyName") or f"{dtype.upper()} ({raw_ip})",
+                        "id": dev_id,
+                        "name": dev_name,
                         "ip": prefix,
                         "rawIp": raw_ip,
                         "port": dev.get("port", 8000),
@@ -169,11 +176,13 @@ class DeviceManager:
                         "passwordHash": dev.get("passwordHash"),
                         "controlUrl": dev.get("controlUrl"),
                         "renderingControlUrl": dev.get("renderingControlUrl"),
-                        "isDefault": (prefix == default_ip)
+                        "isDefault": (prefix == default_ip),
+                        "isFavorite": is_fav
                     })
 
-        # ソート: カテゴリ順 -> デフォルト優先 -> 名前順
+        # ソート: お気に入り最優先 -> カテゴリ順 -> デフォルト優先 -> 名前順
         results.sort(key=lambda d: (
+            0 if d.get("isFavorite") else 1,
             self.get_device_category_order(d),
             0 if d.get("isDefault") else 1,
             d.get("name", "")

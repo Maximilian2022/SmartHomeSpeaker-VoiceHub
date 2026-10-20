@@ -376,6 +376,57 @@ class TestSmokeVoiceHub(unittest.TestCase):
             self.assertEqual(decompressed, original_content, "Decompressed content must match original")
 
 
+    def test_favorite_devices_settings_and_api(self):
+        """お気に入り機能のSettingsManager、APIエンドポイント、およびソート順序の検証"""
+        from app.services.settings_service import settings_manager
+        from app.services.devices_service import device_manager
+
+        orig_favs = settings_manager.get_favorite_devices()
+        try:
+            # 1. SettingsManager CRUD検証
+            settings_manager.set_favorite_devices(["192.168.1.50", "alexa:EchoDot"])
+            self.assertEqual(settings_manager.get_favorite_devices(), ["192.168.1.50", "alexa:EchoDot"])
+
+            # トグル検証 (新規追加)
+            is_fav = settings_manager.toggle_favorite_device("192.168.1.99")
+            self.assertTrue(is_fav)
+            self.assertIn("192.168.1.99", settings_manager.get_favorite_devices())
+
+            # トグル検証 (解除)
+            is_fav = settings_manager.toggle_favorite_device("192.168.1.99")
+            self.assertFalse(is_fav)
+            self.assertNotIn("192.168.1.99", settings_manager.get_favorite_devices())
+
+            # 2. API エンドポイント検証
+            from fastapi.testclient import TestClient
+            from app.main import app
+            client = TestClient(app)
+
+            # GET /api/devices/favorites
+            res = client.get("/api/devices/favorites")
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["favorites"], ["192.168.1.50", "alexa:EchoDot"])
+
+            # POST /api/devices/favorite/toggle
+            res = client.post("/api/devices/favorite/toggle", json={"ip": "192.168.1.100"})
+            self.assertEqual(res.status_code, 200)
+            self.assertTrue(res.json()["isFavorite"])
+            self.assertIn("192.168.1.100", res.json()["favorites"])
+
+            # 3. デバイスソート順序（お気に入り最優先）の検証
+            with patch.object(device_manager, "devices", {
+                "192.168.1.10": {"id": "dev1", "name": "通常スピーカーA", "ip": "192.168.1.10", "type": "google"},
+                "192.168.1.20": {"id": "dev2", "name": "通常スピーカーB", "ip": "192.168.1.20", "type": "google"},
+                "192.168.1.30": {"id": "dev3", "name": "お気に入りスピーカーC", "ip": "192.168.1.30", "type": "google"},
+            }):
+                settings_manager.set_favorite_devices(["192.168.1.30"])
+                devs = asyncio.run(device_manager.get_devices())
+                # お気に入りスピーカーCがリストの先頭に来ること
+                self.assertTrue(devs[0]["isFavorite"])
+                self.assertEqual(devs[0]["ip"], "192.168.1.30")
+                self.assertFalse(devs[1]["isFavorite"])
+        finally:
+            settings_manager.set_favorite_devices(orig_favs)
 
 if __name__ == "__main__":
     unittest.main()

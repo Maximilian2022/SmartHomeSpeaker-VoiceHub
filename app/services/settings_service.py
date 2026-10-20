@@ -1,12 +1,13 @@
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 from app.config import DATA_DIR, settings
 
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "defaultDeviceId": settings.effective_default_ip,
+    "favoriteDevices": [],
     "webhookToken": settings.webhook_token,
     "calendar": {
         "enabled": False,
@@ -415,7 +416,7 @@ class SettingsManager:
         return self.settings
 
     def update(self, new_data: Dict[str, Any]) -> Dict[str, Any]:
-        OVERWRITE_COLLECTIONS = {"deviceGroups", "ipAliases", "dndScheduleRules"}
+        OVERWRITE_COLLECTIONS = {"deviceGroups", "ipAliases", "dndScheduleRules", "favoriteDevices"}
         for k, v in new_data.items():
             if k in OVERWRITE_COLLECTIONS:
                 self.settings[k] = v
@@ -436,5 +437,35 @@ class SettingsManager:
         self.settings["defaultDeviceId"] = dev_id
         self._save(self.settings)
         return dev_id
+
+    def get_favorite_devices(self) -> List[str]:
+        raw = self.settings.get("favoriteDevices", [])
+        if isinstance(raw, list):
+            return [str(x) for x in raw if x]
+        return []
+
+    def set_favorite_devices(self, favorites: List[str]) -> List[str]:
+        unique_favs: List[str] = []
+        for f in favorites:
+            s = str(f).strip()
+            if s and s not in unique_favs:
+                unique_favs.append(s)
+        self.settings["favoriteDevices"] = unique_favs
+        self._save(self.settings)
+        return unique_favs
+
+    def toggle_favorite_device(self, dev_id: str) -> bool:
+        target = str(dev_id).strip()
+        if not target:
+            return False
+        favs = self.get_favorite_devices()
+        if target in favs:
+            favs.remove(target)
+            is_fav = False
+        else:
+            favs.append(target)
+            is_fav = True
+        self.set_favorite_devices(favs)
+        return is_fav
 
 settings_manager = SettingsManager()
