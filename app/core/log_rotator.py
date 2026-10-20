@@ -19,17 +19,29 @@ MAX_ARCHIVE_GENERATIONS = 10
 
 
 def compress_file_zstd(src_path: Path, dest_path: Path) -> bool:
-    """ファイルを zstd で圧縮する（Pythonモジュール優先、コマンドラインフォールバック）"""
+    """ファイルを zstd で圧縮する（Python 3.14 標準ライブラリ優先、フォールバックチェーン対応）"""
+    # 1. Python 3.14+ 標準ライブラリ compression.zstd (PEP 784)
     try:
-        import zstandard as zstd  # type: ignore
-        cctx = zstd.ZstdCompressor(level=3)
+        import compression.zstd as std_zstd  # type: ignore
+        with open(src_path, "rb") as f_in, std_zstd.open(dest_path, "wb", level=3) as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        return True
+    except ImportError:
+        pass
+    except Exception as e:
+        sys.__stderr__.write(f"[LogRotator] standard compression.zstd error: {e}\n")
+
+    # 2. サードパーティ製 zstandard パッケージ (旧 Python 環境向け)
+    try:
+        import zstandard as pypi_zstd  # type: ignore
+        cctx = pypi_zstd.ZstdCompressor(level=3)
         with open(src_path, "rb") as f_in, open(dest_path, "wb") as f_out:
             cctx.copy_stream(f_in, f_out)
         return True
     except ImportError:
         pass
     except Exception as e:
-        sys.__stderr__.write(f"[LogRotator] zstandard python compression error: {e}\n")
+        sys.__stderr__.write(f"[LogRotator] third-party zstandard error: {e}\n")
 
     # システムの zstd コマンドによるフォールバック
     zstd_bin = shutil.which("zstd")

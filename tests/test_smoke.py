@@ -351,6 +351,33 @@ class TestSmokeVoiceHub(unittest.TestCase):
         with patch.object(tts_service, "is_azure_active", return_value=False), \
              patch.object(tts_service.gcp_provider, "enabled", False):
             self.assertEqual(tts_service.get_default_voice_id(), "ja-JP-NanamiNeural")
+    def test_compress_file_zstd(self):
+        """Python 3.14 標準ライブラリ compression.zstd による圧縮・伸張が正常に機能すること"""
+        import tempfile
+        import shutil
+        from app.core.log_rotator import compress_file_zstd
+
+        src = Path(tempfile.mktemp(suffix=".txt"))
+        dest = Path(tempfile.mktemp(suffix=".txt.zst"))
+        try:
+            original_content = "Log line for testing zstd compression.\n" * 50
+            src.write_text(original_content, encoding="utf-8")
+
+            success = compress_file_zstd(src, dest)
+            self.assertTrue(success, "compress_file_zstd should return True")
+            self.assertTrue(dest.exists(), "Compressed destination file should exist")
+            self.assertGreater(dest.stat().st_size, 0, "Compressed file should not be empty")
+
+            # 伸長検証 (Python 3.14 標準ライブラリ compression.zstd 経由)
+            import compression.zstd as std_zstd
+            with std_zstd.open(dest, "rb") as f_in:
+                decompressed = f_in.read().decode("utf-8")
+            self.assertEqual(decompressed, original_content, "Decompressed content must match original")
+        finally:
+            if src.exists():
+                src.unlink()
+            if dest.exists():
+                dest.unlink()
 
 
 if __name__ == "__main__":

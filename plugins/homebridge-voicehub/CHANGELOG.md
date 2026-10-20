@@ -1,5 +1,10 @@
 # 変更履歴 (Changelog)
 
+## [1.0.3] - 2026-10-20
+### 変更 (Changed)
+- `package.json`: Homebridge v2.0 に対応するため `engines.homebridge` の指定を `"^1.6.0 || ^2.0.0"` に更新
+- `package.json`: Homebridge 互換性メタデータキーワード `"supports-hap"` を追加
+
 ## [1.0.2] - 2026-10-19
 ### 修正 (Fixed)
 - `voicehub-client.ts`: `getDevices()` において VoiceHub API の返却型（配列または `{devices: [...]}` オブジェクト）の両方を安全に正規化して取り出すよう修正

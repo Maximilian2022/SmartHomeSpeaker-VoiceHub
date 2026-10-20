@@ -21,7 +21,6 @@
 | **icalendar** | BSD 2-Clause | © Max M / icalendar contributors ([collective/icalendar](https://github.com/collective/icalendar)) |
 | **paho-mqtt** | EPL-2.0 / EDL-1.0 (BSD) | © Eclipse Foundation ([eclipse-paho/paho.mqtt.python](https://github.com/eclipse-paho/paho.mqtt.python)) |
 | **aiomqtt** | BSD 3-Clause | © Felix Schwerter / SBT Instruments ([sbtinstruments/aiomqtt](https://github.com/sbtinstruments/aiomqtt)) |
-| **zstandard** | BSD 3-Clause | © Gregory Szorc ([indygreg/python-zstandard](https://github.com/indygreg/python-zstandard)) |
 | **edge-tts** | **GNU LGPL v3.0** | © rany2 ([rany2/edge-tts](https://github.com/rany2/edge-tts)) |
 | **recurring-ical-events** | **GNU LGPL v3.0 or later** | © Nicco Kunzmann ([niccokunzmann/python-recurring-ical-events](https://github.com/niccokunzmann/python-recurring-ical-events)) |
 

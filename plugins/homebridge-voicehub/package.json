@@ -1,6 +1,6 @@
 {
   "name": "homebridge-voicehub",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Homebridge plugin for Smart Speaker Voice Hub (Google Cast, Alexa, HomePod, ONVIF/DLNA integration)",
   "license": "Apache-2.0",
   "author": "Maximilian2022",
@@ -16,6 +16,7 @@
 
   "keywords": [
     "homebridge-plugin",
+    "supports-hap",
     "voicehub",
     "smart-speaker",
     "tts",
@@ -32,7 +33,7 @@
   },
   "engines": {
     "node": ">=18.0.0",
-    "homebridge": ">=1.6.0"
+    "homebridge": "^1.6.0 || ^2.0.0"
   },
   "dependencies": {},
   "devDependencies": {
