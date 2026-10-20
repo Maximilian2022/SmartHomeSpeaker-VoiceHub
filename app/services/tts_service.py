@@ -27,6 +27,82 @@ from app.services.tts import (
     tts_usage_tracker
 )
 
+# 安全なチャイム音の定義（ファイル名マッピング：6テーマ×各10種 計60種）
+ALLOWED_CHIMES: Dict[str, str] = {
+    # 1. 標準・日常 (classic)
+    "dingdong": "dingdong.mp3",
+    "chime_simple": "chime_simple.mp3",
+    "classic_doorbell": "classic_doorbell.mp3",
+    "classic_triangle": "classic_triangle.mp3",
+    "classic_cuckoo": "classic_cuckoo.mp3",
+    "classic_step": "classic_step.mp3",
+    "classic_warm": "classic_warm.mp3",
+    "classic_bright": "classic_bright.mp3",
+    "classic_soft": "classic_soft.mp3",
+    "classic_clarity": "classic_clarity.mp3",
+
+    # 2. ホテル・高級ラウンジ (hotel)
+    "chime_hotel": "chime_hotel.mp3",
+    "chime_marimba": "chime_marimba.mp3",
+    "hotel_glockenspiel": "hotel_glockenspiel.mp3",
+    "hotel_vibes": "hotel_vibes.mp3",
+    "hotel_concierge": "hotel_concierge.mp3",
+    "hotel_celesta": "hotel_celesta.mp3",
+    "hotel_harp": "hotel_harp.mp3",
+    "hotel_rhodes": "hotel_rhodes.mp3",
+    "hotel_acoustic": "hotel_acoustic.mp3",
+    "hotel_suite": "hotel_suite.mp3",
+
+    # 3. 和風・伝統・癒やし (zen)
+    "chime_zen": "chime_zen.mp3",
+    "chime_koto": "chime_koto.mp3",
+    "zen_rin": "zen_rin.mp3",
+    "zen_hyoshigi": "zen_hyoshigi.mp3",
+    "zen_suikinkutsu": "zen_suikinkutsu.mp3",
+    "zen_windchime": "zen_windchime.mp3",
+    "zen_bamboo": "zen_bamboo.mp3",
+    "zen_miyabi": "zen_miyabi.mp3",
+    "zen_shakuhachi": "zen_shakuhachi.mp3",
+    "zen_taiko": "zen_taiko.mp3",
+
+    # 4. スマート家電・近未来 (cyber)
+    "chime_cyber": "chime_cyber.mp3",
+    "chime_digital": "chime_digital.mp3",
+    "cyber_assist": "cyber_assist.mp3",
+    "cyber_pulse": "cyber_pulse.mp3",
+    "cyber_warp": "cyber_warp.mp3",
+    "cyber_synapse": "cyber_synapse.mp3",
+    "cyber_hologram": "cyber_hologram.mp3",
+    "cyber_quantum": "cyber_quantum.mp3",
+    "cyber_laser": "cyber_laser.mp3",
+    "cyber_blip": "cyber_blip.mp3",
+
+    # 5. オルゴール・リラックス (relax)
+    "chime_musicbox": "chime_musicbox.mp3",
+    "relax_kalimba": "relax_kalimba.mp3",
+    "relax_crystal": "relax_crystal.mp3",
+    "relax_lullaby": "relax_lullaby.mp3",
+    "relax_starlight": "relax_starlight.mp3",
+    "relax_chime": "relax_chime.mp3",
+    "relax_dream": "relax_dream.mp3",
+    "relax_meadow": "relax_meadow.mp3",
+    "relax_twinkle": "relax_twinkle.mp3",
+    "relax_calm": "relax_calm.mp3",
+
+    # 6. 案内・注意喚起 (notice)
+    "chime_airport": "chime_airport.mp3",
+    "announce": "announce.mp3",
+    "bell": "bell.mp3",
+    "alert": "alert.mp3",
+    "notice_broadcast": "notice_broadcast.mp3",
+    "notice_train": "notice_train.mp3",
+    "notice_school": "notice_school.mp3",
+    "notice_info": "notice_info.mp3",
+    "notice_chime3": "notice_chime3.mp3",
+    "notice_urgent": "notice_urgent.mp3",
+}
+
+
 class TtsService:
     """すべての TTS プロバイダーを統合管理し、フォールバックおよび緊急最速並行生成を提供するファサードサービス"""
 
@@ -554,14 +630,9 @@ class TtsService:
             f.write(raw_bytes)
 
         # 2. チャイムの結合 (ホワイトリスト照合により Path Injection を構造的に遮断)
-        ALLOWED_CHIMES = {
-            "alert": self.sound_dir / "alert.mp3",
-            "announce": self.sound_dir / "announce.mp3",
-            "bell": self.sound_dir / "bell.mp3",
-            "dingdong": self.sound_dir / "dingdong.mp3",
-        }
         chime_key = str(chime or "").strip().lower()
-        chime_file = ALLOWED_CHIMES.get(chime_key)
+        chime_filename = ALLOWED_CHIMES.get(chime_key)
+        chime_file = (self.sound_dir / chime_filename) if chime_filename else None
         if chime_file and chime_file.is_file():
             # FFmpeg concat フィルターで安全に結合
             cmd = [

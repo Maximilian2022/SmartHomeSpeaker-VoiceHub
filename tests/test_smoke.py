@@ -428,6 +428,45 @@ class TestSmokeVoiceHub(unittest.TestCase):
         finally:
             settings_manager.set_favorite_devices(orig_favs)
 
+    def test_chimes_catalog_and_files(self):
+        """チャイム音カタログAPI、ALLOWED_CHIMESホワイトリスト、および音源ファイルの存在検証"""
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app.services.tts_service import ALLOWED_CHIMES
+
+        client = TestClient(app)
+
+        # 1. GET /api/chimes のレスポンス検証
+        res = client.get("/api/chimes")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("catalog", data)
+        self.assertEqual(len(data["catalog"]), 7)  # 6テーマ + その他
+
+        sound_dir = Path(__file__).resolve().parent.parent / "public" / "sound"
+        all_chime_keys = set()
+
+        for cat in data["catalog"]:
+            self.assertIn("category", cat)
+            self.assertIn("chimes", cat)
+            if cat["category"] != "その他":
+                self.assertEqual(len(cat["chimes"]), 10, f"Category {cat['category']} should have exactly 10 chimes")
+            for item in cat["chimes"]:
+                chime_id = item["id"]
+                all_chime_keys.add(chime_id)
+                if chime_id != "none":
+                    self.assertIn(chime_id, ALLOWED_CHIMES)
+                    # ファイルが存在すること
+                    file_path = sound_dir / f"{chime_id}.mp3"
+                    self.assertTrue(file_path.is_file(), f"Sound file not found: {file_path}")
+
+        # 2. ALLOWED_CHIMES に含まれる全チャイムのファイル存在検証 (全60個)
+        self.assertEqual(len(ALLOWED_CHIMES), 60)
+        for chime_key, filename in ALLOWED_CHIMES.items():
+            file_path = sound_dir / filename
+            self.assertTrue(file_path.is_file(), f"Sound file for {chime_key} not found: {file_path}")
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=2.9">
+  <link rel="stylesheet" href="style.css?v=3.1">
 </head>
 <body>
   <div class="app-background"></div>
@@ -959,19 +959,90 @@
                   <label for="settingDefaultChime" class="form-label">標準チャイム音</label>
                   <div style="display: flex; gap: 8px; align-items: center;">
                     <select id="settingDefaultChime" class="form-select" style="flex: 1;">
-                      <option value="dingdong">🔔 ピンポン (dingdong) - 標準・案内</option>
-                      <option value="bell">🎶 ベル (bell) - やさしいお知らせ</option>
-                      <option value="announce">📢 アナウンス (announce) - 明るい注意喚起</option>
-                      <option value="alert">⚠️ アラート (alert) - 重要通知・警告</option>
-                      <option value="none">チャイムなし (直接アナウンス)</option>
+                      <optgroup label="標準・日常 (Classic & Daily)">
+                        <option value="dingdong">🔔 ピンポン (dingdong) - 定番・標準案内 (1.8s)</option>
+                        <option value="chime_simple">🎵 シンプル2音 (chime_simple) - 爽やか日常 (1.1s)</option>
+                        <option value="classic_doorbell">🚪 ドアベル (classic_doorbell) - 軽快な2打 (1.2s)</option>
+                        <option value="classic_triangle">📐 トライアングル (classic_triangle) - 澄んだ金属音 (1.5s)</option>
+                        <option value="classic_cuckoo">🐦 鳩時計 (classic_cuckoo) - 温かな木彫り時計 (1.2s)</option>
+                        <option value="classic_step">🪜 ステップ3音 (classic_step) - 上行3音 (1.3s)</option>
+                        <option value="classic_warm">☕ ウォームベル (classic_warm) - まろやかな2音 (1.4s)</option>
+                        <option value="classic_bright">☀️ ブライトチャイム (classic_bright) - 明るい2音 (1.1s)</option>
+                        <option value="classic_soft">☁️ ソフトチャイム (classic_soft) - 優しいアタック (1.5s)</option>
+                        <option value="classic_clarity">✨ クラリティ (classic_clarity) - 澄み渡る単音 (1.6s)</option>
+                      </optgroup>
+                      <optgroup label="ホテル・高級ラウンジ (Luxury & Hotel)">
+                        <option value="chime_hotel">🏨 ホテルチャイム (chime_hotel) - 優雅な4音 (2.2s)</option>
+                        <option value="chime_marimba">🪵 マリンバ (chime_marimba) - あたたかい木琴3音 (1.5s)</option>
+                        <option value="hotel_glockenspiel">🎹 グロッケン (hotel_glockenspiel) - 澄んだ鉄琴4音 (2.0s)</option>
+                        <option value="hotel_vibes">🎷 ビブラフォン (hotel_vibes) - 豊かな余韻の和音 (2.3s)</option>
+                        <option value="hotel_concierge">🛎️ コンシェルジュ (hotel_concierge) - 卓上呼び鈴 (1.6s)</option>
+                        <option value="hotel_celesta">🌟 チェレスタ (hotel_celesta) - 幻想的な高音 (2.1s)</option>
+                        <option value="hotel_harp">🪕 ハープ (hotel_harp) - 優美な分散和音 (2.2s)</option>
+                        <option value="hotel_rhodes">🍷 エレピ・ローズ (hotel_rhodes) - 落ち着いたメロウ和音 (2.0s)</option>
+                        <option value="hotel_acoustic">🎸 アコースティック (hotel_acoustic) - アコースティック調 (1.8s)</option>
+                        <option value="hotel_suite">🥂 スイートルーム (hotel_suite) - ラグジュアリー5音 (2.4s)</option>
+                      </optgroup>
+                      <optgroup label="和風・伝統・癒やし (Zen & Traditional)">
+                        <option value="chime_zen">🎐 水琴窟・おりん (chime_zen) - 透き通る静寂 (2.3s)</option>
+                        <option value="chime_koto">🍵 雅・琴 (chime_koto) - 伝統的な都節2音 (1.6s)</option>
+                        <option value="zen_rin">🪔 仏具・おりん (zen_rin) - 深遠な倍音と長い減衰 (3.0s)</option>
+                        <option value="zen_hyoshigi">🪵 拍子木 (zen_hyoshigi) - 乾いた清らかな響き (1.0s)</option>
+                        <option value="zen_suikinkutsu">💧 水滴・雫 (zen_suikinkutsu) - 水琴窟の涼やかな滴 (2.0s)</option>
+                        <option value="zen_windchime">🎐 南部鉄風鈴 (zen_windchime) - 透き通る高音 (2.5s)</option>
+                        <option value="zen_bamboo">🎋 鹿威し・竹筒 (zen_bamboo) - ししおどし風 (1.4s)</option>
+                        <option value="zen_miyabi">🎎 雅楽・笙の音 (zen_miyabi) - ゆったりとした和音 (2.4s)</option>
+                        <option value="zen_shakuhachi">🎋 尺八風 (zen_shakuhachi) - 静寂を切り拓く気息 (2.0s)</option>
+                        <option value="zen_taiko">🥁 締太鼓 (zen_taiko) - 締まりのある低音ポン (1.2s)</option>
+                      </optgroup>
+                      <optgroup label="スマートホーム・近未来 (Tech & Cyber)">
+                        <option value="chime_cyber">🚀 サイバー (chime_cyber) - ガジェット風ピロリン (1.1s)</option>
+                        <option value="chime_digital">⚡ デジタル (chime_digital) - クリアな高音 (0.9s)</option>
+                        <option value="cyber_assist">🤖 AIアシスタント (cyber_assist) - 受諾・起動ピピッ (0.9s)</option>
+                        <option value="cyber_pulse">📡 パルストーン (cyber_pulse) - 近未来電子パルス (1.0s)</option>
+                        <option value="cyber_warp">🌌 ワープ (cyber_warp) - 空間跳躍シンセ (1.2s)</option>
+                        <option value="cyber_synapse">🧬 シナプス (cyber_synapse) - 軽快なFMアルペジオ (1.1s)</option>
+                        <option value="cyber_hologram">🌐 ホログラム (cyber_hologram) - 立体投影起動 (1.3s)</option>
+                        <option value="cyber_quantum">🔬 クァンタム (cyber_quantum) - クリア位相変調 (1.0s)</option>
+                        <option value="cyber_laser">💫 シンセレーザー (cyber_laser) - 歯切れ良いアクセント (0.8s)</option>
+                        <option value="cyber_blip">💠 ブリッツ (cyber_blip) - 軽快な2連ビープ (0.7s)</option>
+                      </optgroup>
+                      <optgroup label="オルゴール・リラックス (Relax & Music Box)">
+                        <option value="chime_musicbox">🎠 オルゴール (chime_musicbox) - やさしいキラキラ3音 (1.9s)</option>
+                        <option value="relax_kalimba">🎹 カリンバ (relax_kalimba) - 親指ピアノの温かい音 (1.8s)</option>
+                        <option value="relax_crystal">🔮 クリスタルボウル (relax_crystal) - 水晶の共鳴 (2.5s)</option>
+                        <option value="relax_lullaby">🌙 子守唄 (relax_lullaby) - やさしいゆりかご3音 (2.0s)</option>
+                        <option value="relax_starlight">🌠 星屑 (relax_starlight) - きらめく高音分散 (2.1s)</option>
+                        <option value="relax_chime">🎐 ウィンドチャイム (relax_chime) - 微風に揺れる金属管 (2.4s)</option>
+                        <option value="relax_dream">💭 ドリームトーン (relax_dream) - 柔らかな夢心地 (2.2s)</option>
+                        <option value="relax_meadow">🌿 草原の朝 (relax_meadow) - 爽やかな木漏れ日ベル (1.8s)</option>
+                        <option value="relax_twinkle">✨ トゥインクル (relax_twinkle) - 可憐なガラスベル (1.6s)</option>
+                        <option value="relax_calm">🕊️ カーム (relax_calm) - 穏やかな響き (2.0s)</option>
+                      </optgroup>
+                      <optgroup label="案内・注意喚起 (Notice & Office)">
+                        <option value="chime_airport">✈️ 空港・駅 (chime_airport) - 館内放送風3点 (1.9s)</option>
+                        <option value="announce">📢 アナウンス (announce) - 明るい注意喚起 (1.7s)</option>
+                        <option value="bell">🎶 ベル (bell) - やさしいお知らせ (1.4s)</option>
+                        <option value="alert">⚠️ アラート (alert) - 重要通知・警告 (0.8s)</option>
+                        <option value="notice_broadcast">🏢 公共放送4音 (notice_broadcast) - ピンポンパンポン (2.2s)</option>
+                        <option value="notice_train">🚆 発車メロディ風 (notice_train) - 親しみやすい上昇3音 (1.5s)</option>
+                        <option value="notice_school">🏫 学校チャイム風 (notice_school) - ウェストミンスター2音 (1.8s)</option>
+                        <option value="notice_info">ℹ️ インフォメーション (notice_info) - 案内サイン2点 (1.2s)</option>
+                        <option value="notice_chime3">🔔 チャイム3音 (notice_chime3) - 歯切れのよい通知3点 (1.4s)</option>
+                        <option value="notice_urgent">🚨 注意喚起ダブル (notice_urgent) - 二連アクセント (1.0s)</option>
+                      </optgroup>
+                      <optgroup label="その他">
+                        <option value="none">🔇 チャイムなし (直接アナウンス)</option>
+                      </optgroup>
                     </select>
                     <button type="button" id="btnPreviewChime" class="btn btn-secondary" style="white-space: nowrap;">
                       ▶ 試聴
                     </button>
                   </div>
                 </div>
-                <div style="font-size: 0.8rem; color: var(--text-muted);">
-                  ※ APIやWebhookから個別に <code>chime=alert</code> などを指定した場合は、そちらが優先されます。
+
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 12px;">
+                  ※ APIやWebhookから個別に <code>chime=chime_hotel</code> などを指定した場合は、そちらが優先されます。
                 </div>
               </div>
             </div>
@@ -2114,11 +2185,81 @@
                     <label for="builderChime" class="form-label">前置きチャイム音 (Chime)</label>
                     <select id="builderChime" class="form-select">
                       <option value="">設定デフォルトに従う</option>
-                      <option value="dingdong">🔔 ピンポン (dingdong)</option>
-                      <option value="bell">🎶 ベル (bell)</option>
-                      <option value="announce">📢 アナウンス (announce)</option>
-                      <option value="alert">⚠️ アラート (alert)</option>
-                      <option value="none">チャイムなし (直接発話)</option>
+                      <optgroup label="標準・日常 (Classic & Daily)">
+                        <option value="dingdong">🔔 ピンポン (dingdong)</option>
+                        <option value="chime_simple">🎵 シンプル2音 (chime_simple)</option>
+                        <option value="classic_doorbell">🚪 ドアベル (classic_doorbell)</option>
+                        <option value="classic_triangle">📐 トライアングル (classic_triangle)</option>
+                        <option value="classic_cuckoo">🐦 鳩時計 (classic_cuckoo)</option>
+                        <option value="classic_step">🪜 ステップ3音 (classic_step)</option>
+                        <option value="classic_warm">☕ ウォームベル (classic_warm)</option>
+                        <option value="classic_bright">☀️ ブライトチャイム (classic_bright)</option>
+                        <option value="classic_soft">☁️ ソフトチャイム (classic_soft)</option>
+                        <option value="classic_clarity">✨ クラリティ (classic_clarity)</option>
+                      </optgroup>
+                      <optgroup label="ホテル・高級ラウンジ (Luxury & Hotel)">
+                        <option value="chime_hotel">🏨 ホテルチャイム (chime_hotel)</option>
+                        <option value="chime_marimba">🪵 マリンバ (chime_marimba)</option>
+                        <option value="hotel_glockenspiel">🎹 グロッケン (hotel_glockenspiel)</option>
+                        <option value="hotel_vibes">🎷 ビブラフォン (hotel_vibes)</option>
+                        <option value="hotel_concierge">🛎️ コンシェルジュ (hotel_concierge)</option>
+                        <option value="hotel_celesta">🌟 チェレスタ (hotel_celesta)</option>
+                        <option value="hotel_harp">🪕 ハープ (hotel_harp)</option>
+                        <option value="hotel_rhodes">🍷 エレピ・ローズ (hotel_rhodes)</option>
+                        <option value="hotel_acoustic">🎸 アコースティック (hotel_acoustic)</option>
+                        <option value="hotel_suite">🥂 スイートルーム (hotel_suite)</option>
+                      </optgroup>
+                      <optgroup label="和風・伝統・癒やし (Zen & Traditional)">
+                        <option value="chime_zen">🎐 水琴窟・おりん (chime_zen)</option>
+                        <option value="chime_koto">🍵 雅・琴 (chime_koto)</option>
+                        <option value="zen_rin">🪔 仏具・おりん (zen_rin)</option>
+                        <option value="zen_hyoshigi">🪵 拍子木 (zen_hyoshigi)</option>
+                        <option value="zen_suikinkutsu">💧 水滴・雫 (zen_suikinkutsu)</option>
+                        <option value="zen_windchime">🎐 南部鉄風鈴 (zen_windchime)</option>
+                        <option value="zen_bamboo">🎋 鹿威し・竹筒 (zen_bamboo)</option>
+                        <option value="zen_miyabi">🎎 雅楽・笙の音 (zen_miyabi)</option>
+                        <option value="zen_shakuhachi">🎋 尺八風 (zen_shakuhachi)</option>
+                        <option value="zen_taiko">🥁 締太鼓 (zen_taiko)</option>
+                      </optgroup>
+                      <optgroup label="スマートホーム・近未来 (Tech & Cyber)">
+                        <option value="chime_cyber">🚀 サイバー (chime_cyber)</option>
+                        <option value="chime_digital">⚡ デジタル (chime_digital)</option>
+                        <option value="cyber_assist">🤖 AIアシスタント (cyber_assist)</option>
+                        <option value="cyber_pulse">📡 パルストーン (cyber_pulse)</option>
+                        <option value="cyber_warp">🌌 ワープ (cyber_warp)</option>
+                        <option value="cyber_synapse">🧬 シナプス (cyber_synapse)</option>
+                        <option value="cyber_hologram">🌐 ホログラム (cyber_hologram)</option>
+                        <option value="cyber_quantum">🔬 クァンタム (cyber_quantum)</option>
+                        <option value="cyber_laser">💫 シンセレーザー (cyber_laser)</option>
+                        <option value="cyber_blip">💠 ブリッツ (cyber_blip)</option>
+                      </optgroup>
+                      <optgroup label="オルゴール・リラックス (Relax & Music Box)">
+                        <option value="chime_musicbox">🎠 オルゴール (chime_musicbox)</option>
+                        <option value="relax_kalimba">🎹 カリンバ (relax_kalimba)</option>
+                        <option value="relax_crystal">🔮 クリスタルボウル (relax_crystal)</option>
+                        <option value="relax_lullaby">🌙 子守唄 (relax_lullaby)</option>
+                        <option value="relax_starlight">🌠 星屑 (relax_starlight)</option>
+                        <option value="relax_chime">🎐 ウィンドチャイム (relax_chime)</option>
+                        <option value="relax_dream">💭 ドリームトーン (relax_dream)</option>
+                        <option value="relax_meadow">🌿 草原の朝 (relax_meadow)</option>
+                        <option value="relax_twinkle">✨ トゥインクル (relax_twinkle)</option>
+                        <option value="relax_calm">🕊️ カーム (relax_calm)</option>
+                      </optgroup>
+                      <optgroup label="案内・注意喚起 (Notice & Office)">
+                        <option value="chime_airport">✈️ 空港・駅 (chime_airport)</option>
+                        <option value="announce">📢 アナウンス (announce)</option>
+                        <option value="bell">🎶 ベル (bell)</option>
+                        <option value="alert">⚠️ アラート (alert)</option>
+                        <option value="notice_broadcast">🏢 公共放送4音 (notice_broadcast)</option>
+                        <option value="notice_train">🚆 発車メロディ風 (notice_train)</option>
+                        <option value="notice_school">🏫 学校チャイム風 (notice_school)</option>
+                        <option value="notice_info">ℹ️ インフォメーション (notice_info)</option>
+                        <option value="notice_chime3">🔔 チャイム3音 (notice_chime3)</option>
+                        <option value="notice_urgent">🚨 注意喚起ダブル (notice_urgent)</option>
+                      </optgroup>
+                      <optgroup label="その他">
+                        <option value="none">🔇 チャイムなし (直接発話)</option>
+                      </optgroup>
                     </select>
                   </div>
                   <div class="form-group">
@@ -3383,6 +3524,6 @@ Body:
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
-  <script src="app.js?v=2.9"></script>
+  <script src="app.js?v=3.1"></script>
 </body>
 </html>
