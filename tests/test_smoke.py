@@ -357,9 +357,10 @@ class TestSmokeVoiceHub(unittest.TestCase):
         import shutil
         from app.core.log_rotator import compress_file_zstd
 
-        src = Path(tempfile.mktemp(suffix=".txt"))
-        dest = Path(tempfile.mktemp(suffix=".txt.zst"))
-        try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            src = tmp_path / "test_src.txt"
+            dest = tmp_path / "test_dest.txt.zst"
             original_content = "Log line for testing zstd compression.\n" * 50
             src.write_text(original_content, encoding="utf-8")
 
@@ -373,11 +374,7 @@ class TestSmokeVoiceHub(unittest.TestCase):
             with std_zstd.open(dest, "rb") as f_in:
                 decompressed = f_in.read().decode("utf-8")
             self.assertEqual(decompressed, original_content, "Decompressed content must match original")
-        finally:
-            if src.exists():
-                src.unlink()
-            if dest.exists():
-                dest.unlink()
+
 
 
 if __name__ == "__main__":

@@ -112,3 +112,17 @@ def check_admin_auth(request: Request):
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Admin password required"
     )
+
+def derive_tapo_auth_token(token_or_secret: str) -> str:
+    """
+    TP-Link Tapo 独自通話プロトコル (ポート8800 / tapo://) の規格に準拠した認証トークンを導出。
+    Tapo ファームウェア仕様: SHA256(secret).hexdigest().upper()
+    ※ アプリケーション内部のパスワード保管用ハッシュではなく、外部ハードウェア機器との通信プロトコル規格トークンとして使用。
+    """
+    raw_val = str(token_or_secret or "").strip()
+    if not raw_val:
+        return ""
+    if len(raw_val) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_val):
+        return raw_val.upper()
+    return hashlib.sha256(raw_val.encode("utf-8")).hexdigest().upper()
+

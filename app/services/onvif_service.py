@@ -12,6 +12,7 @@ from app.services.settings_service import settings_manager
 from app.services.tts_service import tts_service
 from app.services.dlna_service import dlna_service
 from app.core.logger import get_logger
+from app.core.security import derive_tapo_auth_token
 
 log = get_logger("ONVIF")
 
@@ -431,17 +432,11 @@ class OnvifService:
         volume_level: Optional[float],
         onvif_config: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Tapo カメラ独自プロトコル (ポート8800) を使用した音声再生 (G.711 A-law / PCMA)"""
-        import hashlib
         password_hash = camera.get("passwordHash") or onvif_config.get("tapoPasswordHash", "")
         if not password_hash:
             raw_p = camera.get("password") or onvif_config.get("tapoPassword", "")
             if raw_p:
-                raw_s = str(raw_p).strip()
-                if len(raw_s) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_s):
-                    password_hash = raw_s.upper()
-                else:
-                    password_hash = hashlib.sha256(raw_s.encode("utf-8")).hexdigest().upper()
+                password_hash = derive_tapo_auth_token(raw_p)
 
         if not password_hash:
             raise RuntimeError(f"Tapoカメラ ({raw_ip}) の認証情報 (SHA256ハッシュ) が未設定です。設定画面のTapo連携設定をご確認ください。")

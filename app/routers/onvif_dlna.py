@@ -5,6 +5,7 @@ from app.services.onvif_service import onvif_service
 from app.services.dlna_service import dlna_service
 from app.services.settings_service import settings_manager
 from app.services.tts_service import tts_service
+from app.core.security import derive_tapo_auth_token
 
 router = APIRouter()
 
@@ -109,16 +110,11 @@ async def register_device(raw_req: Dict[str, Any]):
         if (password is None or str(password).strip() == "") and existing:
             password = existing.get("password")
 
-        # Tapo カメラの場合は平文パスワードを不可逆 SHA256 大文字ハッシュに変換
+        # Tapo カメラの場合はプロトコル規格に準拠した認証トークンに変換
         password_hash = dev_data.get("passwordHash") or (existing.get("passwordHash") if existing else "")
         if dtype == "tapo":
             if password:
-                raw_s = str(password).strip()
-                if len(raw_s) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_s):
-                    password_hash = raw_s.upper()
-                else:
-                    import hashlib
-                    password_hash = hashlib.sha256(raw_s.encode("utf-8")).hexdigest().upper()
+                password_hash = derive_tapo_auth_token(password)
                 password = None  # 平文は破棄
             username = username or "admin"
 
@@ -202,15 +198,11 @@ async def get_onvif_config():
 
 @router.post("/api/onvif/tapo-auth")
 async def save_tapo_auth(req: TapoAuthRequest):
-    import hashlib
     onvif_conf = settings_manager.get().get("onvif", {})
     tapo_hash = req.passwordHash
     raw_pass = (req.password or "").strip()
     if not tapo_hash and raw_pass:
-        if len(raw_pass) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw_pass):
-            tapo_hash = raw_pass.upper()
-        else:
-            tapo_hash = hashlib.sha256(raw_pass.encode("utf-8")).hexdigest().upper()
+        tapo_hash = derive_tapo_auth_token(raw_pass)
 
     email = (req.email or "").strip()
     update_data = {
