@@ -201,6 +201,14 @@
         el.setAttribute('aria-label', t(key));
       }
     });
+
+    // 5. ページタイトルの安全な更新 (HTMLタグを含めずプレーンテキストで設定)
+    if (root === document || root === document.documentElement) {
+      const pageTitle = t('app.pageTitle', 'Google Home, Alexa & HomePod | Voice Hub');
+      if (pageTitle && document.title !== pageTitle) {
+        document.title = pageTitle;
+      }
+    }
   }
 
   /**

@@ -7198,6 +7198,40 @@ document.addEventListener('DOMContentLoaded', () => {
       const elWeatherWarningUrgent = document.getElementById('settingWeatherWarningUrgent');
       if (elWeatherWarningUrgent) elWeatherWarningUrgent.checked = !!data.weatherWarning?.urgent;
 
+      // 雨アラーム (Rain Alarm) 設定読み込み & 地図初期化
+      try {
+        const rainRes = await fetch('/api/rain-alarm/status');
+        if (rainRes.ok) {
+          const rainData = await rainRes.json();
+          const rConf = rainData.config || {};
+          const elRainEnabled = document.getElementById('settingRainAlarmEnabled');
+          if (elRainEnabled) elRainEnabled.checked = rConf.enabled !== false;
+          const elRainLat = document.getElementById('settingRainAlarmLat');
+          if (elRainLat) elRainLat.value = rConf.latitude ?? 35.6812;
+          const elRainLon = document.getElementById('settingRainAlarmLon');
+          if (elRainLon) elRainLon.value = rConf.longitude ?? 139.7671;
+          const elRainLoc = document.getElementById('settingRainAlarmLocName');
+          if (elRainLoc) elRainLoc.value = rConf.locationName || '東京都千代田区';
+          const elRainAppId = document.getElementById('settingRainAlarmYahooAppId');
+          if (elRainAppId && rConf.hasYahooAppId && !elRainAppId.value) {
+            elRainAppId.placeholder = '•••••••••••••••••••••••• (設定済み)';
+          }
+          const elNotifyApp = document.getElementById('settingRainAlarmNotifyApproaching');
+          if (elNotifyApp) elNotifyApp.checked = rConf.notifyApproaching !== false;
+          const elNotifyHeavy = document.getElementById('settingRainAlarmNotifyHeavy');
+          if (elNotifyHeavy) elNotifyHeavy.checked = rConf.notifyHeavy !== false;
+          const elNotifyClear = document.getElementById('settingRainAlarmNotifyClearing');
+          if (elNotifyClear) elNotifyClear.checked = rConf.notifyClearing !== false;
+
+          const lat = parseFloat(elRainLat?.value || 35.6812);
+          const lon = parseFloat(elRainLon?.value || 139.7671);
+          initRainAlarmMap(lat, lon);
+          fetchRainTimeline(lat, lon);
+        }
+      } catch (err) {
+        console.warn('[RainAlarm] 設定ロード失敗:', err);
+      }
+
       // 天気予報プレビューの更新
       updateWeatherPreview();
     } catch (err) {
@@ -7301,6 +7335,168 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ================= 8.1. 雨アラーム & 雨雲レーダー (Leaflet) =================
+  let rainMapInstance = null;
+  let rainMarkerInstance = null;
+  let rainRadarLayer = null;
+  let isRadarOverlayActive = true;
+  let lastRadarTime = null;
+
+  async function initRainAlarmMap(lat, lon) {
+    const mapContainer = document.getElementById('rainAlarmMap');
+    if (!mapContainer || typeof window.L === 'undefined') return;
+
+    if (rainMapInstance) {
+      rainMapInstance.setView([lat, lon], rainMapInstance.getZoom() || 12);
+      if (rainMarkerInstance) rainMarkerInstance.setLatLng([lat, lon]);
+      return;
+    }
+
+    try {
+      rainMapInstance = L.map('rainAlarmMap', {
+        center: [lat, lon],
+        zoom: 12,
+        zoomControl: true
+      });
+
+      // OpenStreetMap 標準タイルレイヤー
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
+      }).addTo(rainMapInstance);
+
+      // ピン (Marker)
+      rainMarkerInstance = L.marker([lat, lon], { draggable: true }).addTo(rainMapInstance);
+
+      rainMarkerInstance.on('dragend', (e) => {
+        const pos = e.target.getLatLng();
+        setRainCoordinates(pos.lat, pos.lng);
+      });
+
+      rainMapInstance.on('click', (e) => {
+        const pos = e.latlng;
+        if (rainMarkerInstance) rainMarkerInstance.setLatLng(pos);
+        setRainCoordinates(pos.lat, pos.lng);
+      });
+
+      await updateRadarOverlay();
+    } catch (err) {
+      console.warn('[RainAlarm] Leaflet初期化エラー:', err);
+    }
+  }
+
+  function setRainCoordinates(lat, lon) {
+    const elLat = document.getElementById('settingRainAlarmLat');
+    const elLon = document.getElementById('settingRainAlarmLon');
+    if (elLat) elLat.value = lat.toFixed(4);
+    if (elLon) elLon.value = lon.toFixed(4);
+    fetchRainTimeline(lat, lon);
+  }
+
+  async function updateRadarOverlay() {
+    if (!rainMapInstance || typeof window.L === 'undefined') return;
+
+    if (rainRadarLayer) {
+      rainMapInstance.removeLayer(rainRadarLayer);
+      rainRadarLayer = null;
+    }
+
+    if (!isRadarOverlayActive) return;
+
+    try {
+      const res = await fetch('/api/rain-alarm/radar-time');
+      if (!res.ok) return;
+      const data = await res.json();
+      const times = data.times || [];
+      if (times.length === 0) return;
+
+      const latest = times[0];
+      const basetime = latest.basetime;
+      const validtime = latest.validtime;
+      lastRadarTime = validtime;
+
+      const tileUrl = `https://www.jma.go.jp/bosai/jmatile/data/nowc/${basetime}/none/${validtime}/surf/hrpns/{z}/{x}/{y}.png`;
+      rainRadarLayer = L.tileLayer(tileUrl, {
+        opacity: 0.65,
+        maxZoom: 18,
+        zIndex: 100
+      }).addTo(rainMapInstance);
+    } catch (err) {
+      console.warn('[RainAlarm] レーダーオーバーレイ更新エラー:', err);
+    }
+  }
+
+  async function fetchRainTimeline(lat, lon) {
+    const container = document.getElementById('rainTimelineContainer');
+    if (!container) return;
+
+    container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem;">雨雲データを取得中...</div>';
+
+    try {
+      const res = await fetch(`/api/rain-alarm/forecast?lat=${lat}&lon=${lon}`);
+      if (!res.ok) {
+        container.innerHTML = '<div style="color: #f87171; font-size: 0.8rem;">予報取得エラー</div>';
+        return;
+      }
+      const data = await res.json();
+      const timeline = data.timeline || [];
+
+      if (timeline.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.8rem;">雨雲データがありません</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      for (const item of timeline) {
+        const card = document.createElement('div');
+        card.style.cssText = `
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          min-width: 68px;
+          padding: 8px 6px;
+          border-radius: 8px;
+          background: rgba(255,255,255,0.03);
+          border: 1px solid rgba(255,255,255,0.06);
+          font-size: 0.75rem;
+          text-align: center;
+        `;
+
+        const rf = item.rainfall || 0.0;
+        let icon = '☀️';
+        let barColor = '#64748b';
+        let bgTint = 'transparent';
+
+        if (rf >= 10.0) {
+          icon = '⛈️';
+          barColor = '#ef4444';
+          bgTint = 'rgba(239, 68, 68, 0.12)';
+        } else if (rf >= 2.0) {
+          icon = '🌧️';
+          barColor = '#3b82f6';
+          bgTint = 'rgba(59, 130, 246, 0.12)';
+        } else if (rf >= 0.1) {
+          icon = '🌦️';
+          barColor = '#06b6d4';
+          bgTint = 'rgba(6, 182, 212, 0.08)';
+        }
+        card.style.background = bgTint;
+
+        const label = item.minutesAhead === 0 ? '現在' : `${item.minutesAhead}分後`;
+        card.innerHTML = `
+          <div style="font-weight: 600; color: var(--text-muted); margin-bottom: 2px;">${escapeHtml(item.time || '')}</div>
+          <div style="font-size: 0.7rem; color: #94a3b8; margin-bottom: 4px;">${escapeHtml(label)}</div>
+          <div style="font-size: 1.1rem; margin-bottom: 2px;">${icon}</div>
+          <div style="font-weight: 700; color: ${barColor}; font-size: 0.8rem;">${rf.toFixed(1)} <span style="font-size: 0.65rem; font-weight: 400;">mm/h</span></div>
+        `;
+        container.appendChild(card);
+      }
+    } catch (err) {
+      container.innerHTML = `<div style="color: #f87171; font-size: 0.8rem;">通信エラー: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
   function setupDisasterHandlers() {
     // 都道府県切り替え連動
     const prefSelect = document.getElementById('settingDisasterPref');
@@ -7389,8 +7585,24 @@ document.addEventListener('DOMContentLoaded', () => {
           dailyWeather: {
             enabled: document.getElementById('settingDailyWeatherEnabled')?.checked !== false,
             includeAdvice: document.getElementById('settingDailyWeatherAdvice')?.checked !== false
+          },
+          rainAlarm: {
+            enabled: document.getElementById('settingRainAlarmEnabled')?.checked !== false,
+            latitude: parseFloat(document.getElementById('settingRainAlarmLat')?.value || 35.6812),
+            longitude: parseFloat(document.getElementById('settingRainAlarmLon')?.value || 139.7671),
+            locationName: document.getElementById('settingRainAlarmLocName')?.value || '登録地点',
+            notifyApproaching: document.getElementById('settingRainAlarmNotifyApproaching')?.checked !== false,
+            notifyHeavy: document.getElementById('settingRainAlarmNotifyHeavy')?.checked !== false,
+            notifyClearing: document.getElementById('settingRainAlarmNotifyClearing')?.checked !== false,
+            targetScope,
+            targetDevices
           }
         };
+
+        const yahooAppIdInput = document.getElementById('settingRainAlarmYahooAppId');
+        if (yahooAppIdInput && yahooAppIdInput.value.trim() !== '') {
+          payload.rainAlarm.yahooAppId = yahooAppIdInput.value.trim();
+        }
 
         const res = await fetch('/api/disaster/settings', {
           method: 'PUT',
@@ -7440,6 +7652,174 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnTestQuake')?.addEventListener('click', () => triggerDisasterTest('quake', '震度速報テスト'));
     document.getElementById('btnTestWarning')?.addEventListener('click', () => triggerDisasterTest('warning', '気象警報テスト'));
     document.getElementById('btnTestWeatherSummary')?.addEventListener('click', () => triggerDisasterTest('weather', '朝の天気サマリーテスト'));
+
+    // 雨アラーム (Rain Alarm) ハンドラー
+    document.getElementById('btnRainLocateMe')?.addEventListener('click', async () => {
+      showToast('現在地を取得中...', 'info');
+
+      const fallbackToIp = async () => {
+        try {
+          const res = await fetch('/api/rain-alarm/ip-location');
+          if (res.ok) {
+            const data = await res.json();
+            const lat = data.latitude;
+            const lon = data.longitude;
+            const name = data.locationName || '大まかな現在地';
+            setRainCoordinates(lat, lon);
+            const elLoc = document.getElementById('settingRainAlarmLocName');
+            if (elLoc) elLoc.value = name;
+            if (rainMapInstance) {
+              rainMapInstance.setView([lat, lon], 13);
+              if (rainMarkerInstance) rainMarkerInstance.setLatLng([lat, lon]);
+            }
+            showToast(`※HTTP制限のためIPから地域「${name}」を取得しました。ピンを正確な位置へ微調整してください`, 'warning');
+            return;
+          }
+        } catch (_) {}
+        showToast('現在地の取得に失敗しました。住所検索または地図をクリックしてください', 'error');
+      };
+
+      if (!navigator.geolocation || (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1')) {
+        await fallbackToIp();
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          setRainCoordinates(lat, lon);
+          if (rainMapInstance) {
+            rainMapInstance.setView([lat, lon], 14);
+            if (rainMarkerInstance) rainMarkerInstance.setLatLng([lat, lon]);
+          }
+          showToast('GPS現在地を取得しました', 'success');
+        },
+        async (err) => {
+          console.warn('[RainAlarm] Geolocation error, falling back to IP:', err);
+          await fallbackToIp();
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+
+    document.getElementById('btnToggleRadarOverlay')?.addEventListener('click', () => {
+      isRadarOverlayActive = !isRadarOverlayActive;
+      const btn = document.getElementById('btnToggleRadarOverlay');
+      if (btn) {
+        if (isRadarOverlayActive) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      }
+      updateRadarOverlay();
+    });
+
+    document.getElementById('btnRefreshRadarOverlay')?.addEventListener('click', async () => {
+      showToast('雨雲レーダーを最新に更新中...', 'info');
+      await updateRadarOverlay();
+      const lat = parseFloat(document.getElementById('settingRainAlarmLat')?.value || 35.6812);
+      const lon = parseFloat(document.getElementById('settingRainAlarmLon')?.value || 139.7671);
+      await fetchRainTimeline(lat, lon);
+      showToast('雨雲レーダーを更新しました', 'success');
+    });
+
+    const doAddressSearch = async () => {
+      const input = document.getElementById('rainAddressSearchInput');
+      const query = input?.value.trim();
+      if (!query) return;
+      showToast(`「${query}」を検索中...`, 'info');
+      try {
+        const res = await fetch(`https://msearch.gsi.go.jp/address-search/queryString?q=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error('住所検索サーバーからエラーが返されました');
+        const list = await res.json();
+        if (!list || list.length === 0) {
+          showToast('該当する住所・地名が見つかりませんでした', 'warning');
+          return;
+        }
+        const best = list[0];
+        const [lon, lat] = best.geometry.coordinates;
+        const name = best.properties?.title || query;
+
+        setRainCoordinates(lat, lon);
+        const elLoc = document.getElementById('settingRainAlarmLocName');
+        if (elLoc) elLoc.value = name;
+
+        if (rainMapInstance) {
+          rainMapInstance.setView([lat, lon], 14);
+          if (rainMarkerInstance) rainMarkerInstance.setLatLng([lat, lon]);
+        }
+        showToast(`「${name}」にピンを移動しました`, 'success');
+      } catch (err) {
+        showToast(`住所検索エラー: ${err.message}`, 'error');
+      }
+    };
+
+    document.getElementById('btnRainAddressSearch')?.addEventListener('click', doAddressSearch);
+    document.getElementById('rainAddressSearchInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        doAddressSearch();
+      }
+    });
+
+    const onCoordsManualChange = () => {
+      const lat = parseFloat(document.getElementById('settingRainAlarmLat')?.value || 35.6812);
+      const lon = parseFloat(document.getElementById('settingRainAlarmLon')?.value || 139.7671);
+      if (rainMapInstance) {
+        rainMapInstance.setView([lat, lon], rainMapInstance.getZoom() || 12);
+        if (rainMarkerInstance) rainMarkerInstance.setLatLng([lat, lon]);
+      }
+      fetchRainTimeline(lat, lon);
+    };
+    document.getElementById('settingRainAlarmLat')?.addEventListener('change', onCoordsManualChange);
+    document.getElementById('settingRainAlarmLon')?.addEventListener('change', onCoordsManualChange);
+
+    document.getElementById('btnRefreshRainTimeline')?.addEventListener('click', () => {
+      const lat = parseFloat(document.getElementById('settingRainAlarmLat')?.value || 35.6812);
+      const lon = parseFloat(document.getElementById('settingRainAlarmLon')?.value || 139.7671);
+      fetchRainTimeline(lat, lon);
+      showToast('雨雲タイムラインを更新しました', 'info');
+    });
+
+    document.getElementById('btnToggleYahooAppIdVisibility')?.addEventListener('click', () => {
+      const input = document.getElementById('settingRainAlarmYahooAppId');
+      if (!input) return;
+      input.type = input.type === 'password' ? 'text' : 'password';
+    });
+
+    async function triggerRainAlarmTest(alertType, label) {
+      showToast(`${label}を送信しています...`, 'info');
+      try {
+        const res = await fetch('/api/rain-alarm/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ alertType })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'ok') {
+          showToast(`${label}を発声しました: 「${data.message}」`, 'success');
+        } else {
+          throw new Error(data.detail || data.message || '発声に失敗しました');
+        }
+      } catch (err) {
+        showToast(`テスト発声エラー: ${err.message}`, 'error');
+      }
+    }
+
+    document.getElementById('btnTestRainApproaching')?.addEventListener('click', () => triggerRainAlarmTest('approaching', '雨雲接近テスト'));
+    document.getElementById('btnTestRainHeavy')?.addEventListener('click', () => triggerRainAlarmTest('heavy', '大雨警戒テスト'));
+    document.getElementById('btnTestRainClearing')?.addEventListener('click', () => triggerRainAlarmTest('clearing', '雨上がりテスト'));
+
+    // サブタブ切り替え時の Leaflet 表示サイズ補正
+    document.getElementById('btnSubtabSettingsDisaster')?.addEventListener('click', () => {
+      setTimeout(() => {
+        if (rainMapInstance) {
+          rainMapInstance.invalidateSize();
+        }
+      }, 150);
+    });
   }
 
   // ================= 8.8. 外部音声エンジン (TTS) 設定 =================

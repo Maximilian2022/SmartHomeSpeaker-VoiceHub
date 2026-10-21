@@ -135,6 +135,24 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
             "includeAdvice": True
         }
     },
+    "rainAlarm": {
+        "enabled": False,
+        "provider": "auto",
+        "yahooAppId": "",
+        "latitude": 35.6812,
+        "longitude": 139.7671,
+        "locationName": "東京都千代田区",
+        "checkIntervalMinutes": 5,
+        "thresholdMm": 0.5,
+        "heavyThresholdMm": 10.0,
+        "notifyApproaching": True,
+        "notifyHeavy": True,
+        "notifyClearing": True,
+        "targetScope": "all",
+        "targetDevices": ["ALL"],
+        "cooldownMinutes": 30,
+        "chime": "notice_info"
+    },
     "mqtt": {
         "enabled": False,
         "broker": "localhost",

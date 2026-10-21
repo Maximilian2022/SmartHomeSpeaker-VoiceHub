@@ -32,7 +32,8 @@ from app.routers import (
     schedules,
     mqtt,
     mcp,
-    logs
+    logs,
+    rain_alarm
 )
 from app.core.logger import init_system_logging, get_logger
 from app.services.mqtt_service import mqtt_service
@@ -88,10 +89,15 @@ async def lifespan(app: FastAPI):
     from app.services.tts_service import tts_service
     asyncio.create_task(tts_service.warmup_enabled_speakers())
 
+    # 雨アラーム・雨雲接近監視サービス開始
+    from app.services.rain_alarm_service import rain_alarm_service
+    rain_alarm_service.start()
+
     yield
 
     # 終了時処理 (明示的なシステム終了/シャットダウンバナーログ)
     sys_log.info("🛑 [VoiceHub] システム終了 / シャットダウン処理開始 (Shutting down...)")
+    rain_alarm_service.stop()
     await mqtt_service.stop()
     from app.services.devices_service import device_manager
     device_manager.close()
@@ -212,6 +218,7 @@ app.include_router(schedules.router)
 app.include_router(mqtt.router)
 app.include_router(mcp.router)
 app.include_router(logs.router)
+app.include_router(rain_alarm.router)
 
 
 

@@ -197,6 +197,13 @@ class DndService:
 
         return {"active": False, "isActive": False, "reason": "", "action": "none"}
 
+    def is_in_dnd(self) -> bool:
+        """現在 DND（おやすみ・会議モード）中かどうかをブール値で返却"""
+        meeting_title = calendar_service.get_current_meeting_title()
+        res = self.evaluate(active_event_title=meeting_title)
+        return bool(res.get("isActive") or res.get("active"))
+
+
     def get_global_status(self) -> Dict[str, Any]:
         """
         GUI が要求する完全なステータス構造

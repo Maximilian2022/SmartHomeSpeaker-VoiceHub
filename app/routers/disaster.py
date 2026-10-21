@@ -29,7 +29,11 @@ async def get_disaster_settings():
 @router.put("/api/disaster/settings")
 async def update_disaster_settings(data: Dict[str, Any]):
     log.info(f"Updating disaster settings: {data}")
-    updated = settings_manager.update({"disaster": data})
+    update_dict = {}
+    if "rainAlarm" in data:
+        update_dict["rainAlarm"] = data.pop("rainAlarm")
+    update_dict["disaster"] = data
+    updated = settings_manager.update(update_dict)
     return updated.get("disaster", {})
 
 @router.get("/api/disaster/status")

@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><span data-i18n="devices.deviceTypeGoogle">Google Home</span>, Alexa & HomePod | Voice Hub</title>
+  <title>Google Home, Alexa &amp; HomePod | Voice Hub</title>
   <meta name="description" content="Google Home / Nest, Amazon Alexa & Apple HomePod 音声通知・Edge TTS コントローラー・スケジュール管理プラットフォーム">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=3.1">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 </head>
 <body>
   <div class="app-background"></div>
@@ -2586,6 +2587,171 @@ Body:
                 </div>
               </div>
 
+              <!-- 5.5 雨アラーム・雨雲接近通知 -->
+              <div class="card glass-card" style="margin-top: 20px;" id="rainAlarmCard">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2 data-i18n="settings.disasterRainTitle">🌧️ 雨アラーム・雨雲接近通知 (Japan Only)</h2>
+                    <span class="card-sub" data-i18n="settings.disasterRainSub">雨雲レーダーを常時監視し、「何分後に雨が降るか」「雨が止む見込み」をスピーカーから自動アナウンス</span>
+                  </div>
+                  <label class="switch" data-i18n-title="settingsDisaster.enableRainTitle" title="雨アラーム機能を有効化">
+                    <input type="checkbox" id="settingRainAlarmEnabled">
+                    <span class="slider round"></span>
+                  </label>
+                </div>
+                <div class="card-body">
+                  <!-- 地図・位置設定 -->
+                  <div style="margin-bottom: 16px;">
+                    <div class="flex-between" style="margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                      <div>
+                        <label class="form-label" style="margin: 0; font-weight: 600;" data-i18n="settingsDisaster.rainMapTitle">📍 監視対象地点のピン留め (地図で指定)</label>
+                        <small style="display: block; color: var(--text-muted);" data-i18n="settingsDisaster.rainMapHelp">地図をクリックまたはピンをドラッグして、自宅や監視したい場所を指定してください</small>
+                      </div>
+                      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <button type="button" id="btnRainLocateMe" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">
+                          <span>📍</span> <span data-i18n="settingsDisaster.btnCurrentLocation">現在地を取得</span>
+                        </button>
+                        <button type="button" id="btnToggleRadarOverlay" class="btn btn-secondary btn-sm active" style="display: inline-flex; align-items: center; gap: 4px;">
+                          <span>🌦️</span> <span data-i18n="settingsDisaster.btnRadarOverlay">雨雲レーダー重ね合わせ</span>
+                        </button>
+                        <button type="button" id="btnRefreshRadarOverlay" class="btn btn-secondary btn-sm" data-i18n-title="settingsDisaster.btnRefreshRadar" title="雨雲レーダーを最新時刻に更新">
+                          <span>🔄</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- 住所検索バー -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                      <input type="text" id="rainAddressSearchInput" class="form-input" placeholder="住所・駅名・地名で検索 (例: 新宿駅、大阪市北区)" data-i18n-placeholder="settingsDisaster.addressSearchPlaceholder" style="flex: 1;">
+                      <button type="button" id="btnRainAddressSearch" class="btn btn-secondary" style="white-space: nowrap;">
+                        <span>🔍</span> <span data-i18n="settingsDisaster.btnAddressSearch">検索</span>
+                      </button>
+                    </div>
+
+                    <!-- Leaflet 地図コンテナ -->
+                    <div id="rainAlarmMap" style="width: 100%; height: 340px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: #1a1a24; position: relative; z-index: 1;"></div>
+                    
+                    <!-- 緯度・経度・地名 表示入力行 -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 10px; margin-top: 10px;">
+                      <div>
+                        <label for="settingRainAlarmLat" class="form-label" style="font-size: 0.8rem;" data-i18n="settingsDisaster.latitudeLabel">緯度 (Latitude)</label>
+                        <input type="number" id="settingRainAlarmLat" class="form-input" step="0.0001" value="35.6812">
+                      </div>
+                      <div>
+                        <label for="settingRainAlarmLon" class="form-label" style="font-size: 0.8rem;" data-i18n="settingsDisaster.longitudeLabel">経度 (Longitude)</label>
+                        <input type="number" id="settingRainAlarmLon" class="form-input" step="0.0001" value="139.7671">
+                      </div>
+                      <div>
+                        <label for="settingRainAlarmLocName" class="form-label" style="font-size: 0.8rem;" data-i18n="settingsDisaster.locNameLabel">地点の名称 / メモ</label>
+                        <input type="text" id="settingRainAlarmLocName" class="form-input" value="東京都千代田区" placeholder="自宅・オフィス等" data-i18n-placeholder="settingsDisaster.locNamePlaceholder">
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Yahoo! Client ID & データ取得モード設定 -->
+                  <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <div class="flex-between" style="margin-bottom: 6px;">
+                      <label for="settingRainAlarmYahooAppId" class="form-label" style="margin: 0; font-weight: 600;" data-i18n="settingsDisaster.yahooAppIdLabel">Yahoo! JAPAN Client ID (アプリケーションID)</label>
+                      <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);" data-i18n="settingsDisaster.hybridModeBadge">ハイブリッド高精度</span>
+                    </div>
+                    <div style="position: relative;">
+                      <input type="password" id="settingRainAlarmYahooAppId" class="form-input" placeholder="dmVy... または dj0... (任意)" data-i18n-placeholder="settingsDisaster.yahooAppIdPlaceholder" style="padding-right: 40px;">
+                      <button type="button" id="btnToggleYahooAppIdVisibility" class="btn btn-icon" style="position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: var(--text-muted); cursor: pointer;" title="表示切替">
+                        👁️
+                      </button>
+                    </div>
+                    <div style="margin-top: 6px; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">
+                      <div data-i18n="settingsDisaster.yahooAppIdHelpMain">💡 Yahoo!デベロッパーネットワークで無料取得したClient IDを入力すると、気象庁雨雲レーダーに基づく10分刻み・60分後までの高精度予測で動作します。</div>
+                      <div style="margin-top: 3px; color: var(--text-muted); opacity: 0.85;" data-i18n="settingsDisaster.yahooAppIdHelpSub">※ 空欄の場合はAPIキー不要の標準モード（Open-Meteo）で動作します。</div>
+                    </div>
+
+                    <!-- Client ID 取得方法の折りたたみ案内 -->
+                    <details style="margin-top: 10px; border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 8px;">
+                      <summary style="cursor: pointer; font-size: 0.8rem; color: var(--primary, #38bdf8); font-weight: 500; user-select: none; display: inline-flex; align-items: center; gap: 4px;">
+                        <span>📖</span> <span data-i18n="settingsDisaster.yahooGuideSummary">Yahoo! JAPAN Client ID の無料取得手順（約2分）</span>
+                      </summary>
+                      <div style="margin-top: 8px; padding: 10px 12px; background: rgba(0,0,0,0.25); border-radius: 6px; font-size: 0.8rem; line-height: 1.6; color: var(--text-secondary, #cbd5e1); border: 1px solid rgba(255,255,255,0.05);">
+                        <ol style="margin: 0; padding-left: 20px;">
+                          <li>
+                            <strong data-i18n="settingsDisaster.yahooStep1Title">Yahoo! JAPAN IDでログイン:</strong>
+                            <span data-i18n="settingsDisaster.yahooStep1Desc">お持ちのYahoo! JAPANアカウントでログインします（お持ちでない場合は無料登録）。</span>
+                          </li>
+                          <li style="margin-top: 4px;">
+                            <strong data-i18n="settingsDisaster.yahooStep2Title">デベロッパーネットワークへアクセス:</strong>
+                            <a href="https://developer.yahoo.co.jp/" target="_blank" rel="noopener noreferrer" style="color: #60a5fa; text-decoration: underline;" data-i18n="settingsDisaster.yahooStep2Link">Yahoo!デベロッパーネットワーク ↗</a>
+                            <span data-i18n="settingsDisaster.yahooStep2Desc">の右上メニュー「アプリケーションの管理」または「新しいアプリケーションを開発」を開きます。</span>
+                          </li>
+                          <li style="margin-top: 4px;">
+                            <strong data-i18n="settingsDisaster.yahooStep3Title">アプリケーション登録（無料）:</strong>
+                            <span data-i18n="settingsDisaster.yahooStep3Desc">種別で「クライアントサイド（Web API）」を選択し、アプリケーション名（例: Voice Hub）を入力して登録します。</span>
+                          </li>
+                          <li style="margin-top: 4px;">
+                            <strong data-i18n="settingsDisaster.yahooStep4Title">Client ID をコピー＆ペースト:</strong>
+                            <span data-i18n="settingsDisaster.yahooStep4Desc">登録完了画面に表示される「Client ID (アプリケーションID)」をコピーし、上記の入力欄に貼り付けて「設定を保存」してください。</span>
+                          </li>
+                        </ol>
+                        <div style="margin-top: 6px; font-size: 0.75rem; color: var(--text-muted);" data-i18n="settingsDisaster.yahooGuideNote">
+                          ※ 気象情報API（雨雲レーダー・降水短時間予報）は個人・無料枠でご利用いただけます。
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+
+                  <!-- 通知オプション -->
+                  <div style="margin-bottom: 16px;">
+                    <label class="form-label" style="font-weight: 600;" data-i18n="settingsDisaster.rainAlertOptionsTitle">🔔 通知するイベント</label>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                      <!-- 接近・降り始め -->
+                      <div class="flex-between" style="padding: 6px 0;">
+                        <div>
+                          <div style="font-weight: 500; font-size: 0.9rem;" data-i18n="settingsDisaster.notifyApproachingTitle">雨雲接近・降り始め通知 (何分後に降るか)</div>
+                          <small style="color: var(--text-muted);" data-i18n="settingsDisaster.notifyApproachingHelp">「まもなく約20分後に雨が降り始める見込みです」のように洗濯物取り込み・傘の準備をアナウンスします</small>
+                        </div>
+                        <label class="switch">
+                          <input type="checkbox" id="settingRainAlarmNotifyApproaching" checked>
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+                      <!-- 強い雨・豪雨警戒 -->
+                      <div class="flex-between" style="padding: 6px 0;">
+                        <div>
+                          <div style="font-weight: 500; font-size: 0.9rem;" data-i18n="settingsDisaster.notifyHeavyTitle">大雨・豪雨警戒通知 (強い雨の急接近)</div>
+                          <small style="color: var(--text-muted);" data-i18n="settingsDisaster.notifyHeavyHelp">時間雨量10mm以上の激しい雨が迫っている場合に「大雨警戒」アナウンスで注意喚起します</small>
+                        </div>
+                        <label class="switch">
+                          <input type="checkbox" id="settingRainAlarmNotifyHeavy" checked>
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+                      <!-- 雨上がり通知 -->
+                      <div class="flex-between" style="padding: 6px 0;">
+                        <div>
+                          <div style="font-weight: 500; font-size: 0.9rem;" data-i18n="settingsDisaster.notifyClearingTitle">雨上がり通知 (雨が止んだ時)</div>
+                          <small style="color: var(--text-muted);" data-i18n="settingsDisaster.notifyClearingHelp">雨が止んだ際に「雨が止んだ見込みです。傘などのお忘れ物にご注意ください」とアナウンスします</small>
+                        </div>
+                        <label class="switch">
+                          <input type="checkbox" id="settingRainAlarmNotifyClearing" checked>
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 雨雲タイムラインプレビュー (直近〜60分後) -->
+                  <div>
+                    <div class="flex-between" style="margin-bottom: 8px;">
+                      <span style="font-size: 0.85rem; font-weight: 600;" data-i18n="settingsDisaster.rainTimelineTitle">📊 登録地点の雨雲状況・予測タイムライン</span>
+                      <button type="button" id="btnRefreshRainTimeline" class="btn btn-secondary btn-sm" style="font-size: 0.75rem; padding: 2px 8px;">
+                        <span>🔄</span> <span data-i18n="settingsDisaster.btnRefresh">更新</span>
+                      </button>
+                    </div>
+                    <div id="rainTimelineContainer" style="display: flex; gap: 8px; overflow-x: auto; padding: 4px 0;">
+                      <div style="color: var(--text-muted); font-size: 0.8rem;" data-i18n="settingsDisaster.timelineLoading">読み込み中...</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- 6. テスト発話・シミュレーション -->
               <div class="card glass-card" style="margin-top: 20px;">
                 <div class="card-header">
@@ -2593,22 +2759,42 @@ Body:
                   <span class="card-sub" data-i18n="settings.disasterTestSub">スピーカーから各防災アラートがどう鳴るか事前にテスト確認できます</span>
                 </div>
                 <div class="card-body">
-                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
-                    <button type="button" id="btnTestEew" class="btn btn-secondary" style="border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
-                      <span data-i18n="settingsDisaster.btnTestEEW">⚡ EEW テスト発報</span>
-                    </button>
-                    <button type="button" id="btnTestEewCancel" class="btn btn-secondary" style="border-color: rgba(245, 158, 11, 0.4); color: #fde68a;">
-                      <span data-i18n="settingsDisaster.btnTestEEWCancel">🛑 EEW 取消テスト</span>
-                    </button>
-                    <button type="button" id="btnTestQuake" class="btn btn-secondary">
-                      <span data-i18n="settingsDisaster.btnTestEQ">🌊 震度速報テスト</span>
-                    </button>
-                    <button type="button" id="btnTestWarning" class="btn btn-secondary">
-                      <span data-i18n="settingsDisaster.btnTestWeather">⛈️ 気象警報テスト</span>
-                    </button>
-                    <button type="button" id="btnTestWeatherSummary" class="btn btn-secondary">
-                      <span data-i18n="settingsDisaster.btnTestMorningWeather">☀️ 朝の天気サマリー</span>
-                    </button>
+                  <!-- 地震速報・気象警報テスト -->
+                  <div style="margin-bottom: 14px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-secondary);" data-i18n="settingsDisaster.groupDisasterTests">⚡ 地震速報・気象警報テスト</div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                      <button type="button" id="btnTestEew" class="btn btn-secondary" style="border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
+                        <span data-i18n="settingsDisaster.btnTestEEW">⚡ EEW テスト発報</span>
+                      </button>
+                      <button type="button" id="btnTestEewCancel" class="btn btn-secondary" style="border-color: rgba(245, 158, 11, 0.4); color: #fde68a;">
+                        <span data-i18n="settingsDisaster.btnTestEEWCancel">🛑 EEW 取消テスト</span>
+                      </button>
+                      <button type="button" id="btnTestQuake" class="btn btn-secondary">
+                        <span data-i18n="settingsDisaster.btnTestEQ">🌊 震度速報テスト</span>
+                      </button>
+                      <button type="button" id="btnTestWarning" class="btn btn-secondary">
+                        <span data-i18n="settingsDisaster.btnTestWeather">⛈️ 気象警報テスト</span>
+                      </button>
+                      <button type="button" id="btnTestWeatherSummary" class="btn btn-secondary">
+                        <span data-i18n="settingsDisaster.btnTestMorningWeather">☀️ 朝の天気サマリー</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 雨雲接近・雨アラームテスト -->
+                  <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-secondary);" data-i18n="settingsDisaster.groupRainAlarmTests">🌧️ 雨雲接近・雨アラームテスト</div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                      <button type="button" id="btnTestRainApproaching" class="btn btn-secondary" style="border-color: rgba(59, 130, 246, 0.4); color: #93c5fd;">
+                        <span>🌧️</span> <span data-i18n="settingsDisaster.btnTestApproaching">雨雲接近テスト</span>
+                      </button>
+                      <button type="button" id="btnTestRainHeavy" class="btn btn-secondary" style="border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">
+                        <span>⛈️</span> <span data-i18n="settingsDisaster.btnTestHeavy">大雨警戒テスト</span>
+                      </button>
+                      <button type="button" id="btnTestRainClearing" class="btn btn-secondary" style="border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7;">
+                        <span>☀️</span> <span data-i18n="settingsDisaster.btnTestClearing">雨上がりテスト</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3506,7 +3692,8 @@ Body:
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script src="i18n.js?v=3.7"></script>
-  <script src="app.js?v=3.7"></script>
+  <script src="app.js?v=3.9"></script>
 </body>
 </html>
