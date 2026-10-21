@@ -650,6 +650,7 @@ Node-RED、Home Assistant、n8n などのホームオートメーションと連
 - **ライブラリ**: `aiomqtt` (フル非同期 MQTT 3.1.1 / 5.0 クライアント)
 - **機能**:
   - 複数のブローカー（例: 自宅 LAN の Mosquitto + クラウドブローカー）を同時に登録可能。
+  - **mDNS (.local) 動的名前解決**: 内蔵 Zeroconf リゾルバ（`MDNSResolver`）により、Docker コンテナ環境でも `hostname.local` 形式のブローカーアドレスを自動的に IP アドレスへ動的解決。`extra_hosts` や固定 IP 設定が不要で、DHCP 環境にも自動追従します。
   - MQTTS (TLS 暗号化)、ユーザー名・パスワード認証対応。
   - 切断時の自動指数バックオフ再接続。
 

@@ -5609,6 +5609,9 @@ document.addEventListener('DOMContentLoaded', () => {
           const stats = document.getElementById(`mqttBrokerStats_${ws.id}`);
           if (stats) {
             let statsHtml = `受信: <strong>${ws.receivedCount || 0}</strong> 件 | トピック: <code>${escapeHtml(ws.baseTopic || 'voicehub')}/say</code>`;
+            if (ws.resolvedBroker && ws.resolvedBroker !== ws.broker) {
+              statsHtml += ` | mDNS解決: <code style="color: #38bdf8;">${escapeHtml(ws.resolvedBroker)}</code>`;
+            }
             if (ws.lastMessageAt) statsHtml += ` | 最新: ${escapeHtml(ws.lastMessageAt)}`;
             if (ws.lastError) statsHtml += `<div style="color: #f87171; margin-top: 4px;">⚠️ ${escapeHtml(ws.lastError)}</div>`;
             stats.innerHTML = statsHtml;
@@ -5622,7 +5625,8 @@ document.addEventListener('DOMContentLoaded', () => {
           let opts = '<option value="">🌐 すべての接続中ブローカーに配信</option>';
           data.brokers.forEach(b => {
             const statusLabel = !b.enabled ? '無効' : (b.connected ? '接続中' : '切断');
-            opts += `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name || b.broker)} (${escapeHtml(b.broker)}:${b.port}) [${statusLabel}]</option>`;
+            const resolvedSuffix = (b.resolvedBroker && b.resolvedBroker !== b.broker) ? ` -> ${b.resolvedBroker}` : '';
+            opts += `<option value="${escapeHtml(b.id)}">${escapeHtml(b.name || b.broker)} (${escapeHtml(b.broker)}${escapeHtml(resolvedSuffix)}:${b.port}) [${statusLabel}]</option>`;
           });
           selBroker.innerHTML = opts;
           selBroker.value = currentVal;
@@ -5648,7 +5652,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (sumHost) {
         const activeBroker = (Array.isArray(data.brokers) && data.brokers.find(b => b.connected)) || (data.brokers && data.brokers[0]);
         if (activeBroker && activeBroker.broker) {
-          sumHost.innerHTML = `<code>${escapeHtml(activeBroker.broker)}:${activeBroker.port || 1883}</code>`;
+          const resolvedInfo = (activeBroker.resolvedBroker && activeBroker.resolvedBroker !== activeBroker.broker)
+            ? ` <small style="color: #38bdf8; font-size: 0.75rem;">(${escapeHtml(activeBroker.resolvedBroker)})</small>`
+            : '';
+          sumHost.innerHTML = `<code>${escapeHtml(activeBroker.broker)}:${activeBroker.port || 1883}</code>${resolvedInfo}`;
         } else {
           sumHost.innerHTML = '<span style="color: var(--text-muted); font-size: 0.9rem;">未設定</span>';
         }

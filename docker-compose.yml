@@ -12,12 +12,11 @@ services:
       - voice_cache:/app/public/voice
       - voice_logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/api/status > /dev/null 2>&1 || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8080/api/status > /dev/null 2>&1 || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -29,7 +28,7 @@ services:
       - path: ./.my.env
         required: false
     healthcheck:
-      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:20245", "ready"]
+      test: [ "CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:20245", "ready" ]
       interval: 30s
       timeout: 5s
       retries: 3

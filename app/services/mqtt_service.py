@@ -8,6 +8,7 @@ from app.services.speech_service import speech_service
 from app.services.scheduled_speech_service import scheduled_speech_service
 from app.services.dnd_service import dnd_service
 from app.core.logger import get_logger
+from app.core.resolver import resolve_host
 
 log = get_logger("MQTT")
 
@@ -22,6 +23,7 @@ class MQTTBrokerWorker:
         self._running = False
         self._client: Optional[aiomqtt.Client] = None
         self.is_connected = False
+        self.resolved_ip: Optional[str] = None
         self.last_error: Optional[str] = None
         self.last_message_at: Optional[str] = None
         self.received_count = 0
@@ -56,6 +58,7 @@ class MQTTBrokerWorker:
             "enabled": bool(self.conf.get("enabled", True)),
             "connected": self.is_connected,
             "broker": self.conf.get("broker", ""),
+            "resolvedBroker": self.resolved_ip,
             "port": int(self.conf.get("port") or 1883),
             "clientId": self.conf.get("clientId", "voice-hub"),
             "baseTopic": self.conf.get("baseTopic", "voicehub"),
@@ -236,11 +239,17 @@ class MQTTBrokerWorker:
             )
 
             try:
-                log.info(f"[MQTT Worker:{self.name}] Connecting to broker {broker}:{port} (tls={use_tls}, client_id={client_id})...")
+                # mDNS (.local) ホスト名の場合は動的解決
+                resolved_broker = await resolve_host(broker)
+                self.resolved_ip = resolved_broker
+                if resolved_broker != broker:
+                    log.info(f"[MQTT Worker:{self.name}] Resolved '{broker}' to '{resolved_broker}' via mDNS")
+
+                log.info(f"[MQTT Worker:{self.name}] Connecting to broker {broker}:{port} (target={resolved_broker}, tls={use_tls}, client_id={client_id})...")
                 self.last_error = None
 
                 async with aiomqtt.Client(
-                    hostname=broker,
+                    hostname=resolved_broker,
                     port=port,
                     username=username,
                     password=password,
@@ -252,7 +261,7 @@ class MQTTBrokerWorker:
                 ) as client:
                     self._client = client
                     self.is_connected = True
-                    log.info(f"[MQTT Worker:{self.name}] Connected successfully to {broker}:{port}")
+                    log.info(f"[MQTT Worker:{self.name}] Connected successfully to {broker}:{port} ({resolved_broker})")
 
                     # オンラインステータスを発行 (Retain)
                     await client.publish(f"{base_topic}/status", "online", retain=True)
@@ -519,6 +528,7 @@ class MQTTService:
             "brokers": worker_statuses,
             # 下位互換用フィールド
             "broker": first_worker.get("broker", mqtt_conf.get("broker", "")),
+            "resolvedBroker": first_worker.get("resolvedBroker"),
             "port": first_worker.get("port", mqtt_conf.get("port", 1883)),
             "clientId": first_worker.get("clientId", mqtt_conf.get("clientId", "voice-hub")),
             "baseTopic": first_worker.get("baseTopic", mqtt_conf.get("baseTopic", "voicehub")),
