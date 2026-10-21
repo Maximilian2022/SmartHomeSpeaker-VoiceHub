@@ -185,6 +185,52 @@ body {
   animation: pulse-muted 2.5s infinite;
 }
 
+.lang-select-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.lang-select-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.lang-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.header-lang-select {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  padding: 2px 2px;
+  font-family: inherit;
+}
+
+.header-lang-select:focus-visible {
+  outline: 2px solid var(--accent);
+  border-radius: 4px;
+}
+
+.header-lang-select option {
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 6px;
+}
+
 .header-dnd-btn.is-muted:hover {
   background: rgba(239, 68, 68, 0.28);
   border-color: #ef4444;

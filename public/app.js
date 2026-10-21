@@ -3,6 +3,145 @@
 // ==========================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+  // ==========================================================================
+  // i18n 多言語ヘルパー & トースト翻訳エンジン
+  // ==========================================================================
+  const isEn = () => (window.i18n ? window.i18n.getLanguage() === 'en' : false);
+  const t = (key, params, fallback) => {
+    if (window.i18n && typeof window.i18n.t === 'function') {
+      return window.i18n.t(key, params, fallback);
+    }
+    return fallback !== undefined ? fallback : key;
+  };
+
+  const TOAST_STATIC_EN = {
+    "AI API Key および 連携設定を保存しました": "AI API Key and integration settings saved",
+    "AI要約の発動件数を更新しました": "Updated AI summarization threshold count",
+    "API Key 接続テストに成功しました！": "API Key connection test succeeded!",
+    "Alexa デバイス一覧を再取得しました": "Refreshed Alexa device list",
+    "Alexa 認証をキャンセルしました": "Alexa authentication cancelled",
+    "Alexa 連携を解除しました": "Unlinked Amazon Alexa integration",
+    "Amazon ログインページを開きました。ログインを完了してください。": "Opened Amazon login page. Please complete login.",
+    "Claude Desktop 設定 JSON をクリップボードにコピーしました！": "Copied Claude Desktop configuration JSON to clipboard!",
+    "Cursor / Cline 設定 JSON をクリップボードにコピーしました！": "Copied Cursor / Cline configuration JSON to clipboard!",
+    "Google カレンダーと同期しています...": "Syncing with Google Calendar...",
+    "Google カレンダー連携設定を保存しました！": "Google Calendar integration settings saved!",
+    "HomePod を再スキャンしています...": "Rescanning Apple HomePods...",
+    "Homebridge 設定 JSON をコピーしました": "Copied Homebridge configuration JSON",
+    "IP エイリアスを削除しました": "Deleted IP alias",
+    "MQTT クライアントを再起動しました": "Restarted MQTT client",
+    "MQTT 設定を保存し、ブローカー接続を更新しました": "Saved MQTT settings and updated broker connections",
+    "ONVIF デフォルト認証情報を保存しました": "Saved ONVIF default credentials",
+    "Tapoクラウドアカウント認証情報を保存しました（名前自動解決＆音声通話連携）": "Saved Tapo Cloud credentials (auto-naming & audio stream enabled)",
+    "Tunnel ドメインを設定値にリセットしました": "Reset Tunnel domain to configured value",
+    "Webhook 認証トークンをコピーしました！": "Copied Webhook authentication token!",
+    "Webhook 認証トークンを保存しました！": "Saved Webhook authentication token!",
+    "「チャイムなし」が選択されています (無音)": "\"No Chime\" selected (silent direct speech)",
+    "【DND発動中】おやすみ・会議モード中のため発話を抑制しました": "[DND Active] Speech suppressed during sleep / meeting mode",
+    "おやすみ・会議モード (DND) 設定を保存しました！": "Do Not Disturb (DND) settings saved!",
+    "おやすみ・会議モードの全体設定を更新しました": "Updated global Do Not Disturb settings",
+    "インストールコマンドをコピーしました": "Copied installation command",
+    "カレンダー予定連動の有効状態を更新しました": "Updated calendar sync enabled state",
+    "コピーに失敗しました": "Failed to copy to clipboard",
+    "サイレントを解除し、通常モードに復帰しました": "Silent mode released; returned to normal mode",
+    "システム設定を保存しました": "System settings saved",
+    "スケジュールの取得に失敗しました": "Failed to fetch schedules",
+    "スケジュールを削除しました": "Deleted schedule",
+    "スケジュールを即時実行しました！": "Executed schedule immediately!",
+    "スピーカーへ発言リクエストを送信しました！": "Sent speech request to speakers!",
+    "テキストを入力してください": "Please enter speech text",
+    "デバイス情報の取得に失敗しました": "Failed to fetch device information",
+    "ミュートを解除し、通常モードに復帰しました": "Unmuted; returned to normal mode",
+    "ログインしました": "Logged in successfully",
+    "予約発声をキャンセルしました": "Cancelled scheduled speech",
+    "保留通知のAI要約設定を更新しました": "Updated pending notifications AI summary setting",
+    "先に「🔌 接続テスト」を実行してください": "Please run \"🔌 Test Connection\" first",
+    "全スマートスピーカー＆カメラを一括再スキャンしています...": "Rescanning all smart speakers and cameras...",
+    "外部音声エンジン (TTS) 設定を保存しました": "External TTS engine settings saved",
+    "定時サイレントルールを削除しました": "Deleted scheduled silent rule",
+    "定時サイレントルールを登録しました": "Registered scheduled silent rule",
+    "定時サイレントルールを更新しました": "Updated scheduled silent rule",
+    "定時スケジュールの有効状態を更新しました": "Updated scheduled rules enabled state",
+    "試聴音声を再生しました": "Played preview audio",
+    "発言テキストをクリップボードにコピーしました": "Copied speech text to clipboard",
+    "発言内容を即時発言フォームにセットしました": "Loaded speech text into Instant Speech form",
+    "発言履歴をすべてクリアしました": "Cleared all speech history",
+    "発言履歴を最新に更新しました": "Refreshed speech history",
+    "設定/コードをクリップボードにコピーしました！": "Copied configuration / snippet to clipboard!",
+    "設定を保存しました": "Settings saved successfully",
+    "通知テストを実行しました": "Executed notification test",
+    "連携を解除しました": "Integration unlinked",
+    "現在のログをアーカイブへ退避し、クリアしました": "Archived current log and cleared active log",
+    "🎉 Amazon Alexa 認証が完了しました！Echo デバイスを認識しました。": "🎉 Amazon Alexa authenticated! Echo devices recognized.",
+    "🎉 リフレッシュトークンを保存し、Alexa デバイスを読み込みました！": "🎉 Refresh token saved; loaded Alexa devices!",
+    "朝の予定サマリーをスピーカーへ送信中...": "Broadcasting morning schedule summary to speakers...",
+    "朝の予定まとめアナウンスを実行しました！": "Broadcasted morning schedule summary announcement!",
+    "Google カレンダーの iCal URL を入力してください": "Please enter Google Calendar iCal URL",
+    "IP アドレスを入力してください": "Please enter IP address",
+    "IPアドレスと表示名の両方を入力してください": "Please enter both IP address and display name",
+    "Tapoクラウドアカウントのパスワードを入力してください": "Please enter Tapo Cloud account password",
+    "URLは http:// または https:// から始まる必要があります": "URL must begin with http:// or https://",
+    "iCal URL を入力してください": "Please enter iCal URL",
+    "グループ名を入力してください": "Please enter group name",
+    "スピーカー表示名を入力してください": "Please enter speaker display name",
+    "テスト発話テキストを入力してください": "Please enter test speech text",
+    "リフレッシュトークンを入力してください": "Please enter refresh token",
+    "少なくとも1つのスピーカーを選択してください": "Please select at least one speaker",
+    "送信先スピーカーを1つ以上選択してください": "Please select at least one target speaker",
+    "送信先スピーカーを1台以上選択してください": "Please select at least one target speaker",
+    "曜日を1つ以上選択してください": "Please select at least one day of the week",
+    "発言内容を入力してください": "Please enter speech text",
+    "状態の更新に失敗しました": "Failed to update state",
+    "接続テストに失敗しました": "Connection test failed",
+    "接続に成功しました": "Connection succeeded",
+    "設定の保存に失敗しました": "Failed to save settings"
+  };
+
+  function translateToast(msg) {
+    if (!msg || typeof msg !== 'string') return msg;
+    if (TOAST_STATIC_EN[msg]) return TOAST_STATIC_EN[msg];
+
+    let m;
+    if ((m = msg.match(/^★「(.*?)」をお気に入りに追加しました$/))) return `Added "★ ${m[1]}" to favorites`;
+    if ((m = msg.match(/^☆「(.*?)」のお気に入りを解除しました$/))) return `Removed "☆ ${m[1]}" from favorites`;
+    if ((m = msg.match(/^「(.*?)」を(有効|無効)にしました$/))) return `${m[2] === '有効' ? 'Enabled' : 'Disabled'} "${m[1]}"`;
+    if ((m = msg.match(/^「(.*?)」の有効状態を更新しました$/))) return `Updated enabled state of "${m[1]}"`;
+    if ((m = msg.match(/^「(.*?)」を削除しました$/))) return `Deleted "${m[1]}"`;
+    if ((m = msg.match(/^(.*?) にテスト音声を送信しました！$/))) return `Sent test audio to ${m[1]}!`;
+    if ((m = msg.match(/^デフォルトスピーカーを「(.*?)」に変更しました！$/))) return `Changed default speaker to "${m[1]}"!`;
+    if ((m = msg.match(/^全デバイス一括再スキャン完了: 計 (\d+) 台を検出・同期しました$/))) return `Full rescan complete: ${m[1]} devices detected & synced`;
+    if ((m = msg.match(/^一部のスピーカーへ送信完了 \((\d+) \/ (\d+) 台成功\)$/))) return `Sent to some speakers (${m[1]} / ${m[2]} succeeded)`;
+    if ((m = msg.match(/^(\d+) 台すべてのスピーカーへ送信完了 \((\d+) 台成功\)！$/))) return `Sent to all ${m[1]} speakers (${m[2]} succeeded)!`;
+    if ((m = msg.match(/^HomePod 再スキャン完了: (\d+) 台認識$/))) return `HomePod rescan complete: ${m[1]} recognized`;
+    if ((m = msg.match(/^カレンダー同期完了: 合計 (\d+) 件の予定を取得$/))) return `Calendar sync complete: retrieved ${m[1]} events`;
+    if ((m = msg.match(/^「(.*?)」を追加し、予定を同期しました！$/))) return `Added "${m[1]}" and synced events!`;
+    if ((m = msg.match(/^カレンダー「(.*?)」の個別設定を保存しました！$/))) return `Saved settings for calendar "${m[1]}"!`;
+    if ((m = msg.match(/^カスタムグループ「(.*?)」を(登録|更新|削除)しました$/))) return `${m[2] === '登録' ? 'Registered' : (m[2] === '更新' ? 'Updated' : 'Deleted')} custom group "${m[1]}"`;
+    if ((m = msg.match(/^MQTTブローカー「(.*?)」を(登録|更新|削除)しました$/))) return `${m[2] === '登録' ? 'Registered' : (m[2] === '更新' ? 'Updated' : 'Deleted')} MQTT broker "${m[1]}"`;
+    if ((m = msg.match(/^定時サイレントルールを(登録|更新|削除)しました$/))) return `${m[1] === '登録' ? 'Registered' : (m[1] === '更新' ? 'Updated' : 'Deleted')} scheduled silent rule`;
+    if ((m = msg.match(/^【サイレント発動】(.*?)ミュートを開始しました(.*)$/))) return `[Silent Active] Started ${m[1]} mute${m[2] ? ' (click again to unmute)' : ''}`;
+    if ((m = msg.match(/^⏰ 発声予約を受け付けました \((.*?) 予定 \/ 残り約(\d+)秒\)$/))) return `⏰ Scheduled speech accepted (${m[1]} / ~${m[2]}s remaining)`;
+    if ((m = msg.match(/^IP「(.*?)」のエイリアス登録欄を開きました$/))) return `Opened alias registration for IP "${m[1]}"`;
+    if ((m = msg.match(/^IP「(.*?)」のエイリアスを「(.*?)」として保存しました$/))) return `Saved alias "${m[2]}" for IP "${m[1]}"`;
+
+    if (msg.startsWith('送信エラー: ')) return 'Transmission error: ' + msg.slice(7);
+    if (msg.startsWith('保存エラー: ')) return 'Save error: ' + msg.slice(7);
+    if (msg.startsWith('削除エラー: ')) return 'Delete error: ' + msg.slice(7);
+    if (msg.startsWith('実行エラー: ')) return 'Execution error: ' + msg.slice(7);
+    if (msg.startsWith('同期エラー: ')) return 'Sync error: ' + msg.slice(7);
+    if (msg.startsWith('キャンセルエラー: ')) return 'Cancellation error: ' + msg.slice(10);
+    if (msg.startsWith('キャンセル失敗: ')) return 'Cancellation failed: ' + msg.slice(9);
+    if (msg.startsWith('設定保存エラー: ')) return 'Settings save error: ' + msg.slice(9);
+    if (msg.startsWith('エラー: ')) return 'Error: ' + msg.slice(5);
+    if (msg.startsWith('再スキャンエラー: ')) return 'Rescan error: ' + msg.slice(10);
+    if (msg.startsWith('スキャンエラー: ')) return 'Scan error: ' + msg.slice(9);
+    if (msg.startsWith('接続エラー: ')) return 'Connection error: ' + msg.slice(7);
+    if (msg.startsWith('通信エラー: ')) return 'Communication error: ' + msg.slice(7);
+    if (msg.startsWith('死活確認エラー: ')) return 'Health check error: ' + msg.slice(9);
+
+    return msg;
+  }
+
   // 状態保持
   const state = {
     serverInfo: null,
@@ -262,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.serverInfo = data;
       state.serverStatus = data;
 
-      if (el.serverStatusText) el.serverStatusText.textContent = `稼働中 (${data.serverIp}:${data.port})`;
+      if (el.serverStatusText) el.serverStatusText.textContent = isEn() ? `Running (${data.serverIp}:${data.port})` : `稼働中 (${data.serverIp}:${data.port})`;
       updateDefaultDeviceDisplay();
       if (el.apiEndpointUrl) el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
 
@@ -302,12 +441,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // HomePod 台数の反映
       const hpBadge = document.getElementById('homepodStatusBadge');
       if (hpBadge && data.homepodCount !== undefined) {
-        hpBadge.textContent = `${data.homepodCount > 0 ? data.homepodCount - 1 : 0} 台認識済み`;
+        hpBadge.textContent = isEn() ? `${data.homepodCount > 0 ? data.homepodCount - 1 : 0} recognized` : `${data.homepodCount > 0 ? data.homepodCount - 1 : 0} 台認識済み`;
       }
 
       updateBuilderCode();
     } catch (err) {
-      if (el.serverStatusText) el.serverStatusText.textContent = '接続エラー';
+      if (el.serverStatusText) el.serverStatusText.textContent = isEn() ? 'Connection Error' : '接続エラー';
       if (el.serverStatusChip) el.serverStatusChip.style.borderColor = 'var(--danger)';
     }
   }
@@ -403,8 +542,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const defName = state.serverInfo?.defaultDeviceName || '';
 
     if (defName && defName !== defIp) {
-      el.defaultDeviceText.textContent = `デフォルト: ${defName}`;
-      el.defaultDeviceText.title = `標準スピーカー: ${defName} (${defIp})`;
+      el.defaultDeviceText.textContent = isEn() ? `Default: ${defName}` : `デフォルト: ${defName}`;
+      el.defaultDeviceText.title = isEn() ? `Default Speaker: ${defName} (${defIp})` : `標準スピーカー: ${defName} (${defIp})`;
       return;
     }
 
@@ -412,13 +551,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const found = (state.devices || []).find(d => d.ip === defIp || d.host === defIp || d.id === defIp);
       if (found && found.name) {
         const dName = formatSpeakerDisplayName(found.name);
-        el.defaultDeviceText.textContent = `デフォルト: ${dName}`;
-        el.defaultDeviceText.title = `標準スピーカー: ${dName} (${defIp})`;
+        el.defaultDeviceText.textContent = isEn() ? `Default: ${dName}` : `デフォルト: ${dName}`;
+        el.defaultDeviceText.title = isEn() ? `Default Speaker: ${dName} (${defIp})` : `標準スピーカー: ${dName} (${defIp})`;
       } else {
-        el.defaultDeviceText.textContent = `デフォルト: ${defIp}`;
+        el.defaultDeviceText.textContent = isEn() ? `Default: ${defIp}` : `デフォルト: ${defIp}`;
       }
     } else {
-      el.defaultDeviceText.textContent = 'デフォルト未設定';
+      el.defaultDeviceText.textContent = isEn() ? 'No default speaker' : 'デフォルト未設定';
     }
   }
 
@@ -495,25 +634,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const pending = data.pending || [];
 
       if (badge) {
-        badge.textContent = `待機中: ${pending.length}件`;
+        const badgeStr = window.t ? window.t('schedule.waitingBadge', { count: pending.length }) : `待機中: ${pending.length}件`;
+        badge.textContent = badgeStr;
         badge.style.background = pending.length > 0 ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)';
         badge.style.color = pending.length > 0 ? '#38bdf8' : 'var(--text-muted)';
       }
 
       if (pending.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-sub" style="padding: 16px;">現在待機中の予約発声タスクはありません</td></tr>`;
+        const emptyMsg = window.t ? window.t('schedule.noOneOff') : '現在待機中の予約発声タスクはありません';
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-sub" style="padding: 16px;">${escapeHtml(emptyMsg)}</td></tr>`;
         return;
       }
+
+      const isEn = window.i18n && window.i18n.getLanguage() === 'en';
+      const btnCancelLbl = isEn ? 'Cancel' : '取消';
 
       tbody.innerHTML = pending.map(t => {
         const id = escapeHtml(t.id);
         const schedAt = escapeHtml(t.scheduled_at?.replace('T', ' ').substring(0, 19) || '');
         const remainSec = t.remaining_seconds != null ? t.remaining_seconds : 0;
-        let remainStr = `${remainSec}秒後`;
+        let remainStr = isEn ? `in ${remainSec}s` : `${remainSec}秒後`;
         if (remainSec >= 3600) {
-          remainStr = `${(remainSec / 3600).toFixed(1)}時間後`;
+          remainStr = isEn ? `in ${(remainSec / 3600).toFixed(1)}h` : `${(remainSec / 3600).toFixed(1)}時間後`;
         } else if (remainSec >= 60) {
-          remainStr = `${Math.round(remainSec / 60)}分後`;
+          remainStr = isEn ? `in ${Math.round(remainSec / 60)}m` : `${Math.round(remainSec / 60)}分後`;
         }
         const targets = Array.isArray(t.targets) ? t.targets.map(getDeviceDisplayName).join(', ') : getDeviceDisplayName(t.targets);
         const text = escapeHtml(t.text || '');
@@ -528,7 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <td><span style="font-size: 0.75rem; color: var(--text-muted);">${source}</span></td>
             <td style="text-align: center;">
               <button type="button" class="btn btn-danger btn-sm btn-cancel-scheduled" data-id="${id}" style="padding: 2px 8px; font-size: 0.75rem;">
-                🗑️ 取消
+                🗑️ ${escapeHtml(btnCancelLbl)}
               </button>
             </td>
           </tr>
@@ -539,7 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tbody.querySelectorAll('.btn-cancel-scheduled').forEach(btn => {
         btn.addEventListener('click', async () => {
           const taskId = btn.getAttribute('data-id');
-          if (!confirm(`予約発声タスク [${taskId}] をキャンセルしますか？`)) return;
+          if (!confirm(isEn() ? `Cancel scheduled speech task [${taskId}]?` : `予約発声タスク [${taskId}] をキャンセルしますか？`)) return;
           try {
             btn.disabled = true;
             const delRes = await fetch(`/api/scheduled-speeches/${taskId}`, { method: 'DELETE' });
@@ -640,33 +784,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const groups = state.settings?.deviceGroups || {};
     const groupNames = Object.keys(groups);
 
+    const lblAll = (window.t ? window.t('say.macroAll') : '全台');
+    const lblClear = (window.t ? window.t('say.macroClear') : 'クリア');
+
     let html = `
-      <button type="button" class="btn-chip btn-macro" data-macro="ALL" title="全スピーカーを選択">⚡ ALL (全台)</button>
+      <button type="button" class="btn-chip btn-macro" data-macro="ALL" title="${escapeHtml(lblAll)}">⚡ ALL (${escapeHtml(lblAll)})</button>
     `;
     if (hasGoogle) {
-      html += `<button type="button" class="btn-chip btn-macro" data-macro="GH:ALL" title="Google Home全台を選択">⚡ GH:ALL (Google全台)</button>`;
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="GH:ALL" title="Google Home">⚡ GH:ALL (Google)</button>`;
     }
     if (hasAlexa) {
-      html += `<button type="button" class="btn-chip btn-macro" data-macro="AL:ALL" title="Alexa全台を選択">⚡ AL:ALL (Alexa全台)</button>`;
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="AL:ALL" title="Alexa">⚡ AL:ALL (Alexa)</button>`;
     }
     if (hasHomePod) {
-      html += `<button type="button" class="btn-chip btn-macro" data-macro="HP:ALL" title="HomePod全台を選択">⚡ HP:ALL (HomePod全台)</button>`;
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="HP:ALL" title="HomePod">⚡ HP:ALL (HomePod)</button>`;
     }
     if (hasOnvif) {
-      html += `<button type="button" class="btn-chip btn-macro" data-macro="CAM:ALL" title="ONVIFカメラ全台を選択">⚡ CAM:ALL (カメラ全台)</button>`;
+      html += `<button type="button" class="btn-chip btn-macro" data-macro="CAM:ALL" title="ONVIF">⚡ CAM:ALL (Camera)</button>`;
     }
     // カスタム部屋グループボタン (グループ編集モーダル内では非表示)
     if (nameAttr !== 'groupSpeaker') {
       groupNames.forEach(grp => {
         html += `
-          <button type="button" class="btn-chip btn-macro btn-custom-group" data-macro="${escapeHtml(grp)}" title="登録グループ [${escapeHtml(grp)}] を選択">
+          <button type="button" class="btn-chip btn-macro btn-custom-group" data-macro="${escapeHtml(grp)}" title="[${escapeHtml(grp)}]">
             ⚡ ${escapeHtml(grp)}
           </button>
         `;
       });
     }
     // クリアボタン
-    html += `<button type="button" class="btn-chip text-danger btn-clear-macro">クリア</button>`;
+    html += `<button type="button" class="btn-chip text-danger btn-clear-macro">${escapeHtml(lblClear)}</button>`;
 
     macroContainer.innerHTML = html;
 
@@ -769,10 +916,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let badgeHtml = '';
       if (isFav) {
-        badgeHtml += '<span class="speaker-chip-badge fav-badge" title="お気に入りスピーカー" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>';
+        badgeHtml += `<span class="speaker-chip-badge fav-badge" title="${isEn() ? 'Favorite Speaker' : 'お気に入りスピーカー'}" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>`;
       }
       if (isDefault) {
-        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">標準</span>';
+        badgeHtml += `<span class="speaker-chip-badge default-badge" title="${isEn() ? 'Default Speaker' : '標準スピーカー'}">${isEn() ? 'Default' : '標準'}</span>`;
       }
       if (isGroup) {
         if (isAlexa) {
@@ -967,7 +1114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         case 'custom_days':
           if (Array.isArray(sched.weekdays) && sched.weekdays.length) {
             const names = sched.weekdays.map(d => WEEKDAY_NAMES_MAP[d] || d).join('・');
-            return `毎週 ${names} ${time}`;
+            return isEn() ? `Every ${names} ${time}` : `毎週 ${names} ${time}`;
           }
           return `指定曜日 ${time}`;
       }
@@ -993,7 +1140,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (dow === '1-5' || dow === '1,2,3,4,5') return `平日 (月〜金) ${timeStr}`;
             if (dow === '0,6' || dow === '6,0') return `土日 ${timeStr}`;
             const days = dow.split(',').map(d => WEEKDAY_NAMES_MAP[d.trim()] || d).filter(Boolean);
-            if (days.length) return `毎週 ${days.join('・')} ${timeStr}`;
+            if (days.length) return isEn() ? `Every ${days.join(', ')} ${timeStr}` : `毎週 ${days.join('・')} ${timeStr}`;
           }
         }
 
@@ -1012,9 +1159,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderScheduleTable() {
     if (!state.schedules.length) {
-      el.scheduleTableBody.innerHTML = `<tr><td colspan="6" class="text-center empty-msg">登録されたスケジュールはありません</td></tr>`;
+      const emptyMsg = window.t ? window.t('schedule.noSchedules') : '登録されたスケジュールはありません';
+      el.scheduleTableBody.innerHTML = `<tr><td colspan="6" class="text-center empty-msg">${escapeHtml(emptyMsg)}</td></tr>`;
       return;
     }
+
+    const isEn = window.i18n && window.i18n.getLanguage() === 'en';
+    const titleEdit = window.t ? window.t('common.edit') : '編集';
+    const titleRun = isEn ? 'Run Now' : '今すぐ実行';
+    const titleDelete = window.t ? window.t('common.delete') : '削除';
 
     let rowsHtml = '';
     state.schedules.forEach(sched => {
@@ -1026,7 +1179,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const freqText = formatHumanReadableCron(sched);
       const volBadge = sched.volumeLevel 
-        ? `<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#34d399; border-color:rgba(52,211,153,0.3); margin-left:6px;" title="個別音量: ${Math.round(parseFloat(sched.volumeLevel) * 100)}%">🔉 ${Math.round(parseFloat(sched.volumeLevel) * 100)}%</span>` 
+        ? `<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#34d399; border-color:rgba(52,211,153,0.3); margin-left:6px;" title="Volume: ${Math.round(parseFloat(sched.volumeLevel) * 100)}%">🔉 ${Math.round(parseFloat(sched.volumeLevel) * 100)}%</span>` 
         : '';
 
       rowsHtml += `
@@ -1048,13 +1201,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${escapeHtml(sched.text)}</td>
           <td>
             <div class="table-actions">
-              <button type="button" class="btn-icon btn-edit-sched" data-id="${sched.id}" title="編集">
+              <button type="button" class="btn-icon btn-edit-sched" data-id="${sched.id}" title="${escapeHtml(titleEdit)}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
-              <button type="button" class="btn-icon btn-run-sched" data-id="${sched.id}" title="今すぐ実行">
+              <button type="button" class="btn-icon btn-run-sched" data-id="${sched.id}" title="${escapeHtml(titleRun)}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               </button>
-              <button type="button" class="btn-icon danger btn-delete-sched" data-id="${sched.id}" title="削除">
+              <button type="button" class="btn-icon danger btn-delete-sched" data-id="${sched.id}" title="${escapeHtml(titleDelete)}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
@@ -1103,8 +1256,8 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="device-card-title" style="font-size:1.05rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">
-              ${isDef ? '<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.7rem;padding:2px 6px;">★ 標準</span>' : ''}
-              ${isFav && !isDef ? '<span class="device-tag fav" style="background:rgba(245,158,11,0.12);color:#fbbf24;border:1px solid rgba(245,158,11,0.25);font-size:0.7rem;padding:2px 6px;">★ お気に入り</span>' : ''}
+              ${isDef ? `<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.7rem;padding:2px 6px;">★ ${window.i18n && window.i18n.getLanguage() === 'en' ? 'Default' : '標準'}</span>` : ''}
+              ${isFav && !isDef ? `<span class="device-tag fav" style="background:rgba(245,158,11,0.12);color:#fbbf24;border:1px solid rgba(245,158,11,0.25);font-size:0.7rem;padding:2px 6px;">${window.t ? window.t('devices.favoriteBadge') : '★ お気に入り'}</span>` : ''}
               ${isGroup ? groupBadge : `
                 ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
                 ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
@@ -1116,21 +1269,21 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           </div>
           <div class="device-card-info" style="margin-top:8px;">
-            <span><strong>識別子/IP:</strong> ${escapeHtml(dev.ip)}</span>
-            <span><strong>モデル:</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
+            <span><strong>${window.i18n && window.i18n.getLanguage() === 'en' ? 'ID / IP:' : '識別子/IP:'}</strong> ${escapeHtml(dev.ip)}</span>
+            <span><strong>${window.i18n && window.i18n.getLanguage() === 'en' ? 'Model:' : 'モデル:'}</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
           </div>
           <div class="device-card-actions" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
             <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" style="width:100%;justify-content:center;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              テスト発声
+              ${window.t ? window.t('devices.testSpeak') : 'テスト発声'}
             </button>
             ${isDef ? `
               <div style="display:flex;align-items:center;justify-content:center;gap:6px;width:100%;color:#fbbf24;font-size:0.82rem;font-weight:600;padding:7px 12px;border-radius:var(--radius-sm);background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);box-sizing:border-box;">
-                ★ デフォルト (標準) 端末
+                ${window.i18n && window.i18n.getLanguage() === 'en' ? '★ Default Speaker' : '★ デフォルト (標準) 端末'}
               </div>
             ` : `
-              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" title="このスピーカーをデフォルト端末に設定します" style="width:100%;justify-content:center;">
-                ★ デフォルトに設定
+              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" title="${window.i18n && window.i18n.getLanguage() === 'en' ? 'Set as default speaker' : 'このスピーカーをデフォルト端末に設定します'}" style="width:100%;justify-content:center;">
+                ${window.i18n && window.i18n.getLanguage() === 'en' ? '★ Set as Default' : '★ デフォルトに設定'}
               </button>
             `}
           </div>
@@ -1230,8 +1383,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    const isEn = window.i18n && window.i18n.getLanguage() === 'en';
+    const lang = isEn ? 'en-US' : 'ja-JP';
+
     if (!items.length) {
-      el.fullHistoryContainer.innerHTML = `<div class="empty-msg">条件に一致する発言履歴はありません</div>`;
+      el.fullHistoryContainer.innerHTML = `<div class="empty-msg">${isEn ? 'No speech history records matching the criteria' : '条件に一致する発言履歴はありません'}</div>`;
       return;
     }
 
@@ -1239,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', () => {
     items.forEach(item => {
       // 日時フォーマット (YYYY/MM/DD HH:mm:ss)
       const date = item.timestamp ? new Date(item.timestamp) : new Date();
-      const timeStr = date.toLocaleString('ja-JP', {
+      const timeStr = date.toLocaleString(lang, {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -1251,14 +1407,15 @@ document.addEventListener('DOMContentLoaded', () => {
       // 相対時間
       const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
       let relativeTime = '';
-      if (diffSec < 60) relativeTime = `${Math.max(1, diffSec)}秒前`;
-      else if (diffSec < 3600) relativeTime = `${Math.floor(diffSec / 60)}分前`;
-      else if (diffSec < 86400) relativeTime = `${Math.floor(diffSec / 3600)}時間前`;
-      else relativeTime = `${Math.floor(diffSec / 86400)}日前`;
+      if (diffSec < 60) relativeTime = isEn ? `${Math.max(1, diffSec)}s ago` : `${Math.max(1, diffSec)}秒前`;
+      else if (diffSec < 3600) relativeTime = isEn ? `${Math.floor(diffSec / 60)}m ago` : `${Math.floor(diffSec / 60)}分前`;
+      else if (diffSec < 86400) relativeTime = isEn ? `${Math.floor(diffSec / 3600)}h ago` : `${Math.floor(diffSec / 3600)}時間前`;
+      else relativeTime = isEn ? `${Math.floor(diffSec / 86400)}d ago` : `${Math.floor(diffSec / 86400)}日前`;
 
       // 送信元バッジ (通信経路)
       const sourceClass = `source-${item.source || 'api'}`;
-      const sourceText = escapeHtml(item.sourceLabel || item.source || '不明');
+      const defaultUnknown = isEn ? 'Unknown' : '不明';
+      const sourceText = escapeHtml(item.sourceLabel || item.source || defaultUnknown);
 
       // IPエイリアスの登録判定 (登録済みエイリアス名を取得)
       const ipAliasName = (item.clientIp && state.ipAliases && state.ipAliases[item.clientIp]) ||
@@ -1284,7 +1441,8 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (effectiveClientName === 'Web UI') icon = '🖥️';
         else icon = '👤';
 
-        clientBadgeHtml = `<span class="history-from-badge" title="送信元クライアント: ${escapeHtml(effectiveClientName)}">${icon} From: <strong>${escapeHtml(effectiveClientName)}</strong></span>`;
+        const fromTitle = isEn ? `Client: ${escapeHtml(effectiveClientName)}` : `送信元クライアント: ${escapeHtml(effectiveClientName)}`;
+        clientBadgeHtml = `<span class="history-from-badge" title="${fromTitle}">${icon} From: <strong>${escapeHtml(effectiveClientName)}</strong></span>`;
       }
 
       // ステータスバッジ
@@ -1292,38 +1450,42 @@ document.addEventListener('DOMContentLoaded', () => {
       let statusClass = 'status-success';
       if (item.status === 'suppressed') {
         statusClass = 'status-suppressed';
-        statusBadgeHtml = `<span class="history-status-badge status-suppressed">🌙 DNDサイレント</span>`;
+        statusBadgeHtml = `<span class="history-status-badge status-suppressed">${isEn ? '🌙 DND Silent' : '🌙 DNDサイレント'}</span>`;
       } else if (item.status === 'queued') {
         statusClass = 'status-dnd-queued';
-        statusBadgeHtml = `<span class="history-status-badge status-dnd-queued">🕒 DND保留中</span>`;
+        statusBadgeHtml = `<span class="history-status-badge status-dnd-queued">${isEn ? '🕒 DND Queued' : '🕒 DND保留中'}</span>`;
       } else if (item.status === 'error') {
         statusClass = 'status-error';
-        statusBadgeHtml = `<span class="history-status-badge status-error">❌ 送信失敗</span>`;
+        statusBadgeHtml = `<span class="history-status-badge status-error">${isEn ? '❌ Failed' : '❌ 送信失敗'}</span>`;
       } else if (item.status === 'partial') {
         statusClass = 'status-partial';
-        statusBadgeHtml = `<span class="history-status-badge status-partial">⚠️ 一部送信</span>`;
+        statusBadgeHtml = `<span class="history-status-badge status-partial">${isEn ? '⚠️ Partial' : '⚠️ 一部送信'}</span>`;
       } else {
-        statusBadgeHtml = `<span class="history-status-badge status-success">✓ 送信成功</span>`;
+        statusBadgeHtml = `<span class="history-status-badge status-success">${isEn ? '✓ Success' : '✓ 送信成功'}</span>`;
       }
 
       // DND保留再生バッジ (右上の送信成功の左に配置)
+      const dndQueuedTitle = isEn 
+        ? 'Held during DND (quiet/meeting mode) and played automatically after release'
+        : 'DND (おやすみ・会議モード) 中に保留され、解除後に自動再生されました';
+      const dndQueuedText = isEn ? '🕒 DND Replay' : '🕒 DND保留再生';
       const dndQueuedBadgeHtml = item.wasQueued
-        ? `<span class="history-status-badge status-dnd-queued" title="DND (おやすみ・会議モード) 中に保留され、解除後に自動再生されました">🕒 DND保留再生</span>`
+        ? `<span class="history-status-badge status-dnd-queued" title="${dndQueuedTitle}">${dndQueuedText}</span>`
         : '';
 
       // 送信元IPタグ
-      // 【ユーザー要望】エイリアス登録済みの場合はLink(ボタン)化せず、通常の非リンクタグとして表示する！
-      // 未登録のIPのみエイリアス登録画面へのジャンプボタンとする。
       let clientIpTag = '';
       if (item.clientIp) {
         const isAliased = !!ipAliasName || (effectiveClientName && effectiveClientName !== item.clientIp && effectiveClientName !== 'Web UI');
         if (isAliased) {
-          // エイリアス登録済みの場合はリンク化しない (通常のテキストタグ)
-          const aliasTooltip = ipAliasName ? ` (エイリアス: ${escapeHtml(ipAliasName)})` : '';
-          clientIpTag = `<span class="history-ip-tag" title="送信元 IP: ${escapeHtml(item.clientIp)}${aliasTooltip}">IP: ${escapeHtml(item.clientIp)}</span>`;
+          const aliasTooltip = ipAliasName ? (isEn ? ` (Alias: ${escapeHtml(ipAliasName)})` : ` (エイリアス: ${escapeHtml(ipAliasName)})`) : '';
+          const ipTitle = isEn ? `Source IP: ${escapeHtml(item.clientIp)}${aliasTooltip}` : `送信元 IP: ${escapeHtml(item.clientIp)}${aliasTooltip}`;
+          clientIpTag = `<span class="history-ip-tag" title="${ipTitle}">IP: ${escapeHtml(item.clientIp)}</span>`;
         } else {
-          // 未登録IPのみクリック可能な登録ボタン化
-          clientIpTag = `<button type="button" class="history-ip-tag btn-ip-alias-jump" data-ip="${escapeHtml(item.clientIp)}" title="未登録のIPです。クリックして「${escapeHtml(item.clientIp)}」の表示名エイリアスを登録">
+          const btnTitle = isEn 
+            ? `Unregistered IP. Click to register display alias for \"${escapeHtml(item.clientIp)}\"`
+            : `未登録のIPです。クリックして「${escapeHtml(item.clientIp)}」の表示名エイリアスを登録`;
+          clientIpTag = `<button type="button" class="history-ip-tag btn-ip-alias-jump" data-ip="${escapeHtml(item.clientIp)}" title="${btnTitle}">
             <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 2px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
             IP: ${escapeHtml(item.clientIp)}
           </button>`;
@@ -1331,21 +1493,31 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // 送信先スピーカー表示
-      const targetsList = Array.isArray(item.targets) ? item.targets : (item.targets ? [item.targets] : ['デフォルト']);
+      const defaultSpk = isEn ? 'Default' : 'デフォルト';
+      const targetsList = Array.isArray(item.targets) ? item.targets : (item.targets ? [item.targets] : [defaultSpk]);
       const targetsHtml = targetsList.map(t => {
         const dName = getDeviceDisplayName(t);
         return `<span class="speaker-tag" title="${escapeHtml(t)}">${escapeHtml(dName)}</span>`;
       }).join(' ');
 
       // 音声オプション
-      const voiceName = (item.voice || '').replace('ja-JP-', '').replace('Neural', '') || '七海';
-      const speechOptions = `${voiceName}${item.urgent ? ' | 🚨緊急' : ''}`;
+      const voiceName = (item.voice || '').replace('ja-JP-', '').replace('Neural', '') || (isEn ? 'Default' : '七海');
+      const urgentText = isEn ? ' | 🚨 Urgent' : ' | 🚨緊急';
+      const speechOptions = `${voiceName}${item.urgent ? urgentText : ''}`;
+
+      const targetLabel = isEn ? 'Target:' : '送信先:';
+      const copyTitle = isEn ? 'Copy speech text' : '発言内容をコピー';
+      const copyText = isEn ? 'Copy' : 'コピー';
+      const previewTitle = isEn ? 'Preview in browser' : 'ブラウザで試聴';
+      const previewText = isEn ? 'Preview' : '試聴';
+      const repeatTitle = isEn ? 'Repeat with this text' : 'このテキストで再発言';
+      const repeatText = isEn ? 'Repeat' : '再発言';
 
       html += `
         <div class="history-card-item ${statusClass}" data-id="${escapeHtml(item.id || '')}">
           <div class="history-card-top">
             <div class="history-meta-group">
-              <span class="source-badge ${sourceClass}" title="${item.clientIp ? `送信元 IP: ${escapeHtml(item.clientIp)}` : ''}">
+              <span class="source-badge ${sourceClass}" title="${item.clientIp ? (isEn ? `Source IP: ${escapeHtml(item.clientIp)}` : `送信元 IP: ${escapeHtml(item.clientIp)}`) : ''}">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
                 ${sourceText}
               </span>
@@ -1365,22 +1537,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="history-card-footer">
             <div class="history-targets-info">
-              <span>送信先:</span>
+              <span>${targetLabel}</span>
               ${targetsHtml}
               <span style="color: var(--text-muted); margin-left: 6px;">[${escapeHtml(speechOptions)}]</span>
             </div>
             <div class="history-actions">
-              <button type="button" class="btn-history-action btn-copy-hist" data-text="${escapeHtml(item.text)}" title="発言内容をコピー">
+              <button type="button" class="btn-history-action btn-copy-hist" data-text="${escapeHtml(item.text)}" title="${copyTitle}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                コピー
+                ${copyText}
               </button>
-              <button type="button" class="btn-history-action btn-preview-hist" data-text="${escapeHtml(item.text)}" data-voice="${escapeHtml(item.voice || '')}" title="ブラウザで試聴">
+              <button type="button" class="btn-history-action btn-preview-hist" data-text="${escapeHtml(item.text)}" data-voice="${escapeHtml(item.voice || '')}" title="${previewTitle}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                試聴
+                ${previewText}
               </button>
-              <button type="button" class="btn-history-action btn-repeat" data-text="${escapeHtml(item.text)}" data-voice="${escapeHtml(item.voice || '')}" data-targets='${escapeHtml(JSON.stringify(targetsList))}' title="このテキストで再発言">
+              <button type="button" class="btn-history-action btn-repeat" data-text="${escapeHtml(item.text)}" data-voice="${escapeHtml(item.voice || '')}" data-targets='${escapeHtml(JSON.stringify(targetsList))}' title="${repeatTitle}">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                再発言
+                ${repeatText}
               </button>
             </div>
           </div>
@@ -1475,7 +1647,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ログアウトボタン
     if (el.headerLogoutBtn) {
       el.headerLogoutBtn.addEventListener('click', async () => {
-        if (confirm('ログアウトしますか？')) {
+        if (confirm(isEn() ? 'Are you sure you want to log out?' : 'ログアウトしますか？')) {
           try {
             await fetch('/api/auth/logout', { method: 'POST' });
           } catch (e) {}
@@ -1588,7 +1760,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // クイックプリセットクリック
     el.presetBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        el.sayTextInput.value = btn.getAttribute('data-text');
+        const presetKey = btn.getAttribute('data-preset-key');
+        const text = (presetKey && window.t)
+          ? window.t(`say.${presetKey}Text`, null, btn.getAttribute('data-text'))
+          : btn.getAttribute('data-text');
+        el.sayTextInput.value = text;
         el.sayTextInput.focus();
       });
     });
@@ -1611,19 +1787,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // スライダー値表示 (即時発言)
     el.sayRateRange.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
-      el.rateValueDisplay.textContent = val === 0 ? '標準 (0%)' : (val > 0 ? `+${val}%` : `${val}%`);
+      const defaultLbl = window.t ? window.t('say.rateStandard') : '標準 (0%)';
+      el.rateValueDisplay.textContent = val === 0 ? defaultLbl : (val > 0 ? `+${val}%` : `${val}%`);
     });
 
     el.sayPitchRange.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
-      el.pitchValueDisplay.textContent = val === 0 ? '標準 (0Hz)' : (val > 0 ? `+${val}Hz` : `${val}Hz`);
+      const defaultLbl = window.t ? window.t('say.pitchStandard') : '標準 (0Hz)';
+      el.pitchValueDisplay.textContent = val === 0 ? defaultLbl : (val > 0 ? `+${val}Hz` : `${val}Hz`);
     });
 
     // 音量スライダー (即時発言)
     el.sayVolumeRange?.addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
       if (el.sayVolumeDisplay) {
-        el.sayVolumeDisplay.textContent = val === 0 ? '端末音量を維持' : `${val}%`;
+        const defaultLbl = window.t ? window.t('say.volumeDefault') : '端末音量を維持';
+        el.sayVolumeDisplay.textContent = val === 0 ? defaultLbl : `${val}%`;
       }
     });
 
@@ -1631,21 +1810,21 @@ document.addEventListener('DOMContentLoaded', () => {
     el.schedVolumeRange?.addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
       if (el.schedVolumeDisplay) {
-        el.schedVolumeDisplay.textContent = val === 0 ? '全体設定に従う' : `${val}%`;
+        el.schedVolumeDisplay.textContent = val === 0 ? (isEn() ? 'Follow global setting' : '全体設定に従う') : `${val}%`;
       }
     });
 
     el.schedRateRange?.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       if (el.schedRateValueDisplay) {
-        el.schedRateValueDisplay.textContent = val === 0 ? '標準 (0%)' : (val > 0 ? `+${val}%` : `${val}%`);
+        el.schedRateValueDisplay.textContent = val === 0 ? (isEn() ? 'Standard (0%)' : '標準 (0%)') : (val > 0 ? `+${val}%` : `${val}%`);
       }
     });
 
     el.schedPitchRange?.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       if (el.schedPitchValueDisplay) {
-        el.schedPitchValueDisplay.textContent = val === 0 ? '標準 (0Hz)' : (val > 0 ? `+${val}Hz` : `${val}Hz`);
+        el.schedPitchValueDisplay.textContent = val === 0 ? (isEn() ? 'Standard (0Hz)' : '標準 (0Hz)') : (val > 0 ? `+${val}Hz` : `${val}Hz`);
       }
     });
 
@@ -1658,7 +1837,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       el.btnPreviewAudio.disabled = true;
-      el.btnPreviewAudio.textContent = '音声生成中...';
+      el.btnPreviewAudio.textContent = isEn() ? 'Generating audio...' : '音声生成中...';
 
       try {
         const voice = el.sayVoiceSelect.value;
@@ -1678,7 +1857,8 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('試聴の生成に失敗しました: ' + err.message, 'error');
       } finally {
         el.btnPreviewAudio.disabled = false;
-        el.btnPreviewAudio.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ブラウザで試聴`;
+        const btnLbl = window.t ? window.t('say.btnPreview') : 'ブラウザで試聴';
+        el.btnPreviewAudio.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${btnLbl}`;
       }
     });
 
@@ -1686,18 +1866,18 @@ document.addEventListener('DOMContentLoaded', () => {
     el.btnSpeakDirect.addEventListener('click', async () => {
       const text = el.sayTextInput.value.trim();
       if (!text) {
-        showToast('テキストを入力してください', 'error');
+        showToast(window.t ? window.t('messages.enterTextPrompt') : 'テキストを入力してください', 'error');
         return;
       }
 
       const selectedSpeakers = getSelectedSpeakers(el.saySpeakersContainer);
       if (!selectedSpeakers.length) {
-        showToast('送信先スピーカーを1台以上選択してください', 'error');
+        showToast(window.t ? window.t('messages.selectSpeakerPrompt') : '送信先スピーカーを1台以上選択してください', 'error');
         return;
       }
 
       el.btnSpeakDirect.disabled = true;
-      el.btnSpeakDirect.textContent = 'スピーカーへ送信中...';
+      el.btnSpeakDirect.textContent = isEn() ? 'Sending to speakers...' : 'スピーカーへ送信中...';
 
       try {
         const voice = el.sayVoiceSelect.value;
@@ -1788,15 +1968,46 @@ document.addEventListener('DOMContentLoaded', () => {
           const hh = String(targetDate.getHours()).padStart(2, '0');
           const mm = String(targetDate.getMinutes()).padStart(2, '0');
           if (badgeActive) badgeActive.style.display = 'inline-block';
-          el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ⏰ ${hh}:${mm} に予約発声する`;
+          const schedTimeStr = `${hh}:${mm}`;
+          const schedLabel = window.t
+            ? window.t('messages.speakScheduled', { time: schedTimeStr }, `⏰ ${schedTimeStr} に予約発声する`)
+            : `⏰ ${schedTimeStr} に予約発声する`;
+          el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${schedLabel}`;
           el.btnSpeakDirect.classList.add('btn-info');
           return;
         }
       }
       if (badgeActive) badgeActive.style.display = 'none';
-      el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> スピーカーで発言`;
+      const speakLabel = window.t ? window.t('say.btnSpeak') : 'スピーカーで発言';
+      el.btnSpeakDirect.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> ${speakLabel}`;
       el.btnSpeakDirect.classList.remove('btn-info');
     }
+
+    // 言語切り替え連動 (動的要素の再描画)
+    window.addEventListener('voicehub:language-changed', () => {
+      updateSpeakButtonLabel();
+
+      if (el.sayRateRange && parseInt(el.sayRateRange.value) === 0) {
+        el.rateValueDisplay.textContent = window.t ? window.t('say.rateStandard') : '標準 (0%)';
+      }
+      if (el.sayPitchRange && parseInt(el.sayPitchRange.value) === 0) {
+        el.pitchValueDisplay.textContent = window.t ? window.t('say.pitchStandard') : '標準 (0Hz)';
+      }
+      if (el.sayVolumeRange && parseInt(el.sayVolumeRange.value) === 0 && el.sayVolumeDisplay) {
+        el.sayVolumeDisplay.textContent = window.t ? window.t('say.volumeDefault') : '端末音量を維持';
+      }
+
+      const sayMacroContainer = document.getElementById('sayMacroButtons');
+      if (sayMacroContainer && el.saySpeakersContainer) {
+        renderMacroButtonsFor(sayMacroContainer, el.saySpeakersContainer, 'saySpeaker');
+      }
+
+      // 各画面の動的レンダリングを新しい言語で再描画
+      if (typeof renderDevicesGrid === 'function') renderDevicesGrid();
+      if (typeof renderScheduleTable === 'function') renderScheduleTable();
+      if (typeof loadScheduledSpeeches === 'function') loadScheduledSpeeches();
+      if (typeof renderFullHistory === 'function') renderFullHistory();
+    });
 
     const timeInputEl = document.getElementById('sayScheduledTimeInput');
     if (timeInputEl) {
@@ -1864,7 +2075,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = `${name}のテストです。音声通知は正常に動作しています。`;
 
         pingBtn.disabled = true;
-        pingBtn.textContent = '送信中...';
+        pingBtn.textContent = isEn() ? 'Sending...' : '送信中...';
 
         try {
           const res = await fetch('/api/say', {
@@ -1884,7 +2095,7 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast(`送信エラー: ${err.message}`, 'error');
         } finally {
           pingBtn.disabled = false;
-          pingBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> テスト発声`;
+          pingBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${isEn() ? 'Test Voice' : 'テスト発声'}`;
         }
         return;
       }
@@ -1896,7 +2107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = defBtn.getAttribute('data-name');
 
         defBtn.disabled = true;
-        defBtn.textContent = '設定中...';
+        defBtn.textContent = isEn() ? 'Setting...' : '設定中...';
 
         try {
           const res = await fetch('/api/devices/default', {
@@ -1924,7 +2135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
           showToast(`デフォルト設定エラー: ${err.message}`, 'error');
           defBtn.disabled = false;
-          defBtn.textContent = '★ デフォルトに設定';
+          defBtn.textContent = isEn() ? '★ Set as Default' : '★ デフォルトに設定';
         }
       }
     });
@@ -2011,7 +2222,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!sched) return;
 
         document.getElementById('schedEditId').value = sched.id;
-        document.getElementById('modalTitle').textContent = 'スケジュール編集';
+        document.getElementById('modalTitle').textContent = isEn() ? 'Edit Schedule' : 'スケジュール編集';
         el.schedName.value = sched.name || '';
         el.schedText.value = sched.text || '';
         el.schedTime.value = sched.time || '07:00';
@@ -2083,7 +2294,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const delBtn = e.target.closest('.btn-delete-sched');
       if (delBtn) {
         const id = delBtn.getAttribute('data-id');
-        if (!confirm('このスケジュールを削除してよろしいですか？')) return;
+        if (!confirm(isEn() ? 'Are you sure you want to delete this schedule?' : 'このスケジュールを削除してよろしいですか？')) return;
 
         try {
           const res = await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
@@ -2120,7 +2331,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 履歴 全件クリア
     el.btnClearFullHistory?.addEventListener('click', async () => {
-      if (confirm('過去100件の発言履歴をすべて消去しますか？')) {
+      if (confirm(isEn() ? 'Are you sure you want to clear all speech history?' : '過去100件の発言履歴をすべて消去しますか？')) {
         try {
           const res = await fetch('/api/history', { method: 'DELETE' });
           if (!res.ok) throw new Error('クリア処理に失敗しました');
@@ -2213,7 +2424,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // モーダル操作
     el.btnOpenNewScheduleModal.addEventListener('click', () => {
       document.getElementById('schedEditId').value = '';
-      document.getElementById('modalTitle').textContent = '新規スケジュール登録';
+      document.getElementById('modalTitle').textContent = isEn() ? 'Register New Schedule' : '新規スケジュール登録';
       el.scheduleForm.reset();
       el.schedTime.value = '07:00';
       if (el.schedVolumeRange) el.schedVolumeRange.value = 0;
@@ -2366,7 +2577,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Alexa 連携解除ボタン
     if (el.btnLogoutAlexa) {
       el.btnLogoutAlexa.addEventListener('click', async () => {
-        if (!window.confirm('Amazon Alexa との連携を解除しますか？')) return;
+        if (!window.confirm(isEn() ? 'Are you sure you want to unlink Amazon Alexa?' : 'Amazon Alexa との連携を解除しますか？')) return;
         try {
           await fetch('/api/alexa/logout', { method: 'POST' });
           await loadDevices();
@@ -2496,7 +2707,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!grid) return;
 
     if (!state.devices || state.devices.length === 0) {
-      grid.innerHTML = '<span class="loading-text">スピーカーが見つかりません</span>';
+      grid.innerHTML = `<span class="loading-text">${isEn() ? 'No speakers found' : 'スピーカーが見つかりません'}</span>`;
       return;
     }
 
@@ -2518,10 +2729,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let badgeHtml = '';
       if (isFav) {
-        badgeHtml += '<span class="speaker-chip-badge fav-badge" title="お気に入りスピーカー" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>';
+        badgeHtml += `<span class="speaker-chip-badge fav-badge" title="${isEn() ? 'Favorite Speaker' : 'お気に入りスピーカー'}" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>`;
       }
       if (dev.isDefault) {
-        badgeHtml += '<span class="speaker-chip-badge default-badge" title="標準スピーカー">標準</span>';
+        badgeHtml += `<span class="speaker-chip-badge default-badge" title="${isEn() ? 'Default Speaker' : '標準スピーカー'}">${isEn() ? 'Default' : '標準'}</span>`;
       }
       if (isAlexa) {
         badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
@@ -3091,7 +3302,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = btn.getAttribute('data-id');
         const found = state.calendarData.calendars.find(c => c.id === id);
         const name = found ? found.name : 'カレンダー';
-        if (confirm(`「${name}」を連携リストから削除してもよろしいですか？`)) {
+        if (confirm(isEn() ? `Are you sure you want to remove "${name}" from linked calendars?` : `「${name}」を連携リストから削除してもよろしいですか？`)) {
           state.calendarData.calendars = state.calendarData.calendars.filter(c => c.id !== id);
           renderCalendarList();
           const ok = await saveCurrentCalendarConfig(true);
@@ -3157,11 +3368,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (badgeEl && lastFetched) {
       const timeStr = new Date(lastFetched).toLocaleTimeString();
-      badgeEl.textContent = `最終同期: ${timeStr}`;
+      badgeEl.textContent = isEn() ? `Last sync: ${timeStr}` : `最終同期: ${timeStr}`;
     }
 
     if (!events || events.length === 0) {
-      listEl.innerHTML = `<li class="empty-msg">本日の予定はありません</li>`;
+      listEl.innerHTML = `<li class="empty-msg">${isEn() ? 'No events scheduled for today' : '本日の予定はありません'}</li>`;
       return;
     }
 
@@ -3307,7 +3518,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const found = isEdit ? (state.calendarData?.calendars || []).find(c => c.id === calId) : null;
 
       document.getElementById('editCalId').value = isEdit ? calId : '';
-      document.getElementById('calendarModalTitle').textContent = isEdit ? `「${found?.name || 'カレンダー'}」の個別設定` : '新規カレンダー登録';
+      document.getElementById('calendarModalTitle').textContent = isEdit ? (isEn() ? `Individual Settings for "${found?.name || 'Calendar'}"` : `「${found?.name || 'カレンダー'}」の個別設定`) : (isEn() ? 'Register New Calendar' : '新規カレンダー登録');
       document.getElementById('modalCalName').value = found ? (found.name || '') : '';
       document.getElementById('modalCalUrl').value = found ? (found.icalUrl || '') : '';
 
@@ -3587,7 +3798,7 @@ document.addEventListener('DOMContentLoaded', () => {
           headerChip.style.color = '#f87171';
         }
       } else {
-        headerText.textContent = s.enabled ? 'DND: 監視中' : 'DND: 無効';
+        headerText.textContent = s.enabled ? (isEn() ? 'DND: Monitoring' : 'DND: 監視中') : (isEn() ? 'DND: Disabled' : 'DND: 無効');
         if (headerChip) {
           headerChip.style.borderColor = '';
           headerChip.style.color = '';
@@ -3603,12 +3814,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (s.isActive) {
         toggleBtn.classList.add('is-muted');
         toggleIcon.textContent = '🔊';
-        toggleText.textContent = 'ミュート解除';
+        toggleText.textContent = isEn() ? 'Unmute' : 'ミュート解除';
         toggleBtn.title = '現在ミュート中 (クリックでミュート解除)';
       } else {
         toggleBtn.classList.remove('is-muted');
         toggleIcon.textContent = '🔇';
-        toggleText.textContent = 'ミュート';
+        toggleText.textContent = isEn() ? 'Mute' : 'ミュート';
         const topDur = state.dndConfig?.topMuteDuration || 'indefinite';
         const durLabel = (topDur === 'indefinite') ? '手動解除までずっと' : (topDur === '1440' ? '1日間' : (topDur === '120' ? '2時間' : (topDur === '30' ? '30分間' : '1時間')));
         toggleBtn.title = `ワンタップで即時ミュート (${durLabel})`;
@@ -3624,14 +3835,16 @@ document.addEventListener('DOMContentLoaded', () => {
           dot.style.background = '#ef4444';
           dot.style.boxShadow = '0 0 10px #ef4444';
         }
-        title.innerHTML = `🔇 サイレント発動中: <span style="color:#f87171;">${escapeHtml(s.reason || 'DNDアクティブ')}</span>`;
-        let subText = `現在スピーカーは【${s.action === 'whisper' ? `囁き音量 (${s.whisperVolume || 10}%)` : s.action === 'queue' ? '保留キュー' : '完全スキップ'}】に設定されています。`;
+        title.innerHTML = `🔇 ${isEn() ? 'Silent Mode Active' : 'サイレント発動中'}: <span style="color:#f87171;">${escapeHtml(s.reason || (isEn() ? 'DND Active' : 'DNDアクティブ'))}</span>`;
+        let subText = isEn()
+          ? `Speakers currently set to [${s.action === 'whisper' ? `Whisper (${s.whisperVolume || 10}%)` : s.action === 'queue' ? 'Queue Messages' : 'Complete Skip'}].`
+          : `現在スピーカーは【${s.action === 'whisper' ? `囁き音量 (${s.whisperVolume || 10}%)` : s.action === 'queue' ? '保留キュー' : '完全スキップ'}】に設定されています。`;
         if (s.until) {
           if (s.until === 'indefinite') {
-            subText += ` 解除予定: 手動で解除するまでずっと (無期限)`;
+            subText += isEn() ? ' Unmute: Until manually cancelled (indefinite)' : ` 解除予定: 手動で解除するまでずっと (無期限)`;
           } else {
             const uDate = new Date(s.until);
-            subText += ` 解除予定: ${uDate.toLocaleTimeString()}`;
+            subText += isEn() ? ` (Scheduled unmute: ${uDate.toLocaleTimeString()})` : ` 解除予定: ${uDate.toLocaleTimeString()}`;
           }
         }
         subtitle.textContent = subText;
@@ -3643,10 +3856,10 @@ document.addEventListener('DOMContentLoaded', () => {
           dot.style.background = '#10b981';
           dot.style.boxShadow = '0 0 10px #10b981';
         }
-        title.textContent = s.enabled ? '🟢 現在は通常モードです' : '⚪ DND機能は全体無効です';
+        title.textContent = s.enabled ? (isEn() ? '🟢 Currently Normal Mode (DND Inactive)' : '🟢 現在は通常モードです') : (isEn() ? '⚪ DND Feature is Globally Disabled' : '⚪ DND機能は全体無効です');
         subtitle.textContent = s.enabled 
-          ? '通知やアナウンスは通常音量でスピーカーから再生されます（予定や時間帯に合わせて自動切替）'
-          : 'スイッチをONにすると、定時やカレンダー連携での静音化が有効になります';
+          ? (isEn() ? 'Notifications and announcements play normally on speakers (automatically switches with schedule/calendar).' : '通知やアナウンスは通常音量でスピーカーから再生されます（予定や時間帯に合わせて自動切替）')
+          : (isEn() ? 'Turning ON enables automatic muting based on schedules or calendar events.' : 'スイッチをONにすると、定時やカレンダー連携での静音化が有効になります');
         if (btnCancel) btnCancel.style.display = 'none';
       }
     }
@@ -3674,7 +3887,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         `;
       } else {
-        activeCalBox.innerHTML = '現在進行中の会議・カレンダー予定はありません';
+        activeCalBox.innerHTML = isEn() ? 'No active meetings or calendar events currently' : '現在進行中の会議・カレンダー予定はありません';
       }
     }
   }
@@ -3767,16 +3980,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const list = state.dndConfig?.schedules || [];
 
     if (!list.length) {
-      container.innerHTML = `<div class="empty-msg" style="padding:10px 0;">登録された定時ルールはありません</div>`;
+      container.innerHTML = `<div class="empty-msg" style="padding:10px 0;">${isEn() ? 'No scheduled silent rules registered' : '登録された定時ルールはありません'}</div>`;
       return;
     }
 
-    const WEEKDAYS_MAP = { '0': '日', '1': '月', '2': '火', '3': '水', '4': '木', '5': '金', '6': '土' };
+    const WEEKDAYS_MAP = isEn()
+      ? { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' }
+      : { '0': '日', '1': '月', '2': '火', '3': '水', '4': '木', '5': '金', '6': '土' };
 
     let html = '';
     list.forEach(item => {
       const checked = item.enabled !== false ? 'checked' : '';
-      const daysStr = (item.days || []).map(d => WEEKDAYS_MAP[d] || d).join('・') || '全日';
+      const separator = isEn() ? ', ' : '・';
+      const daysStr = (item.days || []).map(d => WEEKDAYS_MAP[d] || d).join(separator) || (isEn() ? 'Everyday' : '全日');
+      const defaultName = isEn() ? 'Scheduled Quiet Hours' : '定時サイレント';
+      const everyPrefix = isEn() ? 'Every ' : '毎週 ';
+      const titleEdit = isEn() ? 'Edit' : '編集';
+      const titleDelete = isEn() ? 'Delete' : '削除';
 
       html += `
         <div class="calendar-item dnd-sched-item">
@@ -3786,17 +4006,17 @@ document.addEventListener('DOMContentLoaded', () => {
               <span class="slider"></span>
             </label>
             <div>
-              <strong style="font-size:0.92rem;">${escapeHtml(item.name || '定時サイレント')}</strong>
+              <strong style="font-size:0.92rem;">${escapeHtml(item.name || defaultName)}</strong>
               <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">
-                毎週 ${escapeHtml(daysStr)} ｜ ${escapeHtml(item.startTime || '00:00')} 〜 ${escapeHtml(item.endTime || '23:59')}
+                ${everyPrefix}${escapeHtml(daysStr)} ｜ ${escapeHtml(item.startTime || '00:00')} 〜 ${escapeHtml(item.endTime || '23:59')}
               </div>
             </div>
           </div>
           <div class="dnd-sched-actions">
-            <button type="button" class="btn-icon-sm btn-edit-dnd-sched" data-id="${escapeHtml(item.id)}" title="編集">
+            <button type="button" class="btn-icon-sm btn-edit-dnd-sched" data-id="${escapeHtml(item.id)}" title="${titleEdit}">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
-            <button type="button" class="btn-icon-sm btn-danger btn-delete-dnd-sched" data-id="${escapeHtml(item.id)}" title="削除">
+            <button type="button" class="btn-icon-sm btn-danger btn-delete-dnd-sched" data-id="${escapeHtml(item.id)}" title="${titleDelete}">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
           </div>
@@ -3841,9 +4061,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const titleEl = document.getElementById('dndSchedFormTitle');
-        if (titleEl) titleEl.textContent = '定時サイレントルールの編集';
+        if (titleEl) titleEl.textContent = isEn() ? 'Edit Scheduled Quiet Hours Rule' : '定時サイレントルールの編集';
         const confirmBtn = document.getElementById('btnAddDndSchedConfirm');
-        if (confirmBtn) confirmBtn.textContent = 'ルールを更新';
+        if (confirmBtn) confirmBtn.textContent = isEn() ? 'Update Rule' : 'ルールを更新';
 
         formEl.style.display = 'block';
         formEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -3856,7 +4076,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = btn.getAttribute('data-id');
         const found = state.dndConfig.schedules.find(s => s.id === id);
         const name = found ? found.name : 'ルール';
-        if (confirm(`「${name}」を削除してもよろしいですか？`)) {
+        if (confirm(isEn() ? `Are you sure you want to delete "${name}"?` : `「${name}」を削除してもよろしいですか？`)) {
           state.dndConfig.schedules = state.dndConfig.schedules.filter(s => s.id !== id);
           renderDndSchedules();
           await saveDndSettingsInternal();
@@ -4110,8 +4330,8 @@ document.addEventListener('DOMContentLoaded', () => {
       btnShowAdd.addEventListener('click', () => {
         document.getElementById('editDndSchedId').value = '';
         const titleEl = document.getElementById('dndSchedFormTitle');
-        if (titleEl) titleEl.textContent = '新規定時ルール';
-        if (btnConfirmAdd) btnConfirmAdd.textContent = 'ルールを保存';
+        if (titleEl) titleEl.textContent = isEn() ? 'New Scheduled Quiet Hours Rule' : '新規定時ルール';
+        if (btnConfirmAdd) btnConfirmAdd.textContent = isEn() ? 'Save Rule' : 'ルールを保存';
         const nameInput = document.getElementById('newDndSchedName');
         if (nameInput) nameInput.value = '';
 
@@ -4283,9 +4503,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showToast(message, type = 'info') {
+    const displayMsg = isEn() ? translateToast(message) : message;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+    toast.innerHTML = `<span>${escapeHtml(displayMsg)}</span>`;
     el.toastContainer.appendChild(toast);
 
     setTimeout(() => {
@@ -4306,7 +4527,8 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/'/g, '&#039;');
   }
 
-  function setButtonSaving(btn, text = '保存中...') {
+  function setButtonSaving(btn, text = null) {
+    if (!text) text = isEn() ? 'Saving...' : '保存中...';
     if (!btn) return () => {};
     const origHtml = btn.innerHTML;
     const origDisabled = btn.disabled;
@@ -4432,7 +4654,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const entries = Object.entries(groups);
 
     if (entries.length === 0) {
-      container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 8px 0;">登録済みのカスタムグループはありません（「＋ 新規グループ」から作成できます）。</div>';
+      container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 8px 0;">${isEn() ? 'No custom groups registered ("+ New Group" to create).' : '登録済みのカスタムグループはありません（「＋ 新規グループ」から作成できます）。'}</div>`;
       return;
     }
 
@@ -4462,7 +4684,7 @@ document.addEventListener('DOMContentLoaded', () => {
     container.querySelectorAll('.btn-delete-group').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const name = e.target.getAttribute('data-name');
-        if (!confirm(`カスタムグループ「${name}」を削除しますか？`)) return;
+        if (!confirm(isEn() ? `Delete custom group "${name}"?` : `カスタムグループ「${name}」を削除しますか？`)) return;
 
         delete state.deviceGroups[name];
         await saveAllSettings({ silent: true });
@@ -4482,7 +4704,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const entries = Object.entries(aliases);
 
     if (entries.length === 0) {
-      container.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 6px 0;">登録済みの IP エイリアスはありません。</div>';
+      container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 6px 0;">${isEn() ? 'No IP aliases registered.' : '登録済みの IP エイリアスはありません。'}</div>`;
       return;
     }
 
@@ -4501,7 +4723,7 @@ document.addEventListener('DOMContentLoaded', () => {
     container.querySelectorAll('.btn-delete-alias').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const ip = e.target.getAttribute('data-ip');
-        if (!confirm(`IP「${ip}」のエイリアスを削除しますか？`)) return;
+        if (!confirm(isEn() ? `Delete alias for IP "${ip}"?` : `IP「${ip}」のエイリアスを削除しますか？`)) return;
 
         delete state.ipAliases[ip];
         if (state.settings && state.settings.ipAliases) {
@@ -4887,7 +5109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!tbody) return;
 
     if (!discoveredOnvifDevices.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center loading-cell">「ONVIF / DLNA 自動スキャン」を押すと、宅内のカメラおよびDLNAスピーカーを自動検出します</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center loading-cell">${isEn() ? 'Click "Auto Scan ONVIF / DLNA" to automatically discover cameras and DLNA speakers on your network' : '「ONVIF / DLNA 自動スキャン」を押すと、宅内のカメラおよびDLNAスピーカーを自動検出します'}</td></tr>`;
       return;
     }
 
@@ -5137,7 +5359,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const list = state.settings?.onvif?.registeredDevices || [];
     if (!list.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="text-center loading-cell">登録済みのスピーカーはありません</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center loading-cell">${isEn() ? 'No speakers registered yet' : '登録済みのスピーカーはありません'}</td></tr>`;
       return;
     }
 
@@ -5231,7 +5453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isDlna = (dev?.type === 'dlna');
         const isTapo = (dev?.type === 'tapo');
         const devLabel = isDlna ? 'DLNA' : (isTapo ? 'Tapo' : 'カメラ');
-        if (!confirm(`「${name}」の${devLabel}スピーカー連携を解除しますか？`)) return;
+        if (!confirm(isEn() ? `Unlink ${devLabel} speaker "${name}"?` : `「${name}」の${devLabel}スピーカー連携を解除しますか？`)) return;
 
         try {
           const res = await fetch('/api/onvif/register', {
@@ -5476,7 +5698,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const tbody = document.getElementById('onvifDiscoveredTableBody');
       const scanCount = document.getElementById('onvifScanCount');
       if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center loading-cell">ネットワーク内のデバイスを検出中 (数秒かかります)...</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center loading-cell">${isEn() ? 'Discovering devices on network (takes a few seconds)...' : 'ネットワーク内のデバイスを検出中 (数秒かかります)...'}</td></tr>`;
       }
 
       try {
@@ -5495,7 +5717,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const regCount = discoveredOnvifDevices.filter(d => regList.some(r => r.ip === d.ip)).length;
 
         if (scanCount) {
-          scanCount.textContent = `${discoveredOnvifDevices.length} 台検出 (登録済: ${regCount}台)`;
+          scanCount.textContent = isEn() ? `${discoveredOnvifDevices.length} detected (${regCount} registered)` : `${discoveredOnvifDevices.length} 台検出 (登録済: ${regCount}台)`;
         }
         renderDiscoveredOnvifTable();
         showToast(`ONVIF / DLNA デバイスを ${discoveredOnvifDevices.length} 台検出しました（内 ${regCount} 台は連携中）`, 'success');
@@ -5581,19 +5803,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!data.enabled) {
         dot.style.background = '#64748b'; // gray
-        text.textContent = '無効 (未稼働)';
+        text.textContent = isEn() ? 'Disabled (Inactive)' : '無効 (未稼働)';
         text.style.color = 'var(--text-muted)';
         if (detail) detail.textContent = 'スイッチをONにして保存すると、設定したMQTTブローカーへ接続を開始します';
       } else if (data.connected) {
         dot.style.background = '#10b981'; // green
-        text.textContent = `接続中 (${data.connectedCount} / ${data.totalBrokers || 1} 台のブローカー)`;
+        text.textContent = isEn() ? `Connected (${data.connectedCount} / ${data.totalBrokers || 1} brokers)` : `接続中 (${data.connectedCount} / ${data.totalBrokers || 1} 台のブローカー)`;
         text.style.color = '#34d399';
         if (detail) {
           detail.textContent = `受信合計: ${data.receivedCount} 件${data.lastMessageAt ? ' (最新: ' + data.lastMessageAt + ')' : ''}`;
         }
       } else {
         dot.style.background = '#ef4444'; // red
-        text.textContent = `切断 / 接続待機 (${data.connectedCount} / ${data.totalBrokers || 0} 台接続)`;
+        text.textContent = isEn() ? `Disconnected / Waiting (${data.connectedCount} / ${data.totalBrokers || 0} connected)` : `切断 / 接続待機 (${data.connectedCount} / ${data.totalBrokers || 0} 台接続)`;
         text.style.color = '#f87171';
         if (detail) detail.textContent = data.lastError || 'ブローカーに接続できません。設定やネットワークを確認してください';
       }
@@ -5673,7 +5895,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {
       dot.style.background = '#f59e0b';
-      text.textContent = '通信エラー';
+      text.textContent = isEn() ? 'Communication Error' : '通信エラー';
       if (detail) detail.textContent = e.message;
     }
   }
@@ -5868,7 +6090,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 削除ボタン
         const btnDelete = card.querySelector('.btn-delete-broker');
         btnDelete?.addEventListener('click', () => {
-          if (!confirm(`MQTTブローカー「${b.name || b.broker || '無題'}」を削除しますか？`)) return;
+          if (!confirm(isEn() ? `Delete MQTT broker "${b.name || b.broker || 'Untitled'}"?` : `MQTTブローカー「${b.name || b.broker || '無題'}」を削除しますか？`)) return;
           currentMqttBrokers = currentMqttBrokers.filter(item => item.id !== b.id);
           renderBrokersList();
         });
@@ -5951,7 +6173,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 個別 HA Discovery 解除
         const btnClearHa = card.querySelector('.btn-broker-clear-ha');
         btnClearHa?.addEventListener('click', async () => {
-          if (!confirm(`Home Assistant から「${b.name}」の登録エンティティを解除しますか？`)) return;
+          if (!confirm(isEn() ? `Unregister entities for "${b.name}" from Home Assistant?` : `Home Assistant から「${b.name}」の登録エンティティを解除しますか？`)) return;
           const orig = btnClearHa.textContent;
           btnClearHa.disabled = true;
           btnClearHa.textContent = '🗑️ 削除中...';
@@ -6069,7 +6291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 全再接続ボタン
     btnReconnect?.addEventListener('click', async () => {
       btnReconnect.disabled = true;
-      btnReconnect.textContent = '🔄 接続中...';
+      btnReconnect.textContent = isEn() ? '🔄 Connecting...' : '🔄 接続中...';
       try {
         await fetch('/api/mqtt/restart', { method: 'POST' });
         showToast('MQTT クライアントを再起動しました');
@@ -6078,7 +6300,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('再接続エラー: ' + err.message, 'error');
       } finally {
         btnReconnect.disabled = false;
-        btnReconnect.textContent = '🔄 全再接続';
+        btnReconnect.textContent = isEn() ? '🔄 Reconnect All' : '🔄 全再接続';
       }
     });
 
@@ -6447,13 +6669,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (geminiBadge) {
         if (aiStatus.gemini?.source === 'env') {
-          geminiBadge.textContent = '環境変数 (.env)';
+          geminiBadge.textContent = isEn() ? 'Env Var (.env)' : '環境変数 (.env)';
           geminiBadge.style.color = '#10b981';
         } else if (aiStatus.gemini?.source === 'settings') {
-          geminiBadge.textContent = '保存済み (Web設定)';
+          geminiBadge.textContent = isEn() ? 'Saved (Web Settings)' : '保存済み (Web設定)';
           geminiBadge.style.color = '#60a5fa';
         } else {
-          geminiBadge.textContent = '未設定';
+          geminiBadge.textContent = isEn() ? 'Not Configured' : '未設定';
           geminiBadge.style.color = 'var(--text-muted)';
         }
       }
@@ -6473,13 +6695,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (openaiBadge) {
         if (aiStatus.openai?.source === 'env') {
-          openaiBadge.textContent = '環境変数 (.env)';
+          openaiBadge.textContent = isEn() ? 'Env Var (.env)' : '環境変数 (.env)';
           openaiBadge.style.color = '#10b981';
         } else if (aiStatus.openai?.source === 'settings') {
-          openaiBadge.textContent = '保存済み (Web設定)';
+          openaiBadge.textContent = isEn() ? 'Saved (Web Settings)' : '保存済み (Web設定)';
           openaiBadge.style.color = '#60a5fa';
         } else {
-          openaiBadge.textContent = '未設定';
+          openaiBadge.textContent = isEn() ? 'Not Configured' : '未設定';
           openaiBadge.style.color = 'var(--text-muted)';
         }
       }
@@ -6556,7 +6778,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dot.style.background = '#94a3b8';
         dot.style.boxShadow = 'none';
       }
-      if (title) title.textContent = 'AI 連携機能: 無効';
+      if (title) title.textContent = isEn() ? 'AI Integration: Disabled' : 'AI 連携機能: 無効';
       if (subtitle) subtitle.textContent = 'スイッチをONにするとAIによるDND保留通知の要約が有効になります';
       if (banner) {
         banner.style.background = 'rgba(255, 255, 255, 0.03)';
@@ -6567,7 +6789,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dot.style.background = '#10b981';
         dot.style.boxShadow = '0 0 10px #10b981';
       }
-      if (title) title.textContent = `🟢 AI 連携機能: 稼働中 (${provider === 'gemini' ? 'Gemini' : 'OpenAI'})`;
+      if (title) title.textContent = isEn() ? `🟢 AI Integration: Running (${provider === 'gemini' ? 'Gemini' : 'OpenAI'})` : `🟢 AI 連携機能: 稼働中 (${provider === 'gemini' ? 'Gemini' : 'OpenAI'})`;
       if (subtitle) subtitle.textContent = 'API Key が正常に設定されています。DND解除時に複数通知を自動要約して1回で発話します。';
       if (banner) {
         banner.style.background = 'rgba(16, 185, 129, 0.1)';
@@ -6578,7 +6800,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dot.style.background = '#f59e0b';
         dot.style.boxShadow = '0 0 8px #f59e0b';
       }
-      if (title) title.textContent = '🟡 AI 連携機能: API Key 未設定';
+      if (title) title.textContent = isEn() ? '🟡 AI Integration: API Key Not Configured' : '🟡 AI 連携機能: API Key 未設定';
       if (subtitle) subtitle.textContent = 'API Key を入力して保存するか、.my.env に設定すると自動要約が有効になります';
       if (banner) {
         banner.style.background = 'rgba(245, 158, 11, 0.1)';
@@ -7484,7 +7706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = this.getAttribute('data-eng-id');
         const target = (state.voiceEngines || []).find(e => e.id === id);
         const name = target ? target.name : 'このエンジン';
-        if (confirm(`「${name}」を登録から削除してもよろしいですか？`)) {
+        if (confirm(isEn() ? `Are you sure you want to delete voice engine "${name}"?` : `「${name}」を登録から削除してもよろしいですか？`)) {
           state.voiceEngines = (state.voiceEngines || []).filter(e => e.id !== id);
           renderVoiceEnginesTable();
           await saveTtsProvidersSettings(true);
@@ -8125,7 +8347,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 6. ログクリアボタン
     if (btnClear) {
       btnClear.addEventListener('click', async () => {
-        if (!confirm('現在のコンテナログ (/logs/container.log) をアーカイブへ退避し、アクティブログをクリアしますか？')) {
+        if (!confirm(isEn() ? 'Archive current container log (/logs/container.log) and clear active log?' : '現在のコンテナログ (/logs/container.log) をアーカイブへ退避し、アクティブログをクリアしますか？')) {
           return;
         }
         try {
@@ -8154,3 +8376,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // 起動実行
   init();
 });
+
+  // 言語切替時の動的UI再描画リスナー
+  window.addEventListener('voicehub:language-changed', () => {
+    try {
+      if (typeof renderDevicesGrid === 'function' && state.devices) renderDevicesGrid(state.devices);
+      if (typeof renderHistory === 'function' && state.history) renderHistory(state.history);
+      if (typeof renderScheduleList === 'function' && state.schedules) renderScheduleList(state.schedules);
+      if (typeof updateDndStatusUI === 'function' && state.dnd) updateDndStatusUI(state.dnd);
+      if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
+    } catch (err) {
+      console.warn('[i18n] Error during re-render on language change:', err);
+    }
+  });

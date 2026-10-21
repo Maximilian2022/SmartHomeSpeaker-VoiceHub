@@ -466,6 +466,54 @@ class TestSmokeVoiceHub(unittest.TestCase):
             file_path = sound_dir / filename
             self.assertTrue(file_path.is_file(), f"Sound file for {chime_key} not found: {file_path}")
 
+    def test_i18n_static_files_and_locales(self):
+        """i18n 多言語対応のリソース配信、辞書JSONの整合性、およびWebUI組み込みの検証"""
+        import json
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        client = TestClient(app)
+        pub_dir = Path(__file__).resolve().parent.parent / "public"
+
+        # 1. ファイルの存在確認
+        i18n_file = pub_dir / "i18n.js"
+        ja_file = pub_dir / "locales" / "ja.json"
+        en_file = pub_dir / "locales" / "en.json"
+        html_file = pub_dir / "index.html"
+
+        self.assertTrue(i18n_file.is_file(), "public/i18n.js が存在すること")
+        self.assertTrue(ja_file.is_file(), "public/locales/ja.json が存在すること")
+        self.assertTrue(en_file.is_file(), "public/locales/en.json が存在すること")
+
+        # 2. JSONパースおよびキー整合性検証
+        with open(ja_file, "r", encoding="utf-8") as f:
+            ja_data = json.load(f)
+        with open(en_file, "r", encoding="utf-8") as f:
+            en_data = json.load(f)
+
+        required_sections = ["app", "header", "tabs", "say", "common", "messages"]
+        for sec in required_sections:
+            self.assertIn(sec, ja_data, f"ja.json にセクション {sec} が存在すること")
+            self.assertIn(sec, en_data, f"en.json にセクション {sec} が存在すること")
+
+        # 3. FastAPI 静的配信 (200 OK) 検証
+        res_i18n = client.get("/i18n.js")
+        self.assertEqual(res_i18n.status_code, 200)
+
+        res_ja = client.get("/locales/ja.json")
+        self.assertEqual(res_ja.status_code, 200)
+        self.assertIn("tabs", res_ja.json())
+
+        res_en = client.get("/locales/en.json")
+        self.assertEqual(res_en.status_code, 200)
+        self.assertIn("tabs", res_en.json())
+
+        # 4. index.html に i18n 関連要素が存在すること
+        html_text = html_file.read_text(encoding="utf-8")
+        self.assertIn('<script src="i18n.js', html_text)
+        self.assertIn('id="headerLanguageSelect"', html_text)
+        self.assertIn('data-i18n="tabs.say"', html_text)
+
 
 if __name__ == "__main__":
     unittest.main()
