@@ -64,10 +64,100 @@
     return DEFAULT_FALLBACK_LANG;
   }
 
+  // 安全に許可するHTMLタグ・属性のホワイトリスト（DOM XSS / CWE-79 / CWE-116 完全防御）
+  const ALLOWED_HTML_TAGS = new Set([
+    'STRONG', 'B', 'EM', 'I', 'CODE', 'A', 'BR', 'SPAN', 'SMALL', 'DIV', 'P', 'LI', 'UL', 'OL'
+  ]);
+  const ALLOWED_HTML_ATTRS = new Set(['class', 'style', 'title']);
+
+  /**
+   * DOMParserを用いてHTMLツリーを安全にサニタイズし、ホワイトリストのノードのみを生成
+   * @param {Node} node
+   * @returns {Node|null}
+   */
+  function sanitizeDomNode(node) {
+    if (!node) return null;
+    if (node.nodeType === Node.TEXT_NODE) {
+      return document.createTextNode(node.textContent || '');
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName.toUpperCase();
+      if (!ALLOWED_HTML_TAGS.has(tagName)) {
+        // 許可外タグ（script, iframe, svg, img等）はタグを除去しテキストのみ安全に保持
+        return document.createTextNode(node.textContent || '');
+      }
+
+      const cleanEl = document.createElement(tagName.toLowerCase());
+
+      // 属性の安全チェック
+      for (const attr of Array.from(node.attributes)) {
+        const attrName = attr.name.toLowerCase();
+        // イベントハンドラ（onclick, onerror等）は完全遮断
+        if (attrName.startsWith('on')) continue;
+
+        if (tagName === 'A' && attrName === 'href') {
+          const hrefVal = (attr.value || '').trim();
+          // http, https, mailto, 相対パスのみ許可 (javascript: などを遮断)
+          if (/^(?:https?:|\/|mailto:)/i.test(hrefVal) && !/^javascript:/i.test(hrefVal)) {
+            cleanEl.setAttribute('href', hrefVal);
+            cleanEl.setAttribute('target', '_blank');
+            cleanEl.setAttribute('rel', 'noopener noreferrer');
+          }
+        } else if (ALLOWED_HTML_ATTRS.has(attrName)) {
+          cleanEl.setAttribute(attrName, attr.value);
+        }
+      }
+
+      // 子ノードの再帰的サニタイズ
+      for (const child of Array.from(node.childNodes)) {
+        const cleanChild = sanitizeDomNode(child);
+        if (cleanChild) {
+          cleanEl.appendChild(cleanChild);
+        }
+      }
+      return cleanEl;
+    }
+    return null;
+  }
+
+  /**
+   * サニタイズ済みDOMノードを要素に安全に適用（innerHTMLへの代入を完全排除）
+   * @param {Element} targetEl
+   * @param {string} rawHtml
+   */
+  function setSafeHtml(targetEl, rawHtml) {
+    if (!targetEl) return;
+    if (typeof rawHtml !== 'string') {
+      targetEl.textContent = '';
+      return;
+    }
+
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(rawHtml, 'text/html');
+      const fragment = document.createDocumentFragment();
+
+      for (const child of Array.from(doc.body.childNodes)) {
+        const cleanChild = sanitizeDomNode(child);
+        if (cleanChild) {
+          fragment.appendChild(cleanChild);
+        }
+      }
+
+      targetEl.replaceChildren(fragment);
+    } catch (_) {
+      // パース失敗時の安全フォールバック: プレーンテキストとして設定
+      targetEl.textContent = rawHtml;
+    }
+  }
+
   /**
    * 指定言語の辞書JSONを非同期ロード（キャッシュ付き）
    */
   async function loadDictionary(lang) {
+    if (typeof lang !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(lang)) {
+      return {};
+    }
     if (dictionaries[lang]) {
       return dictionaries[lang];
     }
@@ -80,7 +170,7 @@
       dictionaries[lang] = data;
       return data;
     } catch (err) {
-      console.warn(`[i18n] Failed to load locale "${lang}":`, err);
+      console.warn('[i18n] Failed to load locale:', lang, err);
       dictionaries[lang] = {};
       return dictionaries[lang];
     }
@@ -147,8 +237,10 @@
     // 1. data-i18n (テキストまたはHTML置換)
     const elements = root.querySelectorAll('[data-i18n]');
     elements.forEach(el => {
-      const key = el.getAttribute('data-i18n');
-      if (!key) return;
+      const rawKey = el.getAttribute('data-i18n');
+      if (!rawKey || typeof rawKey !== 'string') return;
+      const key = rawKey.trim();
+      if (!/^[a-zA-Z0-9_.-]+$/.test(key)) return;
 
       const isHtml = el.getAttribute('data-i18n-html') === 'true';
       const translation = t(key);
@@ -169,7 +261,7 @@
           el.appendChild(document.createTextNode(translation));
         }
       } else if (isHtml) {
-        el.innerHTML = translation;
+        setSafeHtml(el, translation);
       } else {
         el.textContent = translation;
       }
@@ -216,8 +308,8 @@
    * @param {string} newLang - 切り替え先言語コード ('ja' | 'en')
    */
   async function setLanguage(newLang) {
-    if (!SUPPORTED_LANGUAGES.some(l => l.code === newLang)) {
-      console.warn(`[i18n] Unsupported language: ${newLang}`);
+    if (typeof newLang !== 'string' || !SUPPORTED_LANGUAGES.some(l => l.code === newLang)) {
+      console.warn('[i18n] Unsupported language:', newLang);
       return;
     }
 
@@ -254,9 +346,12 @@
   function renderLanguageSelector(selectEl) {
     if (!selectEl) return;
 
-    selectEl.innerHTML = SUPPORTED_LANGUAGES.map(lang => {
-      return `<option value="${lang.code}">${lang.label}</option>`;
-    }).join('');
+    selectEl.replaceChildren(...SUPPORTED_LANGUAGES.map(lang => {
+      const opt = document.createElement('option');
+      opt.value = lang.code;
+      opt.textContent = lang.label;
+      return opt;
+    }));
 
     selectEl.value = currentLang;
 
@@ -291,7 +386,7 @@
     // 初回DOM翻訳適用
     applyTranslations(document);
 
-    console.log(`[i18n] Initialized with language: ${currentLang}`);
+    console.log('[i18n] Initialized with language:', currentLang);
   }
 
   // グローバル公開

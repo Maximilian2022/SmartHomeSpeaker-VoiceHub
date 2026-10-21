@@ -514,6 +514,17 @@ class TestSmokeVoiceHub(unittest.TestCase):
         self.assertIn('id="headerLanguageSelect"', html_text)
         self.assertIn('data-i18n="tabs.say"', html_text)
 
+        # 5. i18n.js 内に危険な innerHTML 代入が存在せず、安全な setSafeHtml が実装されていること
+        i18n_content = i18n_file.read_text(encoding="utf-8")
+        self.assertIn("function setSafeHtml", i18n_content)
+        self.assertIn("ALLOWED_HTML_TAGS", i18n_content)
+        code_lines = [
+            line.strip() for line in i18n_content.splitlines()
+            if not line.strip().startswith("//") and not line.strip().startswith("*")
+        ]
+        inner_html_assignments = [line for line in code_lines if ".innerHTML =" in line]
+        self.assertEqual(inner_html_assignments, [], "i18n.js 内に innerHTML への直接代入が存在しないこと")
+
 
 if __name__ == "__main__":
     unittest.main()

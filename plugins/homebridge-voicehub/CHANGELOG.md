@@ -1,5 +1,9 @@
 # 変更履歴 (Changelog)
 
+## [1.0.4] - 2026-10-22
+### セキュリティ (Security)
+- `public/i18n.js`: GitHub Code Scanning (CodeQL) アラート（CWE-134 フォーマット文字列および CWE-79 / CWE-116 DOM XSS）を完全解消。DOMParser を活用したホワイトリスト型サニタイザー `setSafeHtml` の導入と静的フォーマット引数化。
+
 ## [1.0.3] - 2026-10-20
 ### 変更 (Changed)
 - `package.json`: Homebridge v2.0 に対応するため `engines.homebridge` の指定を `"^1.6.0 || ^2.0.0"` に更新
