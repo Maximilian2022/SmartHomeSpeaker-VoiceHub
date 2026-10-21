@@ -1,5 +1,7 @@
 # セキュリティポリシー (Security Policy)
 
+**日本語** | [English](SECURITY-en.md)
+
 「Smart Home Speaker Voice Hub」をご利用いただき、またセキュリティの向上にご協力いただきありがとうございます。
 本プロジェクトでは、家庭内ネットワークや外部 Webhook 等で安全に利用いただけるようセキュリティの維持に努めています。
 

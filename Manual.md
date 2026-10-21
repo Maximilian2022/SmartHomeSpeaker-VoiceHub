@@ -1,5 +1,7 @@
 # Smart Home Speaker Voice Hub 総合技術仕様書 (Manual.md) 📘
 
+**日本語** | [English](MANUAL-en.md)
+
 本ドキュメントは、[README.md](README.md) では割愛している **Smart Home Speaker Voice Hub** のシステムアーキテクチャ、各種スマートスピーカーとの接続仕様、Homebridge プラグイン、MCP (Model Context Protocol) サーバー、マルチ MQTT 連携、アクセス制御・セキュリティ設計、および全 REST API の詳細を網羅した技術仕様書です。
 
 ---

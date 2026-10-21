@@ -1,5 +1,7 @@
 # Smart Home Speaker Voice Hub 🎙️
 
+**日本語** | [English](README-en.md)
+
 Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワークカメラ、DLNA ネットワークオーディオなど、規格の異なる家庭内のスピーカー機器をまとめて、WebhookやAI、外部APIから自然な日本語音声（Edge-TTS）でお知らせを放送できる音声ハブです。
 
 日常のちょっとしたお知らせやリマインダーを、手軽に心地よく届けることを目指して作成された主に自分用のツールです。

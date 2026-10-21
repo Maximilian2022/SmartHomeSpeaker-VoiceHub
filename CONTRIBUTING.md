@@ -1,5 +1,7 @@
 # コントリビューションガイド (Contributing Guide)
 
+**日本語** | [English](CONTRIBUTING-en.md)
+
 「Smart Home Speaker Voice Hub」への貢献にご関心をお持ちいただきありがとうございます！
 バグ報告、新機能の提案、ドキュメントの改善、プルリクエストなど、あらゆる形の貢献を心より歓迎いたします。
 
