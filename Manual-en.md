@@ -1,1 +1,0 @@
-MANUAL-en.md
