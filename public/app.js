@@ -1626,7 +1626,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadInitialData();
           } else {
             if (el.loginErrorMsg) {
-              el.loginErrorMsg.textContent = data.error || 'パスワードが正しくありません';
+              el.loginErrorMsg.textContent = data.detail || data.error || 'パスワードが正しくありません';
               el.loginErrorMsg.style.display = 'block';
             }
           }
@@ -3016,6 +3016,130 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
     });
+
+    // ===== 管理者パスワード設定 (ADMIN_PASSWORD & Cloudflare Tunnel 連携) =====
+    const adminPassBadge = document.getElementById('adminPassBadge');
+    const adminPassCurrentRow = document.getElementById('adminPassCurrentRow');
+    const txtAdminPassCurrent = document.getElementById('txtAdminPassCurrent');
+    const txtAdminPassNew = document.getElementById('txtAdminPassNew');
+    const btnToggleAdminPass = document.getElementById('btnToggleAdminPassVisibility');
+    const btnSaveAdminPass = document.getElementById('btnSaveAdminPassword');
+    const btnClearAdminPass = document.getElementById('btnClearAdminPassword');
+    const tunnelNoticeEl = document.getElementById('tunnelSecurityNoticeText');
+
+    async function refreshAdminPassUI() {
+      try {
+        const res = await fetch('/api/settings');
+        if (!res.ok) return;
+        const data = await res.json();
+        const hasPass = Boolean(data.hasAdminPassword);
+
+        if (adminPassBadge) {
+          adminPassBadge.textContent = hasPass
+            ? t('settingsWebhook.passStatusActive')
+            : t('settingsWebhook.passStatusUnset');
+          adminPassBadge.className = hasPass ? 'badge-tech badge-success' : 'badge-tech badge-warning';
+        }
+
+        if (adminPassCurrentRow) {
+          adminPassCurrentRow.style.display = hasPass ? 'flex' : 'none';
+        }
+        if (btnClearAdminPass) {
+          btnClearAdminPass.style.display = hasPass ? 'inline-block' : 'none';
+        }
+
+        if (tunnelNoticeEl) {
+          tunnelNoticeEl.textContent = hasPass
+            ? t('settingsWebhook.tunnelGuiAllowedNotice')
+            : t('settingsWebhook.cloudflareSecurityNotice');
+        }
+      } catch (err) {
+        console.warn('[AdminPass] Status refresh failed:', err);
+      }
+    }
+
+    refreshAdminPassUI();
+
+    // 表示/非表示トグル
+    if (btnToggleAdminPass && txtAdminPassNew) {
+      btnToggleAdminPass.addEventListener('click', () => {
+        const isPassword = (txtAdminPassNew.type === 'password');
+        txtAdminPassNew.type = isPassword ? 'text' : 'password';
+        if (txtAdminPassCurrent) txtAdminPassCurrent.type = isPassword ? 'text' : 'password';
+        btnToggleAdminPass.textContent = isPassword ? '🙈' : '👁️';
+      });
+    }
+
+    // パスワード保存ボタン
+    if (btnSaveAdminPass && txtAdminPassNew) {
+      btnSaveAdminPass.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const newPass = txtAdminPassNew.value.trim();
+        const curPass = txtAdminPassCurrent ? txtAdminPassCurrent.value.trim() : '';
+
+        const done = setButtonSaving(btn, '保存中...');
+        try {
+          const res = await fetch('/api/auth/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currentPassword: curPass, newPassword: newPass })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || '保存に失敗しました');
+          }
+
+          txtAdminPassNew.value = '';
+          if (txtAdminPassCurrent) txtAdminPassCurrent.value = '';
+          await refreshAdminPassUI();
+          if (el.headerLogoutBtn) {
+            el.headerLogoutBtn.style.display = newPass ? 'inline-flex' : 'none';
+          }
+          done(true, '✓ 保存完了');
+          showToast(newPass ? t('settingsWebhook.passSavedSuccess') : t('settingsWebhook.passClearedSuccess'), 'success');
+        } catch (err) {
+          done(false);
+          showToast('パスワード設定エラー: ' + err.message, 'error');
+        }
+      });
+    }
+
+    // パスワード解除ボタン
+    if (btnClearAdminPass && txtAdminPassCurrent) {
+      btnClearAdminPass.addEventListener('click', async () => {
+        const confirmMsg = isEn()
+          ? 'Are you sure you want to remove the admin password?\n(External Web GUI access via Cloudflare Tunnel will be blocked again)'
+          : '管理者パスワードを解除しますか？\n（解除すると Cloudflare Tunnel 経由での Web GUI アクセスも再び遮断されます）';
+        if (!confirm(confirmMsg)) return;
+
+        const curPass = txtAdminPassCurrent.value.trim();
+        if (!curPass) {
+          showToast(isEn() ? 'Please enter the current password to remove.' : '解除するには現在のパスワードを入力してください', 'warning');
+          txtAdminPassCurrent.focus();
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/auth/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currentPassword: curPass, newPassword: '' })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.detail || '解除に失敗しました');
+          }
+
+          txtAdminPassNew.value = '';
+          txtAdminPassCurrent.value = '';
+          await refreshAdminPassUI();
+          if (el.headerLogoutBtn) el.headerLogoutBtn.style.display = 'none';
+          showToast(t('settingsWebhook.passClearedSuccess'), 'success');
+        } catch (err) {
+          showToast('パスワード解除エラー: ' + err.message, 'error');
+        }
+      });
+    }
 
     // トークン保存ボタン
     document.getElementById('btnSaveWebhookToken')?.addEventListener('click', async (e) => {

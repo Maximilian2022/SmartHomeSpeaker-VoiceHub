@@ -2171,8 +2171,37 @@
               </div>
               <p style="margin-top: 6px;">
                 <span data-i18n="settingsWebhook.cloudflareLead">インターネット側からは、以下の URL 宛に安全に Webhook を送信できます。</span><br>
-                <small data-i18n="settingsWebhook.cloudflareSecurityNotice">※セキュリティ保護のため、Tunnel 経由では Web GUI は自動的に遮断（403）され、Webhook API のみが保護トークン付きで許可されます。</small>
+                <small id="tunnelSecurityNoticeText" data-i18n="settingsWebhook.cloudflareSecurityNotice">※セキュリティ保護のため、Tunnel 経由では Web GUI は自動的に遮断（403）され、Webhook API のみが保護トークン付きで許可されます。</small>
               </p>
+            </div>
+
+            <!-- 🛡️ Web GUI 管理者パスワード & Cloudflare Tunnel リモートアクセス設定カード -->
+            <div id="adminPasswordCard" class="token-banner-card" style="margin-bottom: 24px; border-left: 4px solid var(--accent, #6366f1);">
+              <div class="token-header flex-between">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 20px;">🛡️</span>
+                  <strong data-i18n="settingsWebhook.adminPassHeader">Web GUI 管理者パスワード &amp; Cloudflare Tunnel リモートアクセス</strong>
+                </div>
+                <span id="adminPassBadge" class="badge-tech">未設定</span>
+              </div>
+              <p style="color: var(--text-muted); font-size: 0.88rem; margin: 8px 0 12px;" data-i18n="settingsWebhook.adminPassGuide" data-i18n-html="true">
+                管理者パスワードを設定すると、宅内LANの認証保護に加え、<strong>Cloudflare Tunnel（正規 HTTPS）経由での外部・外出先からの安全な Web GUI アクセスが自動的に解禁</strong>されます。未設定時は安全のため Tunnel 経由の GUI アクセスはすべて遮断（403）されます。
+              </p>
+              
+              <div id="adminPassFormArea" style="display: flex; flex-direction: column; gap: 10px;">
+                <div id="adminPassCurrentRow" style="display: none; align-items: center; gap: 8px;">
+                  <label style="width: 140px; font-size: 0.85rem; color: var(--text-muted); flex-shrink: 0;" data-i18n="settingsWebhook.lblCurrentPass">現在のパスワード:</label>
+                  <input type="password" id="txtAdminPassCurrent" class="form-input token-input" data-i18n-placeholder="settingsWebhook.currentPassPlaceholder" placeholder="現在の管理者パスワード" style="flex: 1;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <label style="width: 140px; font-size: 0.85rem; color: var(--text-muted); flex-shrink: 0;" data-i18n="settingsWebhook.lblNewPass">新しいパスワード:</label>
+                  <input type="password" id="txtAdminPassNew" class="form-input token-input" data-i18n-placeholder="settingsWebhook.newPassPlaceholder" placeholder="新しいパスワード（空欄で保存すると認証解除）" style="flex: 1; min-width: 200px;">
+                  <button type="button" id="btnToggleAdminPassVisibility" class="btn btn-secondary btn-sm" data-i18n-title="settingsWebhook.toggleVisibility" title="表示/非表示">👁️</button>
+                  <button type="button" id="btnSaveAdminPassword" class="btn btn-primary btn-sm" data-i18n="common.save">保存</button>
+                  <button type="button" id="btnClearAdminPassword" class="btn btn-secondary btn-sm" data-i18n="settingsWebhook.btnClearPass" style="display: none;">解除</button>
+                </div>
+              </div>
+              <div id="adminPassNotice" style="margin-top: 8px; font-size: 0.82rem; display: none;"></div>
             </div>
 
             <!-- 🔐 Webhook 認証シークレットトークン表示・設定エリア -->

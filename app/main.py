@@ -137,19 +137,26 @@ app.add_middleware(
 async def logging_and_security_middleware(request: Request, call_next):
     path = request.url.path
 
+    def attach_security_headers(res: Response) -> Response:
+        res.headers["X-Content-Type-Options"] = "nosniff"
+        res.headers["X-Frame-Options"] = "DENY"
+        res.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return res
+
     # Tunnel 境界チェック ＆ 管理者認証チェック (ミドルウェア内の HTTPException 500 化を防止)
     try:
         check_tunnel_access(request)
         check_admin_auth(request)
     except HTTPException as exc:
         log.warning(f"[{request.method}] {path} -> HTTP {exc.status_code} ({exc.detail}) (Client: {request.client.host if request.client else 'unknown'})")
-        return JSONResponse(
+        return attach_security_headers(JSONResponse(
             status_code=exc.status_code,
             content={"error": exc.detail, "detail": exc.detail}
-        )
+        ))
 
     # 頻繁なステータスポーリング (/api/dnd/status, /api/logs 等) は DEBUG レベル相当にする (ログ肥大化防止)
     is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/api/logs", "/favicon.ico")
+
 
     try:
         response = await call_next(request)
@@ -157,12 +164,13 @@ async def logging_and_security_middleware(request: Request, call_next):
             log.warning(f"[{request.method}] {path} -> HTTP {response.status_code} (Client: {request.client.host if request.client else 'unknown'})")
         elif not is_frequent_poll:
             log.info(f"[{request.method}] {path} -> HTTP {response.status_code}")
-        return response
+        return attach_security_headers(response)
     except HTTPException as exc:
-        return JSONResponse(
+        return attach_security_headers(JSONResponse(
             status_code=exc.status_code,
             content={"error": exc.detail, "detail": exc.detail}
-        )
+        ))
+
     except Exception as exc:
         tb = traceback.format_exc()
         log.error(f"Unhandled Exception on [{request.method}] {path}:\n{tb}")

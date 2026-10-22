@@ -113,12 +113,26 @@ async def get_chimes():
 
 @router.get("/api/settings")
 async def get_settings():
-    return settings_manager.get()
+    raw = dict(settings_manager.get())
+    effective_pass = settings_manager.get_admin_password()
+    raw["hasAdminPassword"] = bool(effective_pass)
+    # 平文パスワードは漏洩防止のため返却時は常にマスク (設定有無のみ hasAdminPassword で提供)
+    raw["adminPassword"] = "********" if effective_pass else ""
+    return raw
 
 @router.put("/api/settings")
 @router.post("/api/settings")
 async def update_settings(payload: Dict[str, Any]):
-    return settings_manager.update(payload)
+    cleaned_payload = dict(payload)
+    # adminPassword が "********" (マスク値) の場合は変更なしとしてスキップ
+    if cleaned_payload.get("adminPassword") == "********":
+        cleaned_payload.pop("adminPassword", None)
+    
+    res = dict(settings_manager.update(cleaned_payload))
+    effective_pass = settings_manager.get_admin_password()
+    res["hasAdminPassword"] = bool(effective_pass)
+    res["adminPassword"] = "********" if effective_pass else ""
+    return res
 
 @router.post("/api/settings/sync-test")
 async def sync_test():

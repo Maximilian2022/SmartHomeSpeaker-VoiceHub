@@ -11,9 +11,16 @@
   - 警報発令時に避難経路のスマート照明全点灯、高熱家電のスマートプラグ電源緊急遮断、電動雨戸の閉塞などのオートメーションを発火可能に。
   - WebUI 上に「🏠 スマートホーム防災連動トリガー」カードを追加し、リアルタイムな状態表示および「10秒間テストON」シミュレーションボタンを配備。
   - REST API エンドポイント `GET /api/disaster/triggers` および `POST /api/disaster/triggers/test` を新設。
-- **外部デバイス連携 (Logitech G HUB / Stream Deck 等) ワンタップスクリプト自動生成**:
-  - DND（会議・おやすみモード）を PC のキーやマクロから完全サイレントに操作できるスクリプト（`.vbs`, `.bat`, `.sh`）の自動生成・プレビュー・ダウンロード機能を追加。
-  - WebUI（拡張・システム設定 > おやすみ・会議モード）に専用カードと Logitech G HUB / Elgato Stream Deck への設定手順を掲載。
+- **Web GUI 管理者パスワード設定 & Cloudflare Tunnel リモートアクセス動的連動**:
+  - Web GUI（設定 > Webhook & Tunnel）から管理者パスワード（`ADMIN_PASSWORD`）を直接設定・変更・解除できる管理カードおよび API（`POST /api/auth/password`）を新設。
+  - パスワード設定状況に応じた Cloudflare Tunnel 境界防御の動的解禁：パスワード設定時は Tunnel 経由でも正規 HTTPS（完全な SSL 証明書・警告なし）で Web GUI の安全なリモート操作を許可。未設定時は安全のため従来どおり 403 Forbidden で完全遮断。
+  - 認証済みセッション Cookie（`auth_token`）保持時は、Tunnel 経由での Web GUI からの発声指示（`/api/say`）の Webhook トークン入力を自動免除。
+- **セキュリティ堅牢化 & 侵入耐性強化 (Intrusion & Brute-Force Hardening)**:
+  - **ブルートフォース対策**: `/api/auth/login` に対する IP ベースのレートリミッターを導入（1分間に5回連続失敗で3分間アカウントロックアウト）。
+  - **タイミング攻撃耐性**: パスワードおよび各種認証トークンの照合を定数時間比較（`hmac.compare_digest`）に統一。
+  - **動的 `Secure` Cookie**: HTTPS / Cloudflare Tunnel 経由時は自動的に `Secure: True` を付与し、ローカル HTTP 接続との互換性を両立。
+  - **セキュリティヘッダー付与**: 全レスポンスに `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` を適用。
+  - **パスワード平文の保護**: `GET /api/settings` のレスポンスでパスワードを常時マスク（`********`）し、設定有無フラグ（`hasAdminPassword`）を提供。
 
 ---
 

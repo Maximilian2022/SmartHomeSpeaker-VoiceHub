@@ -9,6 +9,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "defaultDeviceId": settings.effective_default_ip,
     "favoriteDevices": [],
     "webhookToken": settings.webhook_token,
+    "adminPassword": settings.effective_admin_password,
     "calendar": {
         "enabled": False,
         "calendars": [],
@@ -485,5 +486,18 @@ class SettingsManager:
             is_fav = True
         self.set_favorite_devices(favs)
         return is_fav
+
+    def get_admin_password(self) -> str:
+        """設定ファイル (settings.json) を優先し、未設定なら .my.env の値を返す"""
+        gui_val = self.settings.get("adminPassword")
+        if gui_val is not None and str(gui_val).strip() != "":
+            return str(gui_val).strip()
+        return settings.effective_admin_password
+
+    def set_admin_password(self, password: str) -> str:
+        clean = str(password or "").strip()
+        self.settings["adminPassword"] = clean
+        self._save(self.settings)
+        return clean
 
 settings_manager = SettingsManager()

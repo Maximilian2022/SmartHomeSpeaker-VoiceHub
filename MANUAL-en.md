@@ -120,11 +120,16 @@ When exposing an external domain (e.g., `voicehub.example.com`) using Cloudflare
 
 * **Ingress Detection Criteria (`is_tunnel_request`)**:
   - Checks if headers include `CF-Ray`, `CF-Connecting-IP`, or `CF-IPCountry`.
-  - Checks if the HTTP `Host` header matches the `TUNNEL_DOMAIN` environment variable.
-* **Access Policy**:
-  - **Tunnel Requests**: Access is strictly limited to **`/api/say`**, **`/api/webhook`**, and **`/mcp/sse`, `/mcp/messages`**.
-  - Access to the Web GUI (`/`, `index.html`, `app.js`) and administrative management APIs (`/api/settings`, `/api/devices`, `/api/history`, etc.) is immediately blocked with **`403 Forbidden`**.
-  - This structurally prevents unauthorized configuration tampering, speech history inspection, or credential leakage even if the public tunnel domain is discovered.
+  - Checks if the HTTP `Host` header matches the `CLOUDFLARE_TUNNEL_DOMAIN` environment variable.
+* **Dynamic Access Policy**:
+  - **When Admin Password (`ADMIN_PASSWORD` / `adminPassword`) is Configured**:
+    - Remote Web GUI access (`/`, `index.html`) and management APIs via Cloudflare Tunnel are **automatically unlocked**.
+    - Unauthenticated requests are held at a password lock screen, blocking API access with `401 Unauthorized` until authenticated.
+    - This allows users to remotely control Voice Hub from smartphones or laptops outside the home via **Cloudflare's genuine SSL certificate (warning-free, valid HTTPS)**.
+    - Authenticated session cookie holders are automatically exempt from Webhook tokens when issuing speech commands (`/api/say`) via the GUI.
+  - **When Admin Password is NOT Configured**:
+    - For safety, external access to the Web GUI and management APIs remains strictly blocked with **`403 Forbidden`**.
+    - Only protected webhook endpoints (**`/api/say`**, **`/api/webhook`**, and **`/mcp/sse`, `/mcp/messages`**) are allowed with bearer token authentication.
 
 ### 2.2 Webhook Token Authentication (WEBHOOK_TOKEN)
 
@@ -137,14 +142,21 @@ When the environment variable `WEBHOOK_TOKEN` (or a token set in Web GUI setting
   4. JSON request body `"token": "<WEBHOOK_TOKEN>"` field
 * **Automatic LAN Bypass**:
   - Same-origin browser requests originating from private LAN subnets (`127.0.0.1`, `::1`, `192.168.x.x`) via the Web GUI (`Referer` or `Sec-Fetch-Site: same-origin`) are automatically exempt from token requirements for convenience.
+  - Requests carrying an authenticated admin session cookie (`auth_token`) are also automatically exempt regardless of ingress path (LAN / Tunnel).
 
 ### 2.3 Web GUI Administrator Authentication (ADMIN_PASSWORD)
 
-When `ADMIN_PASSWORD` (or `WEB_PASSWORD`) is set, access to the Web GUI and all management APIs (`/api/*`) is password-protected.
+When `ADMIN_PASSWORD` (`.my.env`) or the Web GUI setting (`settings.json`'s `adminPassword`) is set, access to the Web GUI and all management APIs (`/api/*`) is strongly protected. The Web GUI setting takes top precedence and can be managed directly on the interface.
 
-* **Authentication Mechanisms**:
-  - **Session Cookie (`auth_token`)**: Submitting the password to `/api/auth/login` issues a cryptographically secure random token (SHA-256), stored as an HttpOnly cookie with a 30-day lifetime.
+* **Authentication & Session Mechanisms**:
+  - **Session Cookie (`auth_token`)**: Submitting the password to `/api/auth/login` generates a 256-bit (32-byte) cryptographic random token (`secrets.token_hex(32)`), stored as an `HttpOnly` cookie with a 30-day lifetime.
+  - **Dynamic `Secure` Flag**: When accessed via Cloudflare Tunnel (HTTPS), the `Secure: True` cookie attribute is automatically enforced to prevent plaintext downgrades (while maintaining `Secure: False` over local HTTP for compatibility).
   - **Direct Header (for external scripts)**: Supplying `X-Admin-Password: <password>` or `Authorization: Bearer <password>` grants direct access to management endpoints without an interactive login.
+* **Attack & Intrusion Hardening**:
+  - **Brute-Force Protection (Login Rate Limiter)**: If 5 consecutive failed login attempts occur within 1 minute from the same IP, an account lockout is triggered for 3 minutes (180 seconds), rejecting further attempts with `429 Too Many Requests`.
+  - **Timing Attack Resistance**: All password and token comparisons use constant-time checking (`hmac.compare_digest`) to prevent side-channel timing analysis.
+  - **Security Headers**: All HTTP responses include `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: strict-origin-when-cross-origin` to mitigate clickjacking and MIME sniffing.
+  - **Password Masking**: The `GET /api/settings` response always masks passwords (`********`), preventing exposure in browser inspection or network traces.
 
 ### 2.4 IPv6 Loopback Binding Architecture
 
@@ -743,9 +755,11 @@ All API endpoints return JSON responses.
 - **`POST /api/schedule/speeches/{id}/cancel`**: Cancel a specific scheduled speech task.
 
 ### 13.3 Auth API
-- **`GET /api/auth/status`**: Check authentication configuration and current login state.
-- **`POST /api/auth/login`**: Authenticate using administrator password (sets session cookie).
+- **`GET /api/auth/status`**: Check authentication configuration, login state, and rate-limit lockout status (`isLocked`, `remainingSeconds`).
+- **`POST /api/auth/login`**: Authenticate using administrator password (sets session cookie, protected by brute-force rate limiting).
 - **`POST /api/auth/logout`**: Log out and invalidate session cookie.
+- **`POST /api/auth/password`**: Configure, update, or remove administrator password from the Web GUI.
+
 
 ### 13.4 History & Queue API
 - **`GET /api/history`**: Retrieve recent speech history log (last 100 items).

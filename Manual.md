@@ -120,11 +120,16 @@ Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `vo
 
 * **進入経路の判定基準 (`is_tunnel_request`)**:
   - HTTP ヘッダーに `CF-Ray`、`CF-Connecting-IP`、`CF-IPCountry` のいずれかが含まれているか
-  - HTTP `Host` ヘッダーが環境変数 `TUNNEL_DOMAIN` と一致するか
-* **アクセスポリシー**:
-  - **Tunnel 経由のリクエスト**: **`/api/say`**、**`/api/webhook`**、および **`/mcp/sse`, `/mcp/messages`** のみアクセスを許可。
-  - Web GUI（`/`, `index.html`, `app.js`）および管理系 API（`/api/settings`, `/api/devices`, `/api/history` 等）は **`403 Forbidden`** で即座に遮断されます。
-  - これにより、万が一 Tunnel URL が外部に知られた場合でも、設定変更・発言履歴閲覧・認証情報の漏洩が構造的に防止されます。
+  - HTTP `Host` ヘッダーが環境変数 `CLOUDFLARE_TUNNEL_DOMAIN` と一致するか
+* **動的アクセスポリシー**:
+  - **管理者パスワード (`ADMIN_PASSWORD` / `adminPassword`) が設定されている場合**:
+    - Cloudflare Tunnel 経由での Web GUI（`/`, `index.html`）および管理 API のアクセスが**自動的に許可**されます。
+    - 未ログイン時はログイン画面が表示され、ログイン認証（セッション Cookie）が完了するまで全管理 API への不正アクセスは `401 Unauthorized` で遮断されます。
+    - これにより、宅外のスマートフォンや PC のブラウザから、**Cloudflare が発行する正規の SSL 証明書（警告なしの完全な HTTPS）**で安全に Voice Hub を操作できます。
+    - ログイン済みセッション Cookie を保持している場合、Web GUI からの発声指示（`/api/say`）は Webhook トークン不要で自動許可されます。
+  - **管理者パスワードが未設定の場合**:
+    - 安全のため、外部からの Web GUI アクセスおよび管理系 API は従来通り **`403 Forbidden`** で即座に遮断されます。
+    - **`/api/say`**、**`/api/webhook`**、および **`/mcp/sse`, `/mcp/messages`** のみが認証トークン付きで許可されます。
 
 ### 2.2 Webhook トークン認証仕様 (WEBHOOK_TOKEN)
 
@@ -137,14 +142,21 @@ Cloudflare Tunnel（`cloudflared`）を利用して外部ドメイン（例: `vo
   4. JSON リクエストボディの `"token": "<WEBHOOK_TOKEN>"` フィールド
 * **ローカルアクセスの自動バイパス**:
   - 宅内プライベートネットワーク（`127.0.0.1`, `::1`, `192.168.x.x`）のブラウザ Web GUI からの同一起源リクエスト（`Referer` または `Sec-Fetch-Site: same-origin`）は、利便性のためトークン入力を自動免除します。
+  - 認証済み管理者セッション Cookie（`auth_token`）を保持している場合も、進入経路（LAN / Tunnel）を問わず自動免除されます。
 
 ### 2.3 Web GUI 管理者認証仕様 (ADMIN_PASSWORD)
 
-環境変数 `ADMIN_PASSWORD`（または `WEB_PASSWORD`）が設定されている場合、Web GUI の管理画面および全管理 API（`/api/*`）へのアクセスがパスワードで保護されます。
+環境変数 `ADMIN_PASSWORD`（`.my.env`）または Web GUI の設定画面（`settings.json` の `adminPassword`）が設定されている場合、Web GUI の管理画面および全管理 API（`/api/*`）へのアクセスが強力に保護されます。設定値は Web GUI 設定画面（`settings.json`）が最優先され、画面上から即座に設定・変更・解除が可能です。
 
-* **認証方式**:
-  - **セッション Cookie 方式 (`auth_token`)**: `/api/auth/login` でパスワードを送信すると、暗号学的に安全なランダムトークン（SHA-256）が発行され、HttpOnly Cookie として保持されます（有効期限: 30日間）。
+* **認証・セッション方式**:
+  - **セッション Cookie 方式 (`auth_token`)**: `/api/auth/login` でパスワードを送信すると、OSの暗号学的乱数生成器による 256 ビット（32バイト）のランダムトークン（`secrets.token_hex(32)`）が発行され、`HttpOnly` Cookie として保持されます（有効期限: 30日間）。
+  - **動的 `Secure` 属性**: 外部（Cloudflare Tunnel）や HTTPS 接続経由時は自動的に `Secure: True` が付与され、盗聴・ダウングレードを防止します（宅内 HTTP 接続時は `Secure: False` で互換維持）。
   - **ダイレクトヘッダー方式 (外部自動化用)**: `X-Admin-Password: <パスワード>` または `Authorization: Bearer <パスワード>` を送信することで、スクリプトからも全管理 API を呼び出し可能です。
+* **アタック・侵入耐性強化**:
+  - **ブルートフォース対策（ログインレートリミット）**: 同一クライアント IP から 1 分間に 5 回連続でログインに失敗した場合、アカウントロックが発動し 3 分間（180秒）すべてのログイン試行を `429 Too Many Requests` で遮断します。
+  - **タイミング攻撃耐性**: パスワードおよびトークンの照合にはすべて定数時間比較（`hmac.compare_digest`）を採用し、処理時間の差異からパスワードを推測する攻撃を防ぎます。
+  - **セキュリティヘッダー付与**: 全 HTTP レスポンスに `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin` を付与し、クリックジャッキングや MIME スニッフィングを防止します。
+  - **パスワード平文の漏洩防止**: `GET /api/settings` のレスポンスではパスワード文字列は常にマスク（`********`）され、平文がブラウザ側に露出しない設計となっています。
 
 ### 2.4 IPv6 ループバックバインド仕様
 
@@ -780,9 +792,10 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`POST /api/schedule/speeches/{id}/cancel`**: 指定した発声予約タスクをキャンセル
 
 ### 13.3 認証 API
-- **`GET /api/auth/status`**: 認証設定状態およびログイン状態の取得
-- **`POST /api/auth/login`**: 管理者パスワードによるログイン (Cookie 発行)
-- **`POST /api/auth/logout`**: ログアウト処理
+- **`GET /api/auth/status`**: 認証設定状態およびログイン状態の取得（`isLocked`, `remainingSeconds` を含む）
+- **`POST /api/auth/login`**: 管理者パスワードによるログイン (Cookie 発行、ブルートフォース対策レートリミット保護)
+- **`POST /api/auth/logout`**: ログアウト処理 (Cookie 削除)
+- **`POST /api/auth/password`**: Web GUI からの管理者パスワードの設定・変更・解除 (Cookie 再発行)
 
 ### 13.4 履歴・キュー API
 - **`GET /api/history`**: 直近 100 件の発言ログ取得
