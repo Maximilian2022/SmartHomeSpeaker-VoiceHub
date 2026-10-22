@@ -1,7 +1,10 @@
+import asyncio
 from typing import Dict, Any
 from fastapi import APIRouter
 from app.services.settings_service import settings_manager
 from app.services.speech_service import speech_service
+from app.services.event_service import event_service
+from app.services.dnd_service import dnd_service
 
 router = APIRouter()
 
@@ -213,6 +216,8 @@ async def update_settings(payload: Dict[str, Any]):
     current_settings = settings_manager.get()
     cleaned_payload = unmask_sensitive_payload(payload, current_settings)
     res = dict(settings_manager.update(cleaned_payload))
+    if "dnd" in cleaned_payload:
+        asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
     return mask_sensitive_settings(res)
 
 @router.post("/api/settings/sync-test")

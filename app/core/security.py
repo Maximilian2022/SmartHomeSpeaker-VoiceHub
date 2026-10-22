@@ -246,6 +246,7 @@ def check_admin_auth(request: Request):
         "/api/disaster/triggers",
         "/api/devices",
         "/api/status",
+        "/api/events",
     )
     if any(path == prefix or path.startswith(prefix) for prefix in INTEGRATION_PREFIXES):
         from app.services.settings_service import settings_manager

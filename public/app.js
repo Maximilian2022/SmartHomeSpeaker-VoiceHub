@@ -337,8 +337,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // F5/リロード時のタブ状態復元
     restoreActiveTabs();
 
-    // DND ステータスを定期ポーリング (15秒ごと)
+    // SSE (Server-Sent Events) によるリアルタイム状態更新
+    initEventSource();
+
+    // DND ステータスを定期ポーリング (15秒ごと: SSE 切断時のフォールバック)
     setInterval(loadDndStatus, 15000);
+
+    // 画面アクティブ復帰時（タブ切替やスマホ画面オン）に即時同期
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        loadDndStatus();
+      }
+    });
   }
 
   function restoreActiveTabs() {
@@ -3994,6 +4004,48 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ================= 5.5 おやすみ・会議モード (DND) =================
+  let globalEventSource = null;
+
+  function initEventSource() {
+    if (!window.EventSource) {
+      console.warn('[SSE] EventSource is not supported by this browser.');
+      return;
+    }
+    if (globalEventSource) {
+      try {
+        globalEventSource.close();
+      } catch (e) {}
+    }
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+      const sseUrl = urlToken ? `/api/events?token=${encodeURIComponent(urlToken)}` : '/api/events';
+
+      globalEventSource = new EventSource(sseUrl);
+
+      globalEventSource.addEventListener('dnd_status', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          state.dndStatus = data;
+          renderDndStatus();
+        } catch (err) {
+          console.warn('[SSE] dnd_status parse error:', err);
+        }
+      });
+
+      globalEventSource.onopen = () => {
+        // SSE 接続成功
+      };
+
+      globalEventSource.onerror = () => {
+        // 切断時はブラウザ標準で自動再接続されるため追加処理不要
+      };
+    } catch (e) {
+      console.warn('[SSE] Failed to initialize EventSource:', e);
+    }
+  }
+
   async function loadDndStatus() {
     try {
       const res = await fetch('/api/dnd/status');

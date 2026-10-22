@@ -52,10 +52,14 @@ class DndService:
     async def tick(self):
         status = self.get_global_status()
         is_active = status.get("isActive", False)
+        status_changed = (self.was_dnd_active != is_active)
         if self.was_dnd_active and not is_active:
             log.info("DND mode deactivated. Flushing queued notifications...")
             await self.check_and_flush_queue()
         self.was_dnd_active = is_active
+        if status_changed:
+            from app.services.event_service import event_service
+            await event_service.broadcast("dnd_status", status)
 
     def record_history(self, text: str, reason: str, action: str, target: str = ""):
         self.history.insert(0, {

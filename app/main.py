@@ -33,7 +33,8 @@ from app.routers import (
     mqtt,
     mcp,
     logs,
-    rain_alarm
+    rain_alarm,
+    events
 )
 from app.core.logger import init_system_logging, get_logger
 from app.services.mqtt_service import mqtt_service
@@ -153,8 +154,8 @@ async def logging_and_security_middleware(request: Request, call_next):
             content={"error": exc.detail, "detail": exc.detail}
         ))
 
-    # 頻繁なステータスポーリング (/api/dnd/status, /api/logs, /health 等) は DEBUG レベル相当にする (ログ肥大化防止)
-    is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/api/logs", "/health", "/api/health", "/favicon.ico")
+    # 頻繁なステータスポーリング (/api/dnd/status, /api/logs, /health 等) および SSE は DEBUG レベル相当にする (ログ肥大化防止)
+    is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/api/logs", "/health", "/api/health", "/favicon.ico", "/api/events", "/api/events/stream")
 
     try:
         response = await call_next(request)
@@ -227,6 +228,7 @@ app.include_router(mqtt.router)
 app.include_router(mcp.router)
 app.include_router(logs.router)
 app.include_router(rain_alarm.router)
+app.include_router(events.router)
 
 
 

@@ -10,6 +10,7 @@ from app.services.settings_service import settings_manager
 from app.services.speech_service import speech_service
 from app.services.ai_service import ai_service
 from app.services.mqtt_service import mqtt_service
+from app.services.event_service import event_service
 from app.core.logger import get_logger
 from app.core.security import get_effective_admin_password
 
@@ -215,6 +216,7 @@ async def mute_dnd(req: MuteRequest = MuteRequest()):
     })
     log.info(f"DND muted until {until_ts} (reason: {req.reason})")
     asyncio.create_task(mqtt_service.publish_dnd_state())
+    asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
     return {"success": True, "manualUntil": until_ts}
 
 @router.post("/api/dnd/unmute")
@@ -231,6 +233,7 @@ async def unmute_dnd():
     # キューがあれば消化
     asyncio.create_task(dnd_service.check_and_flush_queue())
     asyncio.create_task(mqtt_service.publish_dnd_state())
+    asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
     return {"success": True}
 
 @router.post("/api/dnd/toggle")
@@ -270,6 +273,7 @@ async def quick_dnd(req: Dict[str, Any]):
     })
     log.info(f"Quick DND enabled: minutes={raw_minutes}, until={until_ts}, reason={reason}")
     asyncio.create_task(mqtt_service.publish_dnd_state())
+    asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
     return {"success": True, "manualUntil": until_ts, "reason": reason}
 
 @router.get("/api/dnd/history")
