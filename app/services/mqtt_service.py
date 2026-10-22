@@ -193,6 +193,48 @@ class MQTTBrokerWorker:
                     "icon": "mdi:playlist-play",
                     "device": device_info
                 }
+            },
+            {
+                "component": "binary_sensor",
+                "object_id": "eew_alert",
+                "config": {
+                    "name": "Voice Hub 緊急地震速報 (EEW)",
+                    "unique_id": f"{node_id}_eew_alert",
+                    "state_topic": f"{base_topic}/disaster/eew",
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "device_class": "safety",
+                    "icon": "mdi:alert-decagram",
+                    "device": device_info
+                }
+            },
+            {
+                "component": "binary_sensor",
+                "object_id": "weather_warning",
+                "config": {
+                    "name": "Voice Hub 気象警報",
+                    "unique_id": f"{node_id}_weather_warning",
+                    "state_topic": f"{base_topic}/disaster/warning",
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "device_class": "safety",
+                    "icon": "mdi:weather-lightning",
+                    "device": device_info
+                }
+            },
+            {
+                "component": "binary_sensor",
+                "object_id": "rain_alarm",
+                "config": {
+                    "name": "Voice Hub 雨雲接近",
+                    "unique_id": f"{node_id}_rain_alarm",
+                    "state_topic": f"{base_topic}/disaster/rain",
+                    "payload_on": "ON",
+                    "payload_off": "OFF",
+                    "device_class": "moisture",
+                    "icon": "mdi:weather-pouring",
+                    "device": device_info
+                }
             }
         ]
 
@@ -602,5 +644,31 @@ class MQTTService:
             results.append({"broker": w.name, "topic": topic})
 
         return {"success": True, "publishedTo": results}
+
+    async def publish_disaster_state(self, category: str, is_active: bool, extra_info: Any = None):
+        """防災・気象警報トリガーステータス (eew, warning, rain) を各 MQTT トピックへパブリッシュ"""
+        active_workers = [w for w in self.workers.values() if w.is_connected]
+        if not active_workers:
+            return
+
+        payload = "ON" if is_active else "OFF"
+        topic_suffix = {
+            "eew": "disaster/eew",
+            "warning": "disaster/warning",
+            "rain": "disaster/rain"
+        }.get(category, f"disaster/{category}")
+
+        for w in active_workers:
+            base_topic = (w.conf.get("baseTopic") or "voicehub").strip().rstrip("/")
+            topic = f"{base_topic}/{topic_suffix}"
+            await w.publish(topic, payload, retain=True)
+            if extra_info is not None:
+                json_topic = f"{base_topic}/{topic_suffix}/json"
+                json_payload = json.dumps({
+                    "active": is_active,
+                    "data": extra_info,
+                    "timestamp": time.time()
+                }, ensure_ascii=False)
+                await w.publish(json_topic, json_payload, retain=True)
 
 mqtt_service = MQTTService()

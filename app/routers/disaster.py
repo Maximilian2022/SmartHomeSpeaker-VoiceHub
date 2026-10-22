@@ -68,3 +68,27 @@ async def test_disaster(req: Optional[TestDisasterRequest] = None):
     except Exception as e:
         log.error(f"Disaster test error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+class DisasterTriggerTestRequest(BaseModel):
+    target: str = "eew"  # "eew" | "warning" | "rain"
+    duration: Optional[int] = 10
+
+@router.get("/api/disaster/triggers")
+async def get_disaster_triggers():
+    """Homebridge プラグインや WebUI 向けの現在の防災トリガー状態 (EEW, 気象警報, 雨雲接近) を返却"""
+    try:
+        return disaster_service.get_trigger_status()
+    except Exception as e:
+        log.error(f"Failed to get disaster trigger status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/api/disaster/triggers/test")
+async def test_disaster_trigger(req: DisasterTriggerTestRequest):
+    """スマートホーム連動テスト用: 指定した防災トリガー (eew, warning, rain) を一定時間強制ONにする"""
+    log.info(f"Testing disaster trigger: target={req.target}, duration={req.duration}")
+    try:
+        return await disaster_service.trigger_test_state(target=req.target, duration_sec=req.duration or 10)
+    except Exception as e:
+        log.error(f"Failed to test disaster trigger: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

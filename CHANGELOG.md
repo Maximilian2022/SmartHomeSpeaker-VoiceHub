@@ -3,9 +3,22 @@
 すべての重要な変更はこのファイルに記録されます。
 フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいています。
 
+## [1.0.7] - 2026-10-22
+
+### 追加・新機能 (Added)
+- **スマートホーム防災連動トリガー (HomeKit 仮想モーションセンサー & Home Assistant MQTT Discovery)**:
+  - 緊急地震速報（EEW）、気象警報（大雨・暴風等）、雨雲接近アラームを Apple Home の仮想モーションセンサー（`MotionSensor`）および Home Assistant の `binary_sensor`（`safety` / `moisture`）として公開。
+  - 警報発令時に避難経路のスマート照明全点灯、高熱家電のスマートプラグ電源緊急遮断、電動雨戸の閉塞などのオートメーションを発火可能に。
+  - WebUI 上に「🏠 スマートホーム防災連動トリガー」カードを追加し、リアルタイムな状態表示および「10秒間テストON」シミュレーションボタンを配備。
+  - REST API エンドポイント `GET /api/disaster/triggers` および `POST /api/disaster/triggers/test` を新設。
+- **外部デバイス連携 (Logitech G HUB / Stream Deck 等) ワンタップスクリプト自動生成**:
+  - DND（会議・おやすみモード）を PC のキーやマクロから完全サイレントに操作できるスクリプト（`.vbs`, `.bat`, `.sh`）の自動生成・プレビュー・ダウンロード機能を追加。
+  - WebUI（拡張・システム設定 > おやすみ・会議モード）に専用カードと Logitech G HUB / Elgato Stream Deck への設定手順を掲載。
+
 ---
 
 ## [1.0.6] - 2026-10-22 (Homebridge Plugin)
+
 
 ### 追加・国際化 (Added / Internationalization)
 - **Homebridge プラグイン (homebridge-voicehub) の全面日英併記対応**:

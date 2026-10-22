@@ -33,6 +33,58 @@ class RainAlarmService:
             "lastAlert": None
         }
         self._jma_cache: Dict[str, Any] = {"times": [], "fetched_at": 0}
+        self._rain_active: bool = False
+        self._rain_expires_at: float = 0.0
+        self._rain_alert_info: Optional[Dict[str, Any]] = None
+        self._rain_auto_off_task: Optional[asyncio.Task] = None
+
+    def get_trigger_status(self) -> Dict[str, Any]:
+        """スマートホーム連携用トリガー状態（雨雲接近/降雨中）を返却"""
+        now = time.time()
+        active = self._rain_active and (self._rain_expires_at == 0 or now < self._rain_expires_at)
+        return {
+            "active": active,
+            "expiresAt": self._rain_expires_at if active else 0,
+            "alert": self._rain_alert_info if active else None
+        }
+
+    async def set_trigger_active(self, active: bool, duration_sec: int = 1800, alert_info: Optional[Dict[str, Any]] = None):
+        """雨雲接近トリガー状態を設定し、MQTT へ状態を同期"""
+        from app.services.mqtt_service import mqtt_service
+        self._rain_active = active
+        if self._rain_auto_off_task and not self._rain_auto_off_task.done():
+            self._rain_auto_off_task.cancel()
+
+        if not active:
+            self._rain_expires_at = 0.0
+            self._rain_alert_info = None
+            asyncio.create_task(mqtt_service.publish_disaster_state("rain", False))
+            log.info("[RainAlarm] 雨雲接近トリガー状態を OFF に設定しました")
+            return
+
+        self._rain_expires_at = time.time() + duration_sec if duration_sec > 0 else 0.0
+        self._rain_alert_info = alert_info or {"type": "rain", "time": time.time()}
+        asyncio.create_task(mqtt_service.publish_disaster_state("rain", True, self._rain_alert_info))
+        log.info(f"[RainAlarm] 雨雲接近トリガー状態を ON に設定しました (有効期限: {duration_sec}秒)")
+
+        if duration_sec > 0:
+            async def auto_off():
+                try:
+                    await asyncio.sleep(duration_sec)
+                    self._rain_active = False
+                    self._rain_expires_at = 0.0
+                    self._rain_alert_info = None
+                    asyncio.create_task(mqtt_service.publish_disaster_state("rain", False))
+                    log.info("[RainAlarm] 雨雲接近トリガー状態を自動リセット (OFF) にしました")
+                except asyncio.CancelledError:
+                    pass
+            self._rain_auto_off_task = asyncio.create_task(auto_off())
+
+    async def trigger_test_state(self, duration_sec: int = 10) -> Dict[str, Any]:
+        """スマートホーム連動テスト用: 一時的に雨雲接近トリガーを ON にする"""
+        test_info = {"type": "test", "message": "雨雲接近テスト", "timestamp": datetime.now().isoformat()}
+        await self.set_trigger_active(True, duration_sec=duration_sec, alert_info=test_info)
+        return {"success": True, "target": "rain", "active": True, "duration": duration_sec}
 
     def start(self):
         if self._running:
@@ -345,7 +397,7 @@ class RainAlarmService:
         # 状態更新
         self._is_raining_state = (curr_rain >= threshold)
 
-        # 音声アナウンス送出
+        # 音声アナウンス送出 & スマートホームトリガー連動
         if alert_triggered and alert_message:
             log.info(f"[RainAlarm] ★ アラート検知 ({alert_type}): {alert_message}")
             self._last_status["lastAlert"] = {
@@ -353,6 +405,11 @@ class RainAlarmService:
                 "message": alert_message,
                 "timestamp": datetime.now().isoformat()
             }
+            if alert_type in ("heavy", "approaching"):
+                await self.set_trigger_active(True, duration_sec=1800, alert_info={"type": alert_type, "message": alert_message})
+            elif alert_type == "clearing":
+                await self.set_trigger_active(False)
+
             await self._speak_alert(alert_message, alert_type)
 
         return {
@@ -415,6 +472,11 @@ class RainAlarmService:
             msg = f"【雨雲接近テスト】{loc_name}付近でまもなく約20分後に雨が降り始める見込みです。予想される雨の強さは毎時約2.5ミリです。洗濯物の取り込み等にご注意ください。"
 
         log.info(f"[RainAlarm] テスト発声実行 ({alert_type}): {msg}")
+        if alert_type in ("heavy", "approaching"):
+            await self.set_trigger_active(True, duration_sec=15, alert_info={"type": alert_type, "message": msg, "test": True})
+        elif alert_type == "clearing":
+            await self.set_trigger_active(False)
+
         await self._speak_alert(msg, alert_type)
         return {"status": "ok", "message": msg, "alertType": alert_type}
 

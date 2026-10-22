@@ -31,6 +31,7 @@ This document serves as the comprehensive technical manual for **Smart Home Spea
    - 5.2 [Three Suppression Modes (Skip / Whisper / Queue)](#52-three-suppression-modes-skip--whisper--queue)
    - 5.3 [Queue Persistence (WAL) & Safe Recovery on Startup](#53-queue-persistence-wal--safe-recovery-on-startup)
    - 5.4 [AI Auto-Summarization & Catch-Up for Queued Messages](#54-ai-auto-summarization--catch-up-for-queued-messages)
+   - 5.5 [External Device & Shortcut Integration (Logitech G HUB / Stream Deck)](#55-external-device--shortcut-integration-logitech-g-hub--stream-deck)
 6. [Disaster Alert, Emergency Information & Weather Integration (Japan Only)](#6-disaster-alert-emergency-information--weather-integration-japan-only)
    - 6.1 [P2P Quake WebSocket Integration (EEW / Seismic Intensity)](#61-p2p-quake-websocket-integration-eew--seismic-intensity)
    - 6.2 [JMA Weather Warning API Polling & Diff State Machine](#62-jma-weather-warning-api-polling--diff-state-machine)
@@ -402,6 +403,23 @@ Incoming speech requests are evaluated against the following priority chain:
 
 When multiple messages accumulate in the queue (default: 2 or more), Voice Hub invokes an AI provider (Gemini / OpenAI) to condense them into a single, cohesive spoken summary rather than playing every message back-to-back.
 
+### 5.5 External Device & Shortcut Integration (Logitech G HUB / Stream Deck)
+
+Enables one-touch DND control from mouse buttons, keyboard G keys, or dedicated macro pads during gaming, deep work, or sudden conference calls, without needing to open the Web UI.
+
+* **Supported Script Formats**:
+  - **`.vbs` (VBScript / Recommended)**: Built using Windows standard `MSXML2.ServerXMLHTTP`. Executes 100% silently in the background with zero command-prompt flickering.
+  - **`.bat` (Windows Batch)**: Uses Windows built-in `curl.exe` for quick testing.
+  - **`.sh` (Bash Shell Script)**: Ready for macOS and Linux desktops.
+* **One-Tap Action Types**:
+  - **Toggle DND (`toggle`)**: Inverts state between Normal and Muted (ideal for mouse side buttons).
+  - **30m / 60m Meeting Mute (`30m` / `60m`)**: Temporarily buffers speech for meetings.
+  - **Unmute & Flush (`unmute`)**: Manually unblocks and summarizes all accumulated messages.
+* **One-Click Generation via Web UI**:
+  - Download pre-configured scripts with embedded local host URLs and authentication directly from Web UI (Extended Settings > Do Not Disturb).
+  - **Logitech G HUB**: Assign via "System" -> "Launch Application" to any G key or mouse button.
+  - **Elgato Stream Deck**: Drag the "System" -> "Open" action to a key and select the downloaded script.
+
 ---
 
 ## 6. Disaster Alert, Emergency Information & Weather Integration (Japan Only)
@@ -439,6 +457,29 @@ The **"📢 Notification Speakers"** setting under Disaster Alerts offers 3 scop
 3. **`specific` (Selected devices)**: Restricts playback to chosen rooms or devices.
 
 When **Urgent Mode** is active, alerts bypass active DND and meetings with highest priority.
+
+### 6.5 Smart Home Disaster Automation Triggers (Apple Home / Home Assistant / Alexa / Google Home)
+
+Real-time disaster and severe weather alert states can be used as native "triggers" for smart home automations.
+
+* **HomeKit (Apple Home) Virtual Motion Sensors**:
+  - The Homebridge plugin (`homebridge-voicehub`) exposes 3 virtual motion sensors (`Service.MotionSensor`) to Apple Home:
+    - `EEW Alert` (Earthquake Early Warning)
+    - `Weather Warning` (Meteorological warning)
+    - `Rain Approaching` (Approaching rain / precipitation alarm)
+  - During active alerts, `MotionDetected = true` is asserted, resetting to `false` when cleared or after the timeout duration.
+  - **Automation Examples**:
+    - Turn on all corridor and living room smart lights to 100% cool white upon Earthquake Early Warning.
+    - Cut off smart plugs supplying power to high-heat appliances or space heaters.
+    - Automatically close motorized storm shutters upon heavy rain or storm warnings.
+* **Home Assistant (MQTT Discovery) Binary Sensors**:
+  - Entities are automatically registered via MQTT Discovery:
+    - `binary_sensor.<node_id>_eew_alert` (`device_class: safety`)
+    - `binary_sensor.<node_id>_weather_warning` (`device_class: safety`)
+    - `binary_sensor.<node_id>_rain_alarm` (`device_class: moisture`)
+* **Simulation & Test Function**:
+  - Test smart home automations on-demand via the Web UI "Test ON for 10s" buttons or `POST /api/disaster/triggers/test`.
+
 
 ---
 
@@ -730,7 +771,12 @@ All API endpoints return JSON responses.
 
 ### 13.8 Do Not Disturb (DND) API
 - **`GET /api/dnd/status`**: Get current DND status and queued message count.
-- **`POST /api/dnd/quick`**: Toggle one-tap quick mute mode on or off.
+- **`POST /api/dnd/toggle`**: Toggle DND state (Normal ⇄ Muted).
+- **`POST /api/dnd/mute`**: Activate immediate mute (Parameters: `durationMinutes`, `until`, `reason`).
+- **`POST /api/dnd/unmute`**: Deactivate mute and flush queued messages.
+- **`POST /api/dnd/quick`**: Toggle one-tap quick mute mode on or off (Parameters: `minutes`, `reason`).
+- **`GET /api/dnd/script/preview`**: Preview integration script content (Query: `action`, `format`, `host`, `password`).
+- **`GET /api/dnd/script/download`**: Download integration script (.vbs / .bat / .sh).
 - **`GET /api/dnd/history`**: Retrieve DND suppression log records.
 - **`DELETE /api/dnd/history`**: Clear DND suppression history.
 
@@ -741,6 +787,9 @@ All API endpoints return JSON responses.
 - **`GET /api/disaster/weather`**: Retrieve latest weather and advice for configured area.
 - **`GET /api/disaster/status`**: Get WebSocket status and currently active warnings.
 - **`POST /api/disaster/test`**: Trigger simulated disaster alert broadcast.
+- **`GET /api/disaster/triggers`**: Get current smart home disaster automation trigger states (EEW, weather warning, rain).
+- **`POST /api/disaster/triggers/test`**: Trigger simulated smart home disaster trigger state (JSON: `target`, `duration`).
+
 
 ### 13.10 AI API
 - **`GET /api/ai/status`**: Check AI service connectivity and configuration.

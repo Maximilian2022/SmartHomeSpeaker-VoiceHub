@@ -31,6 +31,7 @@
    - 5.2 [3つの抑制動作モード (Skip / Whisper / Queue)](#52-3つの抑制動作モード-skip--whisper--queue)
    - 5.3 [保留キューの永続化 (WAL) と起動時安全復元](#53-保留キューの永続化-wal-と起動時安全復元)
    - 5.4 [保留メッセージの AI 自動要約・キャッチアップ](#54-保留メッセージの-ai-自動要約キャッチアップ)
+   - 5.5 [外部デバイス・ショートカット連携 (Logitech G HUB / Stream Deck)](#55-外部デバイスショートカット連携-logitech-g-hub--stream-deck)
 6. [緊急速報・防災情報および天気予報連携仕様](#6-緊急速報防災情報および天気予報連携仕様)
    - 6.1 [P2P地震情報 WebSocket 連携 (EEW / 震度速報)](#61-p2p地震情報-websocket-連携-eew--震度速報)
    - 6.2 [気象庁 防災気象情報 API 差分監視 (警報・特別警報)](#62-気象庁-防災気象情報-api-差分監視-警報特別警報)
@@ -416,6 +417,23 @@ Edge-TTS の Neural 音声エンジン（SSML 対応）を採用しています�
 
 保留件数が設定値（デフォルト 2件以上）に達している場合、個別の音声を連続して鳴らす代わりに AI（Gemini / OpenAI 等）を呼び出し、1つの自然な音声メッセージに要約して読み上げます。
 
+### 5.5 外部デバイス・ショートカット連携 (Logitech G HUB / Stream Deck)
+
+PC作業中やゲーム中、急なオンライン会議や通話時に、WebUIを開くことなくマウスや専用キーボードの1キーで DND を操作できる連携機能です。
+
+* **対応スクリプト形式**:
+  - **`.vbs` (VBScript / 推奨)**: Windows 標準の `MSXML2.ServerXMLHTTP` を使用。コマンドプロンプト画面が1ピクセルもポップアップせず、完全サイレントで即座に実行されます。
+  - **`.bat` (Windows バッチ)**: Windows 標準の `curl.exe` を使用。
+  - **`.sh` (Bash シェルスクリプト)**: macOS / Linux 環境用。
+* **ワンタップアクション種別**:
+  - **DND トグル切替 (`toggle`)**: 押すたびに通常モードとミュートを交互に反転（マウスのサイドボタンに最適）。
+  - **30分/60分 会議ミュート (`30m` / `60m`)**: 指定時間だけ通知を保留。
+  - **ミュート解除 (`unmute`)**: 手動解除し、溜まっていた保留通知を消化・AI要約再生。
+* **WebUI からのワンクリック生成**:
+  - WebUI（拡張・システム設定 > おやすみ・会議モード）から、宅内アクセス用URLおよびパスワードが埋め込まれたスクリプトをワンクリックでダウンロード可能です。
+  - **Logitech G HUB**: 「システム」→「アプリケーションの起動」にダウンロードしたスクリプトを指定し、Gキーへ割り当て。
+  - **Elgato Stream Deck**: 「システム」→「開く」アクションでダウンロードしたスクリプトを指定してキーへ割り当て。
+
 ---
 
 ## 6. 緊急速報・防災情報および天気予報連携仕様
@@ -460,6 +478,29 @@ P2P地震情報 API（`wss://api.p2pquake.net/v2/ws`）の WebSocket に常時�
 3. **`specific` (個別選択)**: チェックボックスで指定した部屋・端末のみで放送。
 
 **Urgent モード** が有効な場合、会議中であっても DND を無視して強制的に割り込み再生されます。
+
+### 6.5 スマートホーム防災連動トリガー (Apple Home / Home Assistant / Alexa / Google Home)
+
+気象・地震の警報発令状態を、スマートホームオートメーションの「トリガー（発火条件）」として利用可能です。
+
+* **HomeKit (Apple Home) 仮想モーションセンサー**:
+  - Homebridge プラグイン（`homebridge-voicehub`）により、3種類の仮想人感センサー（`Service.MotionSensor`）として Apple ホームに公開されます：
+    - `EEW Alert`（緊急地震速報）
+    - `Weather Warning`（気象警報）
+    - `Rain Approaching`（雨雲接近）
+  - 警報発令中に `MotionDetected = true` となり、解除時または一定時間後に `false` に自動復帰します。
+  - **オートメーション活用例**:
+    - 緊急地震速報時に避難経路のスマート照明を最大光度（昼光色）で全点灯。
+    - 暖房器具やストーブに接続したスマートプラグ電源を緊急遮断。
+    - 豪雨警報や雨雲接近時に電動雨戸・スマートシャッターを自動閉塞。
+* **Home Assistant (MQTT Discovery) Binary Sensor**:
+  - MQTT 経由で以下のエンティティが `binary_sensor` として自動登録されます：
+    - `binary_sensor.<node_id>_eew_alert` (`device_class: safety`)
+    - `binary_sensor.<node_id>_weather_warning` (`device_class: safety`)
+    - `binary_sensor.<node_id>_rain_alarm` (`device_class: moisture`)
+* **シミュレーション・テスト機能**:
+  - WebUI 上の「10秒間テストON」ボタン、または `POST /api/disaster/triggers/test` により、実際の警報を待たずに各スマートホーム側のオートメーション動作テストが可能です。
+
 
 ---
 
@@ -767,7 +808,12 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 
 ### 13.8 おやすみ・会議モード (DND) API
 - **`GET /api/dnd/status`**: 現在の DND 状態・保留件数の取得
-- **`POST /api/dnd/quick`**: ワンタップ即時ミュートのオン/オフ
+- **`POST /api/dnd/toggle`**: DND 状態のトグル反転 (ON ⇄ OFF)
+- **`POST /api/dnd/mute`**: 即時ミュートの発動（パラメータ: `durationMinutes`, `until`, `reason`）
+- **`POST /api/dnd/unmute`**: 即時ミュートの解除・保留キュー消化
+- **`POST /api/dnd/quick`**: ワンタップ即時ミュートのオン/オフ（パラメータ: `minutes`, `reason`）
+- **`GET /api/dnd/script/preview`**: 外部連携用スクリプトの内容プレビュー（クエリ: `action`, `format`, `host`, `password`）
+- **`GET /api/dnd/script/download`**: 外部連携用スクリプト (.vbs / .bat / .sh) のダウンロード
 - **`GET /api/dnd/history`**: DND 抑制記録ログの取得
 - **`DELETE /api/dnd/history`**: DND ログのクリア
 
@@ -778,6 +824,9 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`GET /api/disaster/weather`**: 設定地域の最新天気・アドバイスの取得
 - **`GET /api/disaster/status`**: WebSocket 接続状態および現在の警報取得
 - **`POST /api/disaster/test`**: シミュレーションテスト発報
+- **`GET /api/disaster/triggers`**: スマートホーム防災連動トリガー状態 (EEW, 気象警報, 雨雲接近) の取得
+- **`POST /api/disaster/triggers/test`**: スマートホーム防災連動トリガーのシミュレーションテスト発動 (JSON: `target`, `duration`)
+
 
 ### 13.10 AI 連携 API
 - **`GET /api/ai/status`**: AI 連携状態の取得

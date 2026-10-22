@@ -1485,7 +1485,124 @@
             </form>
           </div>
 
+          <!-- 5. 外部デバイス連携 (Logitech G HUB / Stream Deck 等) -->
+          <div class="card glass-card" id="cardDndDeviceIntegration">
+            <div class="card-header flex-between">
+              <div>
+                <h3 data-i18n="settingsDnd.deviceIntegrationTitle">🎮 外部デバイス連携 (Logitech G HUB / Stream Deck 等)</h3>
+                <span class="card-sub" data-i18n="settingsDnd.deviceIntegrationSub">Logitech マウス/キーボードの G キーや Elgato Stream Deck のボタンから、ワンタップで DND（会議・おやすみモード）を直接制御できるスクリプトを生成・ダウンロードします。</span>
+              </div>
+              <span class="badge-tech" style="font-size: 0.8rem; padding: 4px 10px;">One-Touch DND</span>
+            </div>
 
+            <div class="card-body">
+              <!-- 接続先設定 -->
+              <div class="form-group">
+                <label for="dndScriptHostInput" class="form-label" data-i18n="settingsDnd.deviceIntegrationHostLabel">接続先 VoiceHub サーバー URL (LAN内):</label>
+                <div style="display: flex; gap: 8px; max-width: 540px;">
+                  <input type="text" id="dndScriptHostInput" class="form-input" style="font-family: monospace; font-size: 0.9rem;" placeholder="http://192.168.1.100:8080">
+                  <button type="button" id="btnResetDndScriptHost" class="btn btn-secondary" style="font-size: 0.82rem; white-space: nowrap;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    <span data-i18n="settingsMcp.btnReset">🔄 リセット</span>
+                  </button>
+                </div>
+                <small class="help-text" data-i18n="settingsDnd.deviceIntegrationHostHelp">※ 宅内LANでアクセス可能な IP アドレスとポート（例: http://192.168.1.100:8080）を指定します。</small>
+              </div>
+
+              <!-- スクリプト形式選択 -->
+              <div class="form-group" style="margin-top: 14px;">
+                <label class="form-label" data-i18n="settingsDnd.deviceIntegrationFormatLabel">スクリプト形式の選択:</label>
+                <div class="pill-radio-group" id="dndScriptFormatGroup">
+                  <label class="pill-radio">
+                    <input type="radio" name="dndScriptFormat" value="vbs" checked>
+                    <span data-i18n="settingsDnd.deviceIntegrationFormatVbs">.vbs (VBScript / 完全非表示・画面のチラつきなし・推奨)</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndScriptFormat" value="bat">
+                    <span data-i18n="settingsDnd.deviceIntegrationFormatBat">.bat (Windows バッチファイル / 動作確認用)</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndScriptFormat" value="sh">
+                    <span data-i18n="settingsDnd.deviceIntegrationFormatSh">.sh (Bash シェルスクリプト / macOS・Linux)</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- ワンクリックダウンロードボタン群 -->
+              <div class="form-group" style="margin-top: 16px;">
+                <label class="form-label" data-i18n="settingsDnd.deviceIntegrationDownloadTitle">ワンクリック・スクリプトダウンロード:</label>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px;">
+                  <button type="button" class="btn btn-primary btn-dl-dnd-script" data-action="toggle">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                    <span data-i18n="settingsDnd.btnDlToggle">🔄 DND トグル切替</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-dl-dnd-script" data-action="30m">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span data-i18n="settingsDnd.btnDl30m">⏱️ 30分 会議ミュート</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-dl-dnd-script" data-action="60m">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span data-i18n="settingsDnd.btnDl60m">⏱️ 60分 会議ミュート</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-dl-dnd-script" data-action="unmute">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                    <span data-i18n="settingsDnd.btnDlUnmute">🔊 ミュート解除</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 折りたたみ Instruction (Logitech G HUB & Stream Deck) -->
+              <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 12px;">
+                <details style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 12px 16px;">
+                  <summary style="cursor: pointer; font-weight: 600; color: var(--primary-light); display: flex; align-items: center; gap: 8px;">
+                    <span data-i18n="settingsDnd.guideSummaryGHUB">📖 Logitech G HUB への割り当て手順 (Instruction)</span>
+                  </summary>
+                  <div style="margin-top: 12px; font-size: 0.88rem; line-height: 1.6; color: var(--text-color);">
+                    <ol style="padding-left: 20px; margin: 0 0 10px 0; display: flex; flex-direction: column; gap: 6px;">
+                      <li data-i18n="settingsDnd.guideStepGHUB1">生成されたスクリプト（例: voicehub_dnd_toggle.vbs）をダウンロードし、PC上の任意のフォルダ（例: ドキュメント\VoiceHub\）に保存します。</li>
+                      <li data-i18n="settingsDnd.guideStepGHUB2">Logitech G HUB を起動し、割り当てを行いたいマウスまたはキーボードのプロファイル画面を開きます。</li>
+                      <li data-i18n="settingsDnd.guideStepGHUB3">画面左側メニューの「割り当て」アイコン（十字キーマーク）を選び、「システム」タブを開きます。</li>
+                      <li data-i18n="settingsDnd.guideStepGHUB4">「アプリケーションの起動」項目の「新規追加」をクリックし、保存したスクリプトファイル（.vbs または .bat）を指定します。</li>
+                      <li data-i18n="settingsDnd.guideStepGHUB5">登録された項目を、割り当てたい G キーやマウスのサイドボタンへドラッグ＆ドロップします。</li>
+                    </ol>
+                    <div style="padding: 8px 12px; background: rgba(99, 102, 241, 0.08); border-left: 3px solid var(--primary); border-radius: 4px; font-size: 0.82rem;" data-i18n="settingsDnd.guideTipGHUB">
+                      💡 ワンポイント: .vbs 形式を選ぶと、実行時に黒いコマンドプロンプト画面が一瞬も開かず、ゲーム中や作業中でも完全サイレントに動作します！
+                    </div>
+                  </div>
+                </details>
+
+                <details style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 12px 16px;">
+                  <summary style="cursor: pointer; font-weight: 600; color: var(--primary-light); display: flex; align-items: center; gap: 8px;">
+                    <span data-i18n="settingsDnd.guideSummaryStreamDeck">📖 Elgato Stream Deck への割り当て手順 (Instruction)</span>
+                  </summary>
+                  <div style="margin-top: 12px; font-size: 0.88rem; line-height: 1.6; color: var(--text-color);">
+                    <ol style="padding-left: 20px; margin: 0 0 10px 0; display: flex; flex-direction: column; gap: 6px;">
+                      <li data-i18n="settingsDnd.guideStepStreamDeck1">生成されたスクリプトをダウンロードし、PC上の任意のフォルダに保存します。</li>
+                      <li data-i18n="settingsDnd.guideStepStreamDeck2">Stream Deck 設定アプリを起動します。</li>
+                      <li data-i18n="settingsDnd.guideStepStreamDeck3">右側のアクション一覧の「システム」カテゴリにある「開く」アクションを、お好みのキーへドラッグ＆ドロップします。</li>
+                      <li data-i18n="settingsDnd.guideStepStreamDeck4">画面下の設定欄で「アプリ / ファイル」の「...」ボタンを押し、ダウンロードしたスクリプトファイルを選択します。</li>
+                      <li data-i18n="settingsDnd.guideStepStreamDeck5">キーのタイトルに「DND」と入力したり、お好みのアイコン（マイクOFFや月のアイコン）を設定すれば完了です。</li>
+                    </ol>
+                    <div style="padding: 8px 12px; background: rgba(59, 130, 246, 0.08); border-left: 3px solid #3b82f6; border-radius: 4px; font-size: 0.82rem;" data-i18n="settingsDnd.guideTipStreamDeck">
+                      💡 ワンポイント: キーが余っている場合は、「トグル」に加えて「30分会議」「解除」を並べておくと、急なWeb会議の開始時や終了時にワンタップで確実に操作できて快適です！
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <!-- スクリプトプレビュー & コピー枠 -->
+              <div style="margin-top: 18px; padding-top: 16px; border-top: 1px dashed rgba(255, 255, 255, 0.1);">
+                <div class="flex-between" style="align-items: center; margin-bottom: 8px;">
+                  <label class="form-label" style="margin: 0;" data-i18n="settingsDnd.deviceIntegrationPreviewTitle">スクリプト内容のプレビュー:</label>
+                  <button type="button" id="btnCopyDndScript" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 10px;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span data-i18n="settingsDnd.btnCopyScript">📋 スクリプトをコピー</span>
+                  </button>
+                </div>
+                <pre id="dndScriptPreviewBlock" style="background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 12px; font-family: monospace; font-size: 0.82rem; color: #e2e8f0; overflow-x: auto; max-height: 220px; white-space: pre-wrap; word-break: break-all; margin: 0;"></pre>
+              </div>
+            </div>
+          </div>
         </div>
         </div>
 
@@ -2752,7 +2869,71 @@ Body:
                 </div>
               </div>
 
-              <!-- 6. テスト発話・シミュレーション -->
+              <!-- 6. スマートホーム防災連動トリガー (HomeKit / Home Assistant / Alexa / Google Home) -->
+              <div class="card glass-card" style="margin-top: 20px;">
+                <div class="card-header">
+                  <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <div>
+                      <h2 data-i18n="settingsDisaster.triggerTitle">🏠 スマートホーム防災連動トリガー (Apple Home / Home Assistant / Alexa / Google Home)</h2>
+                      <span class="card-sub" data-i18n="settingsDisaster.triggerSub">警報発令時にスマートホームの仮想モーションセンサー（HomeKit）や MQTT Binary Sensor（Home Assistant）を発火させ、照明点灯・電源遮断・シャッター制御などを自動化できます</span>
+                    </div>
+                    <button type="button" id="btnRefreshDisasterTriggers" class="btn btn-secondary" style="font-size: 0.8rem; padding: 4px 10px;">
+                      <span data-i18n="common.refresh">🔄 更新</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px;" data-i18n="settingsDisaster.triggerDesc">
+                    ※ Homebridge プラグイン（<code>homebridge-voicehub</code>）または Home Assistant (MQTT Auto-Discovery) と連動し、警報発令時にセンサーが ON（検知）になります。
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 6px;">
+                    <!-- EEW トリガー -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="font-weight: 600; font-size: 0.9rem;" data-i18n="settingsDisaster.triggerEewName">⚡ 緊急地震速報 (EEW)</span>
+                        <span id="badgeTriggerEew" class="status-chip-sub" style="font-size: 0.75rem; padding: 2px 8px;">OFF</span>
+                      </div>
+                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;" data-i18n="settingsDisaster.triggerEewDesc">
+                        HomeKit: <code>EEW Alert</code> / MQTT: <code>voicehub/disaster/eew</code>
+                      </div>
+                      <button type="button" id="btnTestTriggerEew" class="btn btn-secondary" style="width: 100%; font-size: 0.8rem; padding: 6px;">
+                        <span data-i18n="settingsDisaster.btnTriggerTest10s">⚡ 10秒間テストON</span>
+                      </button>
+                    </div>
+
+                    <!-- 気象警報トリガー -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="font-weight: 600; font-size: 0.9rem;" data-i18n="settingsDisaster.triggerWarnName">⛈️ 気象警報 (大雨・暴風等)</span>
+                        <span id="badgeTriggerWarn" class="status-chip-sub" style="font-size: 0.75rem; padding: 2px 8px;">OFF</span>
+                      </div>
+                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;" data-i18n="settingsDisaster.triggerWarnDesc">
+                        HomeKit: <code>Weather Warning</code> / MQTT: <code>voicehub/disaster/warning</code>
+                      </div>
+                      <button type="button" id="btnTestTriggerWarn" class="btn btn-secondary" style="width: 100%; font-size: 0.8rem; padding: 6px;">
+                        <span data-i18n="settingsDisaster.btnTriggerTest10s">⛈️ 10秒間テストON</span>
+                      </button>
+                    </div>
+
+                    <!-- 雨雲接近トリガー -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="font-weight: 600; font-size: 0.9rem;" data-i18n="settingsDisaster.triggerRainName">🌧️ 雨雲接近アラーム</span>
+                        <span id="badgeTriggerRain" class="status-chip-sub" style="font-size: 0.75rem; padding: 2px 8px;">OFF</span>
+                      </div>
+                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px;" data-i18n="settingsDisaster.triggerRainDesc">
+                        HomeKit: <code>Rain Approaching</code> / MQTT: <code>voicehub/disaster/rain</code>
+                      </div>
+                      <button type="button" id="btnTestTriggerRain" class="btn btn-secondary" style="width: 100%; font-size: 0.8rem; padding: 6px;">
+                        <span data-i18n="settingsDisaster.btnTriggerTest10s">🌧️ 10秒間テストON</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 7. テスト発話・シミュレーション -->
               <div class="card glass-card" style="margin-top: 20px;">
                 <div class="card-header">
                   <h2 data-i18n="settings.disasterTestTitle">🧪 テスト発話・シミュレーション</h2>

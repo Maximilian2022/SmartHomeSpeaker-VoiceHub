@@ -13,11 +13,13 @@ import { VoiceHubClient, VoiceHubDevice } from './voicehub-client';
 import { DndSwitchAccessory } from './accessories/dnd-switch';
 import { PresetSwitchAccessory, PresetConfig } from './accessories/preset-switch';
 import { SpeakerAccessory } from './accessories/speaker';
+import { DisasterSensorAccessory, DisasterSensorType } from './accessories/disaster-sensor';
 
 export interface VoiceHubPlatformConfig extends PlatformConfig {
   host?: string;
   webhookToken?: string;
   enableDndSwitch?: boolean;
+  enableDisasterSensors?: boolean;
   autoDiscoverSpeakers?: boolean;
   discoverGoogleHome?: boolean;
   discoverAlexa?: boolean;
@@ -41,7 +43,9 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
   public readonly config: VoiceHubPlatformConfig;
 
   private dndAccessoryInstance?: DndSwitchAccessory;
+  private disasterSensors: Map<DisasterSensorType, DisasterSensorAccessory> = new Map();
   private pollTimer?: NodeJS.Timeout;
+
 
   constructor(
     public readonly log: Logger,
@@ -196,7 +200,35 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
       }
     }
 
-    // 4. 不要になった古いキャッシュアクセサリの削除クリーンアップ (カテゴリ無効化時の即時解除含む)
+    // 4. スマートホーム防災連動トリガー（仮想モーションセンサー）の登録
+    if (this.config.enableDisasterSensors !== false) {
+      const sensors: Array<{ type: DisasterSensorType; uuidSuffix: string; defaultName: string }> = [
+        { type: 'eew', uuidSuffix: 'voicehub-disaster-sensor-eew', defaultName: 'EEW Alert / 緊急地震速報 (EEW)' },
+        { type: 'warning', uuidSuffix: 'voicehub-disaster-sensor-warning', defaultName: 'Weather Warning / 気象警報' },
+        { type: 'rain', uuidSuffix: 'voicehub-disaster-sensor-rain', defaultName: 'Rain Approaching / 雨雲接近' },
+      ];
+
+      for (const s of sensors) {
+        const sensorUuid = this.api.hap.uuid.generate(s.uuidSuffix);
+        activeUUIDs.add(sensorUuid);
+
+        const existingAcc = this.accessories.find(a => a.UUID === sensorUuid);
+        if (existingAcc) {
+          this.log.info(`[VoiceHubPlatform] Reconfiguring disaster sensor / 防災センサー再構成: ${existingAcc.displayName}`);
+          const inst = new DisasterSensorAccessory(this, existingAcc, s.type);
+          this.disasterSensors.set(s.type, inst);
+        } else {
+          this.log.info(`[VoiceHubPlatform] Registering disaster sensor / 新規防災センサーを登録: ${s.defaultName}`);
+          const accessory = new this.api.platformAccessory(s.defaultName, sensorUuid);
+          const inst = new DisasterSensorAccessory(this, accessory, s.type);
+          this.disasterSensors.set(s.type, inst);
+          this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+          this.accessories.push(accessory);
+        }
+      }
+    }
+
+    // 5. 不要になった古いキャッシュアクセサリの削除クリーンアップ (カテゴリ無効化時の即時解除含む)
     const obsoleteAccessories = this.accessories.filter(a => !activeUUIDs.has(a.UUID));
     if (obsoleteAccessories.length > 0) {
       this.log.info(`[VoiceHubPlatform] Unregistering ${obsoleteAccessories.length} obsolete accessory(ies) / 不要になった ${obsoleteAccessories.length} 個のアクセサリを登録解除します`);
@@ -209,18 +241,44 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
   }
 
   /**
-   * DND 状態の定期ポーリング同期
+   * DND および防災トリガー状態の定期ポーリング同期
    */
   private startPolling() {
-    const intervalSec = Math.max(10, this.config.pollInterval || 30);
+    const intervalSec = Math.max(5, this.config.pollInterval || 10);
     this.pollTimer = setInterval(async () => {
-      if (!this.dndAccessoryInstance) return;
-      try {
-        const status = await this.client.getDndStatus();
-        this.dndAccessoryInstance.updateState(status.isActive);
-      } catch {
-        // バックグラウンドポーリングエラーはログレベルdebug
+      // 1. DND 状態の同期
+      if (this.dndAccessoryInstance) {
+        try {
+          const status = await this.client.getDndStatus();
+          this.dndAccessoryInstance.updateState(status.isActive);
+        } catch {
+          // バックグラウンドポーリングエラーは無視
+        }
+      }
+
+      // 2. 防災トリガー状態の同期
+      if (this.disasterSensors.size > 0) {
+        try {
+          const triggers = await this.client.getDisasterTriggers();
+          const eewSensor = this.disasterSensors.get('eew');
+          if (eewSensor && triggers.eew) {
+            eewSensor.updateState(Boolean(triggers.eew.active));
+          }
+
+          const warnSensor = this.disasterSensors.get('warning');
+          if (warnSensor && triggers.warning) {
+            warnSensor.updateState(Boolean(triggers.warning.active));
+          }
+
+          const rainSensor = this.disasterSensors.get('rain');
+          if (rainSensor && triggers.rain) {
+            rainSensor.updateState(Boolean(triggers.rain.active));
+          }
+        } catch {
+          // バックグラウンドポーリングエラーは無視
+        }
       }
     }, intervalSec * 1000);
   }
 }
+

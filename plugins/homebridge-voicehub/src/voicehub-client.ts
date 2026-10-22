@@ -36,6 +36,24 @@ export interface VoiceHubSayResult {
   audioUrl?: string;
 }
 
+export interface VoiceHubDisasterTriggers {
+  eew: {
+    active: boolean;
+    expiresAt: number;
+    event?: any;
+  };
+  warning: {
+    active: boolean;
+    warnings: string[];
+  };
+  rain: {
+    active: boolean;
+    expiresAt: number;
+    alert?: any;
+  };
+}
+
+
 export class VoiceHubClient {
   private baseUrl: string;
   private token?: string;
@@ -275,4 +293,30 @@ export class VoiceHubClient {
       return false;
     }
   }
+
+  /**
+   * スマートホーム防災連動トリガー (EEW, 気象警報, 雨雲接近) の状態を取得
+   */
+  async getDisasterTriggers(): Promise<VoiceHubDisasterTriggers> {
+    const url = this.getUrl('/api/disaster/triggers');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      }
+
+      return await res.json() as VoiceHubDisasterTriggers;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }
+

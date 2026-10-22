@@ -31,6 +31,13 @@
         "type": "boolean",
         "default": true
       },
+      "enableDisasterSensors": {
+        "title": "Enable Disaster & Weather Trigger Sensors / 防災・気象連動トリガーセンサーを有効化",
+        "type": "boolean",
+        "default": true,
+        "description": "Expose virtual motion sensors for Earthquake Early Warning (EEW), Weather Warnings, and Approaching Rain for HomeKit automations / 緊急地震速報（EEW）・気象警報・雨雲接近をHomeKitオートメーション用の仮想モーションセンサーとして公開します"
+      },
+
       "autoDiscoverSpeakers": {
         "title": "Auto-Discover Registered Speakers / 登録済みスピーカーの自動検出とアクセサリ登録",
         "type": "boolean",
@@ -154,7 +161,8 @@
       "type": "fieldset",
       "title": "Other Feature Options / その他の機能オプション",
       "items": [
-        "enableDndSwitch"
+        "enableDndSwitch",
+        "enableDisasterSensors"
       ]
     },
     {

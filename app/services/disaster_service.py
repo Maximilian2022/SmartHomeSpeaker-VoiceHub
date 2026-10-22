@@ -115,6 +115,97 @@ class DisasterService:
         self.area_data_cache: Optional[Dict[str, Any]] = None
         self.is_ws_connected: bool = False
 
+        # スマートホーム防災連動トリガー状態
+        self._eew_active: bool = False
+        self._eew_expires_at: float = 0
+        self._last_eew_event: Optional[Dict[str, Any]] = None
+        self._eew_auto_off_task: Optional[asyncio.Task] = None
+        self._test_warning_active: bool = False
+        self._test_warning_task: Optional[asyncio.Task] = None
+
+    async def set_eew_active(self, active: bool, duration_sec: int = 60, event_info: Any = None):
+        """EEW トリガー状態の更新および MQTT パブリッシュ"""
+        from app.services.mqtt_service import mqtt_service
+        self._eew_active = active
+        self._last_eew_event = event_info if active else None
+        now = time.time()
+        self._eew_expires_at = now + duration_sec if active else 0
+
+        if self._eew_auto_off_task and not self._eew_auto_off_task.done():
+            self._eew_auto_off_task.cancel()
+
+        asyncio.create_task(mqtt_service.publish_disaster_state("eew", active, event_info))
+
+        if active and duration_sec > 0:
+            async def auto_off():
+                try:
+                    await asyncio.sleep(duration_sec)
+                    self._eew_active = False
+                    self._eew_expires_at = 0
+                    asyncio.create_task(mqtt_service.publish_disaster_state("eew", False))
+                    log.info("EEW trigger state automatically reset to OFF.")
+                except asyncio.CancelledError:
+                    pass
+            self._eew_auto_off_task = asyncio.create_task(auto_off())
+
+    def get_trigger_status(self) -> Dict[str, Any]:
+        """Homebridge や WebUI 等へ現在のスマートホーム防災トリガー状態を返却"""
+        from app.services.rain_alarm_service import rain_alarm_service
+        now = time.time()
+        is_eew = self._eew_active and (self._eew_expires_at == 0 or now < self._eew_expires_at)
+        warning_active = (len(self._last_known_warnings) > 0) or self._test_warning_active
+        warnings_list = sorted(list(self._last_known_warnings))
+        if self._test_warning_active and "気象警報 (テスト)" not in warnings_list:
+            warnings_list.append("気象警報 (テスト)")
+
+        return {
+            "eew": {
+                "active": is_eew,
+                "expiresAt": self._eew_expires_at if is_eew else 0,
+                "event": self._last_eew_event
+            },
+            "warning": {
+                "active": warning_active,
+                "warnings": warnings_list
+            },
+            "rain": rain_alarm_service.get_trigger_status()
+        }
+
+    async def trigger_test_state(self, target: str, duration_sec: int = 10) -> Dict[str, Any]:
+        """スマートホーム連動テスト用: 指定した防災トリガーを一定時間だけ強制ONにする"""
+        from app.services.rain_alarm_service import rain_alarm_service
+        from app.services.mqtt_service import mqtt_service
+
+        target = target.lower().strip()
+        if target == "eew":
+            await self.set_eew_active(True, duration_sec=duration_sec, event_info={"test": True, "title": "緊急地震速報 (テスト)"})
+            return {"success": True, "target": "eew", "active": True, "duration": duration_sec}
+        elif target == "warning":
+            self._test_warning_active = True
+            if self._test_warning_task and not self._test_warning_task.done():
+                self._test_warning_task.cancel()
+
+            test_warnings = sorted(list(self._last_known_warnings) + ["気象警報 (テスト)"])
+            asyncio.create_task(mqtt_service.publish_disaster_state("warning", True, test_warnings))
+
+            async def reset_warning():
+                try:
+                    await asyncio.sleep(duration_sec)
+                    self._test_warning_active = False
+                    is_real_active = len(self._last_known_warnings) > 0
+                    asyncio.create_task(mqtt_service.publish_disaster_state("warning", is_real_active, sorted(list(self._last_known_warnings))))
+                    log.info("Test weather warning trigger state reset to OFF.")
+                except asyncio.CancelledError:
+                    pass
+
+            self._test_warning_task = asyncio.create_task(reset_warning())
+            return {"success": True, "target": "warning", "active": True, "duration": duration_sec}
+        elif target == "rain":
+            await rain_alarm_service.trigger_test_state(duration_sec=duration_sec)
+            return {"success": True, "target": "rain", "active": True, "duration": duration_sec}
+        else:
+            return {"success": False, "error": f"Unknown target: {target}"}
+
     def set_speech_executor(self, cb: Callable):
         self._speech_executor = cb
 
@@ -143,6 +234,7 @@ class DisasterService:
             )
         except Exception as e:
             log.error(f"Speech dispatch error in disaster: {e}", exc_info=True)
+
 
     async def start(self):
         log.info("Starting DisasterService background workers...")
@@ -332,6 +424,7 @@ class DisasterService:
             if existing and existing.get("status") == "notified":
                 log.info(f"Issuing EEW cancellation: {event_id}")
                 self._active_eew_events[event_id] = {"notifiedAt": now_ms, "status": "cancelled"}
+                await self.set_eew_active(False)
                 cancel_text = "先ほどの緊急地震速報は取り消されました。誤報、または観測値の修正によるものです。"
                 await self.speak(
                     text=cancel_text,
@@ -359,6 +452,7 @@ class DisasterService:
             self._active_eew_events[event_id] = {"notifiedAt": now_ms, "status": "notified"}
             text = "緊急地震速報です。強い揺れに警戒してください。身を守る行動を取ってください。"
             log.warning(f"EEW Alert triggered! eventId={event_id}")
+            await self.set_eew_active(True, duration_sec=60, event_info={"eventId": event_id, "text": text})
             await self.speak(
                 text=text,
                 urgent=eq_config.get("eewUrgent", True),
@@ -487,6 +581,10 @@ class DisasterService:
             cleared_warnings = self._last_known_warnings - current_warnings
             self._last_known_warnings = current_warnings
 
+            from app.services.mqtt_service import mqtt_service
+            is_warning_active = len(current_warnings) > 0
+            asyncio.create_task(mqtt_service.publish_disaster_state("warning", is_warning_active, sorted(list(current_warnings))))
+
             if new_warnings:
                 names_str = "、".join(sorted(new_warnings))
                 text = f"気象警報です。{city_name}に{names_str}が発表されました。"
@@ -505,10 +603,12 @@ class DisasterService:
 
         if test_type == "eew":
             text = "緊急地震速報のテストです。強い揺れに警戒してください。これは訓練放送です。"
+            await self.set_eew_active(True, duration_sec=15, event_info={"test": True, "text": text})
             await self.speak(text, urgent=True, volume=settings.get("earthquake", {}).get("eewVolume", 80))
             return {"success": True, "text": text}
         elif test_type == "eew_cancel":
             text = "緊急地震速報の取消テストです。先ほどの緊急地震速報は取り消されました。誤報、または観測値の修正によるものです。これは訓練放送です。"
+            await self.set_eew_active(False)
             await self.speak(text, urgent=True, volume=settings.get("earthquake", {}).get("eewVolume", 80))
             return {"success": True, "text": text}
         elif test_type == "quake":
@@ -519,6 +619,7 @@ class DisasterService:
             return {"success": True, "text": text}
         elif test_type == "warning":
             text = f"気象警報のテストです。{city_name}に大雨警報、および洪水警報が発表されました。これはテスト放送です。"
+            await self.trigger_test_state("warning", duration_sec=15)
             await self.speak(text, urgent=bool(settings.get("weatherWarning", {}).get("urgent", False)))
             return {"success": True, "text": text}
         elif test_type == "weather":

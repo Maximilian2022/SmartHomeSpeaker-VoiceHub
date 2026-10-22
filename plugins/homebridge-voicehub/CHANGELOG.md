@@ -1,6 +1,15 @@
 # 変更履歴 (Changelog)
 
+## [1.0.7] - 2026-10-22
+### 追加 (Added)
+- **スマートホーム防災連動トリガーセンサー (Disaster & Weather Automation Triggers)**:
+  - 緊急地震速報（EEW）、気象特別警報・警報、雨雲接近アラームを Apple Home の仮想モーションセンサー（`DisasterSensorAccessory` / `Service.MotionSensor`）として公開。
+  - 警報発令時に避難経路のスマート照明全点灯、高熱家電のスマートプラグ電源緊急遮断、電動雨戸の閉塞などのオートメーションを発火可能に。
+  - `config.schema.json` に `enableDisasterSensors` 設定項目（日英併記）を追加。
+  - `voicehub-client.ts` に `getDisasterTriggers()` を追加し、定期ポーリングでリアルタイムに状態同期。
+
 ## [1.0.6] - 2026-10-22
+
 ### 追加・国際化 (Added / Internationalization)
 - `config.schema.json`: Homebridge Config UI X 設定画面のタイトル・説明文・プレースホルダー・フィールドセットを完全な日英併記（English / 日本語）に更新
 - `README.md`: English および 日本語 の両セクションを網羅した包括的な日英併記ドキュメントにリニューアル

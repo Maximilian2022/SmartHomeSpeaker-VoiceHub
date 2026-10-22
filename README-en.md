@@ -29,8 +29,11 @@ Originally created as a personal home automation utility to deliver daily notifi
   Automatically suppress announcements during sleep hours or active online meetings (synced with calendar events), with support for quiet whispering, message queuing, or AI-generated catch-up summaries once meetings end.
 - **Apple HomeKit & Siri Integration**:
   Includes a dedicated companion Homebridge plugin (`homebridge-voicehub`). Create custom announcement switches (e.g., "Dinner is ready") in the Apple Home app and trigger broadcasts hands-free using Siri.
+- **Smart Disaster & Weather Automation Triggers (Japan Only)**:
+  Integrates with open disaster data from the Japan Meteorological Agency (JMA) and P2P Quake to automatically broadcast Earthquake Early Warnings (EEW), severe weather alerts, and approaching rain forecasts. Additionally, these alert states are exposed as native automation triggers for Apple HomeKit (virtual motion sensors) and Home Assistant (MQTT binary sensors), enabling safety automations such as turning on escape route lighting or cutting off high-heat appliance plugs during emergency alerts. *(Note: This feature uses domestic Japanese APIs and is intended for use within Japan).*
 - **Seamless External Integrations (Webhook / MQTT / MCP Server)**:
   Native integrations with automation platforms like IFTTT, Home Assistant (with MQTT Discovery), Node-RED, and a built-in MCP (Model Context Protocol) server allowing AI assistants such as Claude Desktop and Cursor to operate your speakers directly.
+
 
 ---
 

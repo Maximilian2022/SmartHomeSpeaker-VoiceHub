@@ -4469,8 +4469,109 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-
+    // 外部デバイス連携 (Logitech G HUB / Stream Deck 等) 初期化
+    setupDndDeviceIntegration();
   }
+
+  function setupDndDeviceIntegration() {
+    const hostInput = document.getElementById('dndScriptHostInput');
+    const resetBtn = document.getElementById('btnResetDndScriptHost');
+    const formatRadios = document.querySelectorAll('input[name="dndScriptFormat"]');
+    const dlButtons = document.querySelectorAll('.btn-dl-dnd-script');
+    const previewBlock = document.getElementById('dndScriptPreviewBlock');
+    const copyBtn = document.getElementById('btnCopyDndScript');
+
+    if (!hostInput || !previewBlock) return;
+
+    // 現在のアクセス origin（例: http://192.168.1.100:8080）を初期値としてセット
+    const defaultOrigin = window.location.origin;
+    if (!hostInput.value) {
+      hostInput.value = defaultOrigin;
+    }
+
+    resetBtn?.addEventListener('click', () => {
+      hostInput.value = defaultOrigin;
+      updateScriptPreview();
+      showToast('接続先URLを現在のアクセスアドレスにリセットしました', 'info');
+    });
+
+    let currentAction = 'toggle';
+
+    function getSelectedFormat() {
+      const checked = document.querySelector('input[name="dndScriptFormat"]:checked');
+      return checked ? checked.value : 'vbs';
+    }
+
+    async function updateScriptPreview() {
+      const fmt = getSelectedFormat();
+      const host = hostInput.value.trim() || defaultOrigin;
+      try {
+        const res = await fetch(`/api/dnd/script/preview?action=${encodeURIComponent(currentAction)}&format=${encodeURIComponent(fmt)}&host=${encodeURIComponent(host)}`);
+        if (!res.ok) throw new Error('プレビュー取得失敗');
+        const data = await res.json();
+        previewBlock.textContent = data.content || '';
+      } catch (err) {
+        previewBlock.textContent = `// エラー: ${err.message}`;
+      }
+    }
+
+    formatRadios.forEach(r => r.addEventListener('change', updateScriptPreview));
+    hostInput.addEventListener('input', () => {
+      clearTimeout(hostInput._debounceTimer);
+      hostInput._debounceTimer = setTimeout(updateScriptPreview, 300);
+    });
+
+    dlButtons.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const action = btn.getAttribute('data-action') || 'toggle';
+        currentAction = action;
+        updateScriptPreview();
+
+        const fmt = getSelectedFormat();
+        const host = hostInput.value.trim() || defaultOrigin;
+        const dlUrl = `/api/dnd/script/download?action=${encodeURIComponent(action)}&format=${encodeURIComponent(fmt)}&host=${encodeURIComponent(host)}`;
+
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => a.remove(), 1000);
+
+        const actionNames = {
+          toggle: isEn() ? 'Toggle script' : 'トグル切替スクリプト',
+          '30m': isEn() ? '30m mute script' : '30分ミュートスクリプト',
+          '60m': isEn() ? '60m mute script' : '60分ミュートスクリプト',
+          unmute: isEn() ? 'Unmute script' : 'ミュート解除スクリプト'
+        };
+        const name = actionNames[action] || action;
+        showToast(isEn() ? `Downloaded ${name} (.${fmt})` : `${name} (.${fmt}) をダウンロードしました！`, 'success');
+      });
+    });
+
+    copyBtn?.addEventListener('click', async () => {
+      const code = previewBlock.textContent;
+      if (!code) return;
+      try {
+        await navigator.clipboard.writeText(code);
+        showToast('スクリプトをクリップボードにコピーしました', 'success');
+      } catch (err) {
+        const ta = document.createElement('textarea');
+        ta.value = code;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        showToast('スクリプトをクリップボードにコピーしました', 'success');
+      }
+    });
+
+    // 初回プレビュー描画
+    updateScriptPreview();
+  }
+
 
   // ================= 6. ユーティリティ =================
   async function playHistoryPreview(text, voice, btn) {
@@ -7652,6 +7753,86 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnTestQuake')?.addEventListener('click', () => triggerDisasterTest('quake', '震度速報テスト'));
     document.getElementById('btnTestWarning')?.addEventListener('click', () => triggerDisasterTest('warning', '気象警報テスト'));
     document.getElementById('btnTestWeatherSummary')?.addEventListener('click', () => triggerDisasterTest('weather', '朝の天気サマリーテスト'));
+
+    // スマートホーム防災連動トリガー制御 (HomeKit / Home Assistant / MQTT)
+    async function updateDisasterTriggersUi() {
+      try {
+        const res = await fetch('/api/disaster/triggers');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // 1. EEW
+        const badgeEew = document.getElementById('badgeTriggerEew');
+        if (badgeEew) {
+          const active = Boolean(data.eew?.active);
+          badgeEew.textContent = active ? 'ON' : 'OFF';
+          badgeEew.style.background = active ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.05)';
+          badgeEew.style.color = active ? '#ef4444' : 'var(--text-muted)';
+          badgeEew.style.borderColor = active ? 'rgba(239, 68, 68, 0.5)' : 'transparent';
+        }
+
+        // 2. Warning
+        const badgeWarn = document.getElementById('badgeTriggerWarn');
+        if (badgeWarn) {
+          const active = Boolean(data.warning?.active);
+          badgeWarn.textContent = active ? 'ON' : 'OFF';
+          badgeWarn.style.background = active ? 'rgba(245, 158, 11, 0.25)' : 'rgba(255, 255, 255, 0.05)';
+          badgeWarn.style.color = active ? '#f59e0b' : 'var(--text-muted)';
+          badgeWarn.style.borderColor = active ? 'rgba(245, 158, 11, 0.5)' : 'transparent';
+        }
+
+        // 3. Rain
+        const badgeRain = document.getElementById('badgeTriggerRain');
+        if (badgeRain) {
+          const active = Boolean(data.rain?.active);
+          badgeRain.textContent = active ? 'ON' : 'OFF';
+          badgeRain.style.background = active ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)';
+          badgeRain.style.color = active ? '#3b82f6' : 'var(--text-muted)';
+          badgeRain.style.borderColor = active ? 'rgba(59, 130, 246, 0.5)' : 'transparent';
+        }
+      } catch (err) {
+        console.warn('Failed to update disaster trigger UI:', err);
+      }
+    }
+
+    async function triggerDisasterTriggerTest(target, label) {
+      try {
+        showToast(`${label}を発動中 (10秒間)...`, 'info');
+        const res = await fetch('/api/disaster/triggers/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target, duration: 10 })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(`${label}が10秒間 ON になりました (HomeKit / MQTT 同期中)`, 'success');
+          await updateDisasterTriggersUi();
+          setTimeout(updateDisasterTriggersUi, 10500);
+        } else {
+          throw new Error(data.error || 'テスト発動に失敗しました');
+        }
+      } catch (err) {
+        showToast(`テスト発動エラー: ${err.message}`, 'error');
+      }
+    }
+
+    document.getElementById('btnRefreshDisasterTriggers')?.addEventListener('click', () => {
+      updateDisasterTriggersUi();
+      showToast('防災連動トリガー状態を更新しました', 'info');
+    });
+
+    document.getElementById('btnTestTriggerEew')?.addEventListener('click', () => {
+      triggerDisasterTriggerTest('eew', '緊急地震速報 (EEW) トリガー');
+    });
+    document.getElementById('btnTestTriggerWarn')?.addEventListener('click', () => {
+      triggerDisasterTriggerTest('warning', '気象警報トリガー');
+    });
+    document.getElementById('btnTestTriggerRain')?.addEventListener('click', () => {
+      triggerDisasterTriggerTest('rain', '雨雲接近トリガー');
+    });
+
+    // 初期取得
+    updateDisasterTriggersUi();
 
     // 雨アラーム (Rain Alarm) ハンドラー
     document.getElementById('btnRainLocateMe')?.addEventListener('click', async () => {
