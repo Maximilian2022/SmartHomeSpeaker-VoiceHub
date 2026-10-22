@@ -19,6 +19,11 @@ export interface VoiceHubPlatformConfig extends PlatformConfig {
   webhookToken?: string;
   enableDndSwitch?: boolean;
   autoDiscoverSpeakers?: boolean;
+  discoverGoogleHome?: boolean;
+  discoverAlexa?: boolean;
+  discoverHomepod?: boolean;
+  discoverOnvif?: boolean;
+  discoverDlna?: boolean;
   volumeAsLightbulb?: boolean;
   pollInterval?: number;
   presets?: PresetConfig[];
@@ -70,6 +75,44 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
   }
 
   /**
+   * デバイスのカテゴリが config で有効化されているかを判定
+   */
+  public isDeviceCategoryEnabled(device: VoiceHubDevice): boolean {
+    const dtype = (device.type || '').toLowerCase().trim();
+    const id = (device.id || '').toLowerCase().trim();
+    const ip = (device.ip || '').toLowerCase().trim();
+    const model = (device.model || '').toLowerCase().trim();
+
+    // 1. Alexa
+    if (dtype === 'alexa' || id.startsWith('alexa_') || ip.startsWith('alexa:') || model.includes('echo') || model.includes('alexa')) {
+      return this.config.discoverAlexa !== false;
+    }
+
+    // 2. HomePod
+    if (dtype === 'homepod' || id.startsWith('homepod_') || ip.startsWith('homepod:') || model.includes('homepod')) {
+      return this.config.discoverHomepod !== false;
+    }
+
+    // 3. ONVIF / Tapo
+    if (dtype === 'onvif' || dtype === 'tapo' || id.startsWith('onvif_') || id.startsWith('tapo_') || ip.startsWith('onvif:') || ip.startsWith('tapo:')) {
+      return this.config.discoverOnvif !== false;
+    }
+
+    // 4. DLNA
+    if (dtype === 'dlna' || id.startsWith('dlna_') || ip.startsWith('dlna:')) {
+      return this.config.discoverDlna !== false;
+    }
+
+    // 5. Google Home / Google Cast
+    if (dtype === 'google' || dtype === 'cast' || id.startsWith('dev_') || id.startsWith('group_') || model.includes('google') || model.includes('cast')) {
+      return this.config.discoverGoogleHome !== false;
+    }
+
+    // その他未分類スピーカーは Google Home 設定に連動 (デフォルト許可)
+    return this.config.discoverGoogleHome !== false;
+  }
+
+  /**
    * VoiceHub からデバイス・設定を取得して HomeKit アクセサリと同期
    */
   async discoverDevices() {
@@ -94,10 +137,12 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
     }
 
     // 2. プリセット発話スイッチの登録
-    const presets = this.config.presets || [
-      { name: 'ご飯できたよ', text: 'ご飯ができました。リビングに集まってください。', target: 'ALL', volume: 70 },
-      { name: 'お風呂が沸いたよ', text: 'お風呂が沸き上がりました。', target: 'ALL', volume: 60 }
-    ];
+    const presets = Array.isArray(this.config.presets)
+      ? this.config.presets
+      : [
+          { name: 'ご飯できたよ', text: 'ご飯ができました。リビングに集まってください。', target: 'ALL', volume: 70 },
+          { name: 'お風呂が沸いたよ', text: 'お風呂が沸き上がりました。', target: 'ALL', volume: 60 }
+        ];
 
     for (const preset of presets) {
       if (!preset.name || !preset.text) continue;
@@ -121,9 +166,15 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
     if (this.config.autoDiscoverSpeakers !== false) {
       try {
         const devices = await this.client.getDevices();
-        this.log.info(`[VoiceHubPlatform] VoiceHub から ${devices.length} 台のスピーカーを検出しました`);
+        this.log.info(`[VoiceHubPlatform] VoiceHub から ${devices.length} 台のスピーカー情報を取得しました`);
 
         for (const device of devices) {
+          // カテゴリ判定による登録フィルタリング
+          if (!this.isDeviceCategoryEnabled(device)) {
+            this.log.info(`[VoiceHubPlatform] スピーカー登録スキップ (カテゴリ無効): ${device.name} (${device.type || 'unknown'})`);
+            continue;
+          }
+
           // IP / ID を元に UUID を生成
           const deviceUuid = this.api.hap.uuid.generate(`voicehub-speaker-${device.id}`);
           activeUUIDs.add(deviceUuid);
@@ -145,7 +196,7 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
       }
     }
 
-    // 4. 不要になった古いキャッシュアクセサリの削除クリーンアップ
+    // 4. 不要になった古いキャッシュアクセサリの削除クリーンアップ (カテゴリ無効化時の即時解除含む)
     const obsoleteAccessories = this.accessories.filter(a => !activeUUIDs.has(a.UUID));
     if (obsoleteAccessories.length > 0) {
       this.log.info(`[VoiceHubPlatform] 不要になった ${obsoleteAccessories.length} 個のアクセサリを登録解除します`);

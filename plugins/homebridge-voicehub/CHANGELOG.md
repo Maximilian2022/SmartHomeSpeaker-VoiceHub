@@ -1,5 +1,20 @@
 # 変更履歴 (Changelog)
 
+## [1.0.5] - 2026-10-22
+### 追加 (Added)
+- スピーカー自動検出・アクセサリ登録のカテゴリ別選択機能:
+  - Google Home / Nest スピーカー (`discoverGoogleHome`)
+  - Amazon Alexa / Echo スピーカー (`discoverAlexa`)
+  - Apple HomePod スピーカー (`discoverHomepod`)
+  - ONVIF カメラ・スピーカー (Tapo含む) (`discoverOnvif`)
+  - DLNA / UPnP スピーカー (`discoverDlna`)
+  それぞれのカテゴリごとに HomeKit アクセサリ登録の有効・無効を個別に選択可能に拡張。
+
+### 修正 (Fixed)
+- Homebridge Config UI X 設定画面で「設定の検証に失敗しましたが保存は可能です」という警告が表示される問題を解消:
+  - `config.schema.json` の `layout` における `presets` 配列アイテム要素定義（`presets[].name`, `presets[].text` など）を Homebridge Config UI X の標準構文に正規化
+  - JSON Schema における `required` 定義を親オブジェクトの配列形式（`"required": ["name", "host"]`）に標準化し、AJV スキーマコンパイル時の警告・不整合を根絶
+
 ## [1.0.4] - 2026-10-22
 ### セキュリティ (Security)
 - `public/i18n.js`: GitHub Code Scanning (CodeQL) アラート（CWE-134 フォーマット文字列および CWE-79 / CWE-116 DOM XSS）を完全解消。DOMParser を活用したホワイトリスト型サニタイザー `setSafeHtml` の導入と静的フォーマット引数化。

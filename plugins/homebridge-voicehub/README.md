@@ -85,7 +85,12 @@ Homebridge Config UI X の設定画面、または `config.json` の `platforms`
 | `host` | ○ | `http://127.0.0.1:8080` | VoiceHub サーバーの URL |
 | `webhookToken` | - | `""` | VoiceHub でトークン認証を有効化している場合に設定 |
 | `enableDndSwitch` | - | `true` | 会議・おやすみモード（DND）切替スイッチを作成 |
-| `autoDiscoverSpeakers` | - | `true` | VoiceHub に登録された全スピーカーを自動登録 |
+| `autoDiscoverSpeakers` | - | `true` | VoiceHub に登録されたスピーカーの自動検出とアクセサリ登録 |
+| `discoverGoogleHome` | - | `true` | Google Home / Nest スピーカーの登録有効化 |
+| `discoverAlexa` | - | `true` | Amazon Alexa / Echo スピーカーの登録有効化 |
+| `discoverHomepod` | - | `true` | Apple HomePod スピーカーの登録有効化 |
+| `discoverOnvif` | - | `true` | ONVIF カメラ・スピーカー (Tapo含む) の登録有効化 |
+| `discoverDlna` | - | `true` | DLNA / UPnP スピーカーの登録有効化 |
 | `volumeAsLightbulb` | - | `true` | 音量を照明タイル（明度スライダー）として直感的に操作可能にする |
 | `pollInterval` | - | `30` | DND 状態の同期インターバル（秒） |
 | `presets` | - | `[...]` | プリセット発話スイッチの配列 |

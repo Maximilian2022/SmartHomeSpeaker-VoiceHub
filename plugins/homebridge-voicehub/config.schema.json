@@ -5,19 +5,21 @@
   "headerDisplay": "### Smart Speaker Voice Hub 連携プラグイン\nGoogle Cast, Amazon Alexa, Apple HomePod, ONVIF/DLNA スピーカーの自動検出、Siri発話オートメーション、およびDND（おやすみ・会議モード）連動を提供します。",
   "schema": {
     "type": "object",
+    "required": [
+      "name",
+      "host"
+    ],
     "properties": {
       "name": {
         "title": "プラットフォーム表示名",
         "type": "string",
-        "default": "VoiceHubPlatform",
-        "required": true
+        "default": "VoiceHubPlatform"
       },
       "host": {
         "title": "VoiceHub サーバーURL",
         "type": "string",
         "default": "http://127.0.0.1:8080",
-        "placeholder": "例: http://127.0.0.1:8080 または http://192.168.1.100:8080",
-        "required": true
+        "placeholder": "例: http://127.0.0.1:8080 または http://192.168.1.100:8080"
       },
       "webhookToken": {
         "title": "Webhook 認証トークン (任意)",
@@ -32,7 +34,38 @@
       "autoDiscoverSpeakers": {
         "title": "登録済みスピーカーの自動検出とアクセサリ登録",
         "type": "boolean",
-        "default": true
+        "default": true,
+        "description": "VoiceHub に登録されているスピーカーを HomeKit アクセサリとして自動登録します"
+      },
+      "discoverGoogleHome": {
+        "title": "Google Home / Nest スピーカー",
+        "type": "boolean",
+        "default": true,
+        "description": "Google Cast / Nest Audio / Nest Hub 等を自動登録します"
+      },
+      "discoverAlexa": {
+        "title": "Amazon Alexa / Echo スピーカー",
+        "type": "boolean",
+        "default": true,
+        "description": "Echo / Echo Dot / Echo Show 等を自動登録します"
+      },
+      "discoverHomepod": {
+        "title": "Apple HomePod スピーカー",
+        "type": "boolean",
+        "default": true,
+        "description": "HomePod / HomePod mini 等を自動登録します"
+      },
+      "discoverOnvif": {
+        "title": "ONVIF カメラ・スピーカー (Tapo含む)",
+        "type": "boolean",
+        "default": true,
+        "description": "ネットワークカメラ・ONVIF/Tapo双方向音声対応機器を自動登録します"
+      },
+      "discoverDlna": {
+        "title": "DLNA / UPnP スピーカー",
+        "type": "boolean",
+        "default": true,
+        "description": "DLNA / UPnP MediaRenderer 対応スピーカーを自動登録します"
       },
       "volumeAsLightbulb": {
         "title": "音量制御を照明タイル（明度スライダー）として表示",
@@ -53,18 +86,20 @@
         "description": "Siri やオートメーションからワンタップ・一言で発話させたい定型文スイッチを登録します（押下後自動でOFFに戻るプッシュボタン仕様）",
         "items": {
           "type": "object",
+          "required": [
+            "name",
+            "text"
+          ],
           "properties": {
             "name": {
               "title": "スイッチ名 (Siri呼び出し名)",
               "type": "string",
-              "placeholder": "例: ご飯できたよ",
-              "required": true
+              "placeholder": "例: ご飯できたよ"
             },
             "text": {
               "title": "発話内容",
               "type": "string",
-              "placeholder": "例: ご飯ができました。リビングに集まってください。",
-              "required": true
+              "placeholder": "例: ご飯ができました。リビングに集まってください。"
             },
             "target": {
               "title": "対象スピーカー / グループ (省略時は全体)",
@@ -79,8 +114,7 @@
               "maximum": 100,
               "default": 70
             }
-          },
-          "required": ["name", "text"]
+          }
         }
       }
     }
@@ -98,18 +132,47 @@
     },
     {
       "type": "fieldset",
-      "title": "機能オプション",
+      "title": "スピーカー自動検出と登録カテゴリ",
+      "description": "VoiceHub に登録されているスピーカーの検出およびHomeKitアクセサリ登録を設定します。",
       "items": [
-        "enableDndSwitch",
         "autoDiscoverSpeakers",
+        {
+          "type": "fieldset",
+          "title": "検出対象カテゴリ",
+          "items": [
+            "discoverGoogleHome",
+            "discoverAlexa",
+            "discoverHomepod",
+            "discoverOnvif",
+            "discoverDlna"
+          ]
+        },
         "volumeAsLightbulb"
       ]
     },
     {
       "type": "fieldset",
-      "title": "プリセット発話スイッチ",
+      "title": "その他の機能オプション",
       "items": [
-        "presets"
+        "enableDndSwitch"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "📢 プリセット発話スイッチ",
+      "items": [
+        {
+          "key": "presets",
+          "type": "array",
+          "orderable": true,
+          "buttonText": "プリセットを追加",
+          "items": [
+            "presets[].name",
+            "presets[].text",
+            "presets[].target",
+            "presets[].volume"
+          ]
+        }
       ]
     }
   ]
