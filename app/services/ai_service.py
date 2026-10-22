@@ -316,7 +316,7 @@ class AiService:
                     seen_ids = set()
 
                     for m in models_raw:
-                        m_id = m.get("id", "").strip()
+                        m_id = (m.get("id") or "").strip()
                         if not m_id:
                             continue
 

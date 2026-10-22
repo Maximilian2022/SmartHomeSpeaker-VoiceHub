@@ -250,7 +250,7 @@ def check_admin_auth(request: Request):
     )
     if any(path == prefix or path.startswith(prefix) for prefix in INTEGRATION_PREFIXES):
         from app.services.settings_service import settings_manager
-        gui_wh_token = settings_manager.get().get("webhookToken", "").strip()
+        gui_wh_token = (settings_manager.get().get("webhookToken") or "").strip()
         env_wh_token = (settings.webhook_token or "").strip()
         valid_tokens = [t for t in (gui_wh_token, env_wh_token) if t]
 

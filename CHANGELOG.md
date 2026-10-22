@@ -3,6 +3,25 @@
 すべての重要な変更はこのファイルに記録されます。
 フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいています。
 
+## [1.0.9] - 2026-10-23
+
+### 追加・新機能 (Added)
+- **SSE (Server-Sent Events) による DND・ミュート状態のリアルタイム自動反映 (`GET /api/events`)**:
+  - Homebridge（Apple ホームアプリ / Siri）、外部 API、外部デバイス（Logitech G HUB / Stream Deck 等）からミュート状態が変更された際、Web UI をリロードすることなく 0.01秒でヘッダーの「🔇ミュート」⇄「🔊ミュート解除」ボタンの色・アイコン・テキスト、および DND バナーを即座に自動反映。
+  - プロキシ・ブラウザのタイムアウトを防ぐ 15 秒周期のキープアライブ（`: keepalive`）送信、ブラウザ標準の自動再接続、スマホスリープ復帰時やタブ切替時の `visibilitychange` 即時再同期、および従来の 15 秒ポーリングをフォールバックとして二重化。
+- **外部デバイス連携スクリプトの拡充 (PowerShell / VBScript / バッチ / シェルスクリプト)**:
+  - Logitech G HUB や Elgato Stream Deck からのワンタップ・ワンクリックで DND 即時ミュート・解除を可能にするスクリプト自動生成機能。
+  - 近年の Windows 10/11 で標準的な PowerShell（`.ps1`）スクリプト形式を新設。
+  - VBScript（`.vbs`）における `MSXML2.XMLHTTP` 優先化と WinHTTP 自動フォールバック、および管理者パスワード/Webhook トークンの自動埋め込みに対応。
+
+### 修正・堅牢化 (Fixed / Security)
+- **辞書未設定キー取得時の `NoneType.strip()` 例外耐性強化**:
+  - 初期状態・クリーン Docker 環境で `webhookToken` 等が未設定（`null`）の場合に `dict.get()` が `None` を返して `AttributeError: 'NoneType' object has no attribute 'strip'` を誘発していた問題を根本改修。`(dict.get(key) or "").strip()` パターンに統一。
+- **スマートホーム連携エンドポイント認証の最適化 (`check_admin_auth`)**:
+  - 管理者パスワード設定時でも、`INTEGRATION_PREFIXES`（`/api/events`, `/api/dnd/`, `/api/disaster/triggers`, `/api/devices`, `/api/status`）へのアクセス時に Webhook トークン（URL クエリ `?token=`、Bearer、`x-webhook-token` 等）による正当な外部連携アクセスを許可。
+
+---
+
 ## [1.0.8] - 2026-10-22
 
 ### 追加・新機能 (Added)

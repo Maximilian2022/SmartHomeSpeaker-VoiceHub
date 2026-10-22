@@ -11,9 +11,12 @@ class TestAuditFixes(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         self.original_settings = dict(settings_manager.get())
+        self.orig_admin_password = settings_manager.get().get("adminPassword", "")
+        settings_manager.set_admin_password("")
         ACTIVE_SESSIONS.clear()
 
     def tearDown(self):
+        settings_manager.set_admin_password(self.orig_admin_password)
         settings_manager.update(self.original_settings)
         ACTIVE_SESSIONS.clear()
 

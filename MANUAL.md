@@ -843,14 +843,15 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`POST /api/calendar/sync`**: Google カレンダー即時再同期
 - **`POST /api/calendar/summary`**: 朝の予定まとめ発声テスト
 
-### 13.8 おやすみ・会議モード (DND) API
+### 13.8 おやすみ・会議モード (DND) & リアルタイム同期 API
+- **`GET /api/events`**: リアルタイム通知 SSE (Server-Sent Events) ストリーム（DND 状態変化、ミュート/解除イベント等の即時プッシュ配信、キープアライブ内蔵）
 - **`GET /api/dnd/status`**: 現在の DND 状態・保留件数の取得
 - **`POST /api/dnd/toggle`**: DND 状態のトグル反転 (ON ⇄ OFF)
 - **`POST /api/dnd/mute`**: 即時ミュートの発動（パラメータ: `durationMinutes`, `until`, `reason`）
 - **`POST /api/dnd/unmute`**: 即時ミュートの解除・保留キュー消化
 - **`POST /api/dnd/quick`**: ワンタップ即時ミュートのオン/オフ（パラメータ: `minutes`, `reason`）
 - **`GET /api/dnd/script/preview`**: 外部連携用スクリプトの内容プレビュー（クエリ: `action`, `format`, `host`, `password`）
-- **`GET /api/dnd/script/download`**: 外部連携用スクリプト (.vbs / .bat / .sh) のダウンロード
+- **`GET /api/dnd/script/download`**: 外部連携用スクリプト (.ps1 / .vbs / .bat / .sh) のダウンロード
 - **`GET /api/dnd/history`**: DND 抑制記録ログの取得
 - **`DELETE /api/dnd/history`**: DND ログのクリア
 

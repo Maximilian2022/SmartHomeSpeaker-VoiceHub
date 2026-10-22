@@ -64,7 +64,7 @@ async def scan_onvif_dlna(req: Optional[ScanRequest] = None):
 @router.post("/api/dlna/probe")
 async def probe_dlna(payload: Dict[str, Any]):
     """指定された IP と ポートの DLNA / UPnP MediaRenderer を直接検証"""
-    ip = payload.get("ip", "").strip()
+    ip = (payload.get("ip") or "").strip()
     port = int(payload.get("port", 80))
     if not ip:
         raise HTTPException(status_code=400, detail="IP address is required")

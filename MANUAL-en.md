@@ -810,14 +810,15 @@ All API endpoints return JSON responses.
 - **`POST /api/calendar/sync`**: Force immediate resync with Google Calendar.
 - **`POST /api/calendar/summary`**: Trigger test run of morning agenda summary speech.
 
-### 13.8 Do Not Disturb (DND) API
+### 13.8 Do Not Disturb (DND) & Real-time Synchronization API
+- **`GET /api/events`**: Real-time Server-Sent Events (SSE) stream (instant push notification of DND status updates, mute/unmute events, built-in keepalive ping).
 - **`GET /api/dnd/status`**: Get current DND status and queued message count.
 - **`POST /api/dnd/toggle`**: Toggle DND state (Normal ⇄ Muted).
 - **`POST /api/dnd/mute`**: Activate immediate mute (Parameters: `durationMinutes`, `until`, `reason`).
 - **`POST /api/dnd/unmute`**: Deactivate mute and flush queued messages.
 - **`POST /api/dnd/quick`**: Toggle one-tap quick mute mode on or off (Parameters: `minutes`, `reason`).
 - **`GET /api/dnd/script/preview`**: Preview integration script content (Query: `action`, `format`, `host`, `password`).
-- **`GET /api/dnd/script/download`**: Download integration script (.vbs / .bat / .sh).
+- **`GET /api/dnd/script/download`**: Download integration script (.ps1 / .vbs / .bat / .sh).
 - **`GET /api/dnd/history`**: Retrieve DND suppression log records.
 - **`DELETE /api/dnd/history`**: Clear DND suppression history.
 

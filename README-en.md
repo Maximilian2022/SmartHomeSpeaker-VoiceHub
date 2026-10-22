@@ -25,8 +25,8 @@ Originally created as a personal home automation utility to deliver daily notifi
   Schedule broadcasts for future execution with intuitive syntax, such as `at: "+10m"` (remind in 10 minutes) or `at: "19:30"` (dinner announcement at 19:30). Configurable via Web UI, Webhook, MQTT, or MCP.
 - **Daily Schedules & Calendar Sync**:
   Automate daily recurring announcements (morning greetings, trash collection reminders) and sync with Google Calendar for proactive meeting alerts and morning agenda summaries.
-- **Do Not Disturb (DND) & Meeting Mode**:
-  Automatically suppress announcements during sleep hours or active online meetings (synced with calendar events), with support for quiet whispering, message queuing, or AI-generated catch-up summaries once meetings end.
+- **Do Not Disturb (DND) & Real-time Synchronization**:
+  Automatically suppress announcements during sleep hours or active online meetings (synced with calendar events), with support for quiet whispering, message queuing, or AI-generated catch-up summaries once meetings end. Features real-time Server-Sent Events (SSE) synchronization: muting or unmuting via Apple HomeKit or external scripts (Logitech G HUB / Stream Deck) instantly updates the Web UI button and banner without page reloads.
 - **Apple HomeKit & Siri Integration**:
   Includes a dedicated companion Homebridge plugin (`homebridge-voicehub`). Create custom announcement switches (e.g., "Dinner is ready") in the Apple Home app and trigger broadcasts hands-free using Siri.
 - **Smart Disaster & Weather Automation Triggers (Japan Only)**:

@@ -487,7 +487,7 @@ class RainAlarmService:
             "config": {
                 "enabled": conf.get("enabled", False),
                 "provider": conf.get("provider", "auto"),
-                "hasYahooAppId": bool(conf.get("yahooAppId", "").strip()),
+                "hasYahooAppId": bool((conf.get("yahooAppId") or "").strip()),
                 "latitude": conf.get("latitude", 35.6812),
                 "longitude": conf.get("longitude", 139.7671),
                 "locationName": conf.get("locationName", "東京都千代田区"),
