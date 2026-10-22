@@ -5,6 +5,25 @@
 
 ---
 
+## [1.0.6] - 2026-10-22 (Homebridge Plugin)
+
+### 追加・国際化 (Added / Internationalization)
+- **Homebridge プラグイン (homebridge-voicehub) の全面日英併記対応**:
+  - `config.schema.json`: Homebridge Config UI X 設定画面のタイトル、説明文、プレースホルダー、フィールドセットを完全な日英併記（English / 日本語）に更新。
+  - `README.md`: English および 日本語 の両セクションを網羅した包括的な日英併記構成にリニューアル。
+  - `src/`: プラットフォームおよび各アクセサリ（DNDスイッチ、プリセットスイッチ、個別スピーカー）のログ出力、およびデフォルトのアクセサリ名称・プリセット例を日英併記に対応。
+  - `public/`: WebUI 配信用のプラグイン解説書 Markdown を最新の日英併記版に同期。
+
+---
+
+## [1.0.5] - 2026-10-22 (Homebridge Plugin)
+
+### 追加・改善 (Added / Improved)
+- **スピーカー自動検出のカテゴリ別選択**: Google Home / Nest、Amazon Alexa / Echo、Apple HomePod、ONVIF / Tapo、DLNA / UPnP の各カテゴリごとにアクセサリ登録の有効・無効を個別にトグル可能に拡張。
+- **Homebridge Config UI X 検証警告の解消**: `presets` 配列アイテム要素定義の正規化および `required` 定義の標準化により、AJV スキーマコンパイル時の警告・不整合を根絶。
+
+---
+
 ## [1.0.4] - 2026-10-22
 
 ### セキュリティ (Security)

@@ -56,11 +56,11 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
     const token = this.config.webhookToken || undefined;
     this.client = new VoiceHubClient(host, token);
 
-    this.log.info(`[VoiceHubPlatform] 初期化完了 (Host: ${host}, Token: ${token ? '設定あり' : 'なし'})`);
+    this.log.info(`[VoiceHubPlatform] Initialized / 初期化完了 (Host: ${host}, Token: ${token ? 'Configured / 設定あり' : 'None / なし'})`);
 
     // Homebridge 起動完了イベントでデバイス検出を実行
     this.api.on('didFinishLaunching', () => {
-      this.log.info('[VoiceHubPlatform] didFinishLaunching: デバイス検出と同期を開始します');
+      this.log.info('[VoiceHubPlatform] didFinishLaunching: Starting device discovery & sync / デバイス検出と同期を開始します');
       this.discoverDevices();
       this.startPolling();
     });
@@ -70,7 +70,7 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
    * Homebridge キャッシュからの復元ハンドラ
    */
   configureAccessory(accessory: PlatformAccessory) {
-    this.log.info(`[VoiceHubPlatform] キャッシュアクセサリ復元: ${accessory.displayName}`);
+    this.log.info(`[VoiceHubPlatform] Restoring cached accessory / キャッシュアクセサリ復元: ${accessory.displayName}`);
     this.accessories.push(accessory);
   }
 
@@ -125,11 +125,11 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
 
       const existingAcc = this.accessories.find(a => a.UUID === dndUuid);
       if (existingAcc) {
-        this.log.info(`[VoiceHubPlatform] 既存の DND スイッチを再構成: ${existingAcc.displayName}`);
+        this.log.info(`[VoiceHubPlatform] Reconfiguring existing DND switch / 既存の DND スイッチを再構成: ${existingAcc.displayName}`);
         this.dndAccessoryInstance = new DndSwitchAccessory(this, existingAcc);
       } else {
-        this.log.info('[VoiceHubPlatform] 新規 DND スイッチを登録します');
-        const accessory = new this.api.platformAccessory('会議・おやすみモード (DND)', dndUuid);
+        this.log.info('[VoiceHubPlatform] Registering new DND switch / 新規 DND スイッチを登録します');
+        const accessory = new this.api.platformAccessory('DND Mode / 会議・おやすみモード', dndUuid);
         this.dndAccessoryInstance = new DndSwitchAccessory(this, accessory);
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         this.accessories.push(accessory);
@@ -140,8 +140,8 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
     const presets = Array.isArray(this.config.presets)
       ? this.config.presets
       : [
-          { name: 'ご飯できたよ', text: 'ご飯ができました。リビングに集まってください。', target: 'ALL', volume: 70 },
-          { name: 'お風呂が沸いたよ', text: 'お風呂が沸き上がりました。', target: 'ALL', volume: 60 }
+          { name: 'Dinner / ご飯できたよ', text: 'ご飯ができました。リビングに集まってください。 / Dinner is ready. Please come to the dining room.', target: 'ALL', volume: 70 },
+          { name: 'Bath / お風呂が沸いたよ', text: 'お風呂が沸き上がりました。 / The bath is ready.', target: 'ALL', volume: 60 }
         ];
 
     for (const preset of presets) {
@@ -151,10 +151,10 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
 
       const existingAcc = this.accessories.find(a => a.UUID === presetUuid);
       if (existingAcc) {
-        this.log.info(`[VoiceHubPlatform] プリセットスイッチ再構成: ${preset.name}`);
+        this.log.info(`[VoiceHubPlatform] Reconfiguring preset switch / プリセットスイッチ再構成: ${preset.name}`);
         new PresetSwitchAccessory(this, existingAcc, preset);
       } else {
-        this.log.info(`[VoiceHubPlatform] 新規プリセットスイッチを登録: ${preset.name}`);
+        this.log.info(`[VoiceHubPlatform] Registering new preset switch / 新規プリセットスイッチを登録: ${preset.name}`);
         const accessory = new this.api.platformAccessory(preset.name, presetUuid);
         new PresetSwitchAccessory(this, accessory, preset);
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
@@ -166,12 +166,12 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
     if (this.config.autoDiscoverSpeakers !== false) {
       try {
         const devices = await this.client.getDevices();
-        this.log.info(`[VoiceHubPlatform] VoiceHub から ${devices.length} 台のスピーカー情報を取得しました`);
+        this.log.info(`[VoiceHubPlatform] Discovered ${devices.length} speaker(s) from VoiceHub / VoiceHub から ${devices.length} 台のスピーカー情報を取得しました`);
 
         for (const device of devices) {
           // カテゴリ判定による登録フィルタリング
           if (!this.isDeviceCategoryEnabled(device)) {
-            this.log.info(`[VoiceHubPlatform] スピーカー登録スキップ (カテゴリ無効): ${device.name} (${device.type || 'unknown'})`);
+            this.log.info(`[VoiceHubPlatform] Speaker registration skipped (category disabled) / スピーカー登録スキップ (カテゴリ無効): ${device.name} (${device.type || 'unknown'})`);
             continue;
           }
 
@@ -181,10 +181,10 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
 
           const existingAcc = this.accessories.find(a => a.UUID === deviceUuid);
           if (existingAcc) {
-            this.log.debug(`[VoiceHubPlatform] 既存スピーカーを再構成: ${device.name}`);
+            this.log.debug(`[VoiceHubPlatform] Reconfiguring existing speaker / 既存スピーカーを再構成: ${device.name}`);
             new SpeakerAccessory(this, existingAcc, device);
           } else {
-            this.log.info(`[VoiceHubPlatform] 新規スピーカーを登録: ${device.name} (${device.type})`);
+            this.log.info(`[VoiceHubPlatform] Registering new speaker / 新規スピーカーを登録: ${device.name} (${device.type})`);
             const accessory = new this.api.platformAccessory(device.name, deviceUuid);
             new SpeakerAccessory(this, accessory, device);
             this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
@@ -192,14 +192,14 @@ export class VoiceHubPlatform implements DynamicPlatformPlugin {
           }
         }
       } catch (err: any) {
-        this.log.error(`[VoiceHubPlatform] スピーカー自動検出に失敗しました: ${err.message || err}`);
+        this.log.error(`[VoiceHubPlatform] Speaker auto-discovery failed / スピーカー自動検出に失敗しました: ${err.message || err}`);
       }
     }
 
     // 4. 不要になった古いキャッシュアクセサリの削除クリーンアップ (カテゴリ無効化時の即時解除含む)
     const obsoleteAccessories = this.accessories.filter(a => !activeUUIDs.has(a.UUID));
     if (obsoleteAccessories.length > 0) {
-      this.log.info(`[VoiceHubPlatform] 不要になった ${obsoleteAccessories.length} 個のアクセサリを登録解除します`);
+      this.log.info(`[VoiceHubPlatform] Unregistering ${obsoleteAccessories.length} obsolete accessory(ies) / 不要になった ${obsoleteAccessories.length} 個のアクセサリを登録解除します`);
       this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, obsoleteAccessories);
       for (const obs of obsoleteAccessories) {
         const idx = this.accessories.indexOf(obs);

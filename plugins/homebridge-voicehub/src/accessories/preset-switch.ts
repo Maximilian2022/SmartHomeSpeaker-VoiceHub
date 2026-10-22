@@ -48,12 +48,12 @@ export class PresetSwitchAccessory {
     }
 
     if (this.isProcessing) {
-      this.platform.log.warn(`[Preset:${this.preset.name}] 直前の発話処理中のためスキップします`);
+      this.platform.log.warn(`[Preset:${this.preset.name}] Busy: skipping request / 直前の発話処理中のためスキップします`);
       return;
     }
 
     this.isProcessing = true;
-    this.platform.log.info(`[Preset:${this.preset.name}] 発話開始: "${this.preset.text}" (対象: ${this.preset.target || 'ALL'})`);
+    this.platform.log.info(`[Preset:${this.preset.name}] Speech started / 発話開始: "${this.preset.text}" (Target / 対象: ${this.preset.target || 'ALL'})`);
 
     try {
       const res = await this.platform.client.say(
@@ -62,9 +62,9 @@ export class PresetSwitchAccessory {
         this.preset.volume,
       );
 
-      this.platform.log.info(`[Preset:${this.preset.name}] 発話成功: ${res.message || '送信完了'}`);
+      this.platform.log.info(`[Preset:${this.preset.name}] Speech successful / 発話成功: ${res.message || 'Completed / 送信完了'}`);
     } catch (err: any) {
-      this.platform.log.error(`[Preset:${this.preset.name}] 発話エラー: ${err.message || err}`);
+      this.platform.log.error(`[Preset:${this.preset.name}] Speech error / 発話エラー: ${err.message || err}`);
     } finally {
       // 1秒後にスイッチを自動で OFF に戻す（プッシュボタン動作）
       setTimeout(() => {

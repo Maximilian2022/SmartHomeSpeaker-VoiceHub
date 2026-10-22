@@ -2,7 +2,7 @@
   "pluginAlias": "VoiceHubPlatform",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "### Smart Speaker Voice Hub 連携プラグイン\nGoogle Cast, Amazon Alexa, Apple HomePod, ONVIF/DLNA スピーカーの自動検出、Siri発話オートメーション、およびDND（おやすみ・会議モード）連動を提供します。",
+  "headerDisplay": "### Smart Speaker Voice Hub Plugin / 連携プラグイン\nAuto-discovery for Google Cast, Amazon Alexa, Apple HomePod, ONVIF/DLNA speakers, Siri speech automations, and DND sync.\nGoogle Cast, Amazon Alexa, Apple HomePod, ONVIF/DLNA スピーカーの自動検出、Siri発話オートメーション、およびDND（おやすみ・会議モード）連動を提供します。",
   "schema": {
     "type": "object",
     "required": [
@@ -11,79 +11,79 @@
     ],
     "properties": {
       "name": {
-        "title": "プラットフォーム表示名",
+        "title": "Platform Name / プラットフォーム表示名",
         "type": "string",
         "default": "VoiceHubPlatform"
       },
       "host": {
-        "title": "VoiceHub サーバーURL",
+        "title": "VoiceHub Server URL / サーバーURL",
         "type": "string",
         "default": "http://127.0.0.1:8080",
-        "placeholder": "例: http://127.0.0.1:8080 または http://192.168.1.100:8080"
+        "placeholder": "e.g. http://127.0.0.1:8080 / 例: http://192.168.1.100:8080"
       },
       "webhookToken": {
-        "title": "Webhook 認証トークン (任意)",
+        "title": "Webhook Auth Token (Optional) / 認証トークン (任意)",
         "type": "string",
-        "description": "VoiceHub のセキュリティ設定でトークン認証を有効化している場合に入力してください"
+        "description": "Enter token if authentication is enabled in VoiceHub / VoiceHub のセキュリティ設定でトークン認証を有効化している場合に入力してください"
       },
       "enableDndSwitch": {
-        "title": "DND（おやすみ・会議モード）スイッチを有効化",
+        "title": "Enable DND (Do Not Disturb) Switch / DND（おやすみ・会議モード）スイッチを有効化",
         "type": "boolean",
         "default": true
       },
       "autoDiscoverSpeakers": {
-        "title": "登録済みスピーカーの自動検出とアクセサリ登録",
+        "title": "Auto-Discover Registered Speakers / 登録済みスピーカーの自動検出とアクセサリ登録",
         "type": "boolean",
         "default": true,
-        "description": "VoiceHub に登録されているスピーカーを HomeKit アクセサリとして自動登録します"
+        "description": "Automatically discover and register VoiceHub speakers as HomeKit accessories / VoiceHub に登録されているスピーカーを HomeKit アクセサリとして自動登録します"
       },
       "discoverGoogleHome": {
-        "title": "Google Home / Nest スピーカー",
+        "title": "Google Home / Nest Speakers / Google Home・Nest スピーカー",
         "type": "boolean",
         "default": true,
-        "description": "Google Cast / Nest Audio / Nest Hub 等を自動登録します"
+        "description": "Auto-register Google Cast, Nest Audio, Nest Hub, etc. / Google Cast / Nest Audio / Nest Hub 等を自動登録します"
       },
       "discoverAlexa": {
-        "title": "Amazon Alexa / Echo スピーカー",
+        "title": "Amazon Alexa / Echo Speakers / Amazon Alexa・Echo スピーカー",
         "type": "boolean",
         "default": true,
-        "description": "Echo / Echo Dot / Echo Show 等を自動登録します"
+        "description": "Auto-register Echo, Echo Dot, Echo Show, etc. / Echo / Echo Dot / Echo Show 等を自動登録します"
       },
       "discoverHomepod": {
-        "title": "Apple HomePod スピーカー",
+        "title": "Apple HomePod Speakers / Apple HomePod スピーカー",
         "type": "boolean",
         "default": true,
-        "description": "HomePod / HomePod mini 等を自動登録します"
+        "description": "Auto-register HomePod, HomePod mini, etc. / HomePod / HomePod mini 等を自動登録します"
       },
       "discoverOnvif": {
-        "title": "ONVIF カメラ・スピーカー (Tapo含む)",
+        "title": "ONVIF Cameras & Speakers (incl. Tapo) / ONVIF カメラ・スピーカー (Tapo含む)",
         "type": "boolean",
         "default": true,
-        "description": "ネットワークカメラ・ONVIF/Tapo双方向音声対応機器を自動登録します"
+        "description": "Auto-register network cameras & two-way audio devices / ネットワークカメラ・ONVIF/Tapo双方向音声対応機器を自動登録します"
       },
       "discoverDlna": {
-        "title": "DLNA / UPnP スピーカー",
+        "title": "DLNA / UPnP Speakers / DLNA・UPnP スピーカー",
         "type": "boolean",
         "default": true,
-        "description": "DLNA / UPnP MediaRenderer 対応スピーカーを自動登録します"
+        "description": "Auto-register DLNA / UPnP MediaRenderer devices / DLNA / UPnP MediaRenderer 対応スピーカーを自動登録します"
       },
       "volumeAsLightbulb": {
-        "title": "音量制御を照明タイル（明度スライダー）として表示",
+        "title": "Display Volume Control as Lightbulb (Brightness Slider) / 音量制御を照明タイル（明度スライダー）として表示",
         "type": "boolean",
         "default": true,
-        "description": "有効にするとホームアプリ上でスライダーから直感的に音量パーセントを操作できるようになります（Siri から『○○の音量を60%にして』等）"
+        "description": "Enables percentage volume sliders in Home app and Siri volume commands (e.g. 'Set volume to 60%') / 有効にするとホームアプリ上でスライダーから直感的に音量パーセントを操作できるようになります（Siri から『○○の音量を60%にして』等）"
       },
       "pollInterval": {
-        "title": "状態同期ポーリング間隔 (秒)",
+        "title": "Status Sync Polling Interval (seconds) / 状態同期ポーリング間隔 (秒)",
         "type": "integer",
         "default": 30,
         "minimum": 5,
         "maximum": 300
       },
       "presets": {
-        "title": "📢 プリセット発話スイッチ一覧",
+        "title": "📢 Preset Speech Switches / プリセット発話スイッチ一覧",
         "type": "array",
-        "description": "Siri やオートメーションからワンタップ・一言で発話させたい定型文スイッチを登録します（押下後自動でOFFに戻るプッシュボタン仕様）",
+        "description": "Preset phrase switches for one-tap or Siri voice triggers (stateless push-button: auto resets to OFF) / Siri やオートメーションからワンタップ・一言で発話させたい定型文スイッチを登録します（押下後自動でOFFに戻るプッシュボタン仕様）",
         "items": {
           "type": "object",
           "required": [
@@ -92,23 +92,23 @@
           ],
           "properties": {
             "name": {
-              "title": "スイッチ名 (Siri呼び出し名)",
+              "title": "Switch Name (Siri Trigger Phrase) / スイッチ名 (Siri呼び出し名)",
               "type": "string",
-              "placeholder": "例: ご飯できたよ"
+              "placeholder": "e.g. Dinner Time / 例: ご飯できたよ"
             },
             "text": {
-              "title": "発話内容",
+              "title": "Speech Text / 発話内容",
               "type": "string",
-              "placeholder": "例: ご飯ができました。リビングに集まってください。"
+              "placeholder": "e.g. Dinner is ready! / 例: ご飯ができました。リビングに集まってください。"
             },
             "target": {
-              "title": "対象スピーカー / グループ (省略時は全体)",
+              "title": "Target Speaker or Group (Default: ALL) / 対象スピーカー・グループ (省略時は全体)",
               "type": "string",
               "default": "ALL",
-              "placeholder": "ALL, 部屋, リビング など"
+              "placeholder": "ALL, Living Room, 部屋, リビング など"
             },
             "volume": {
-              "title": "発話音量 (%)",
+              "title": "Speech Volume (%) / 発話音量 (%)",
               "type": "integer",
               "minimum": 0,
               "maximum": 100,
@@ -123,7 +123,7 @@
     "name",
     {
       "type": "fieldset",
-      "title": "接続設定",
+      "title": "Connection Settings / 接続設定",
       "items": [
         "host",
         "webhookToken",
@@ -132,13 +132,13 @@
     },
     {
       "type": "fieldset",
-      "title": "スピーカー自動検出と登録カテゴリ",
-      "description": "VoiceHub に登録されているスピーカーの検出およびHomeKitアクセサリ登録を設定します。",
+      "title": "Speaker Discovery & Categories / スピーカー自動検出と登録カテゴリ",
+      "description": "Configure auto-discovery and HomeKit accessory registration for VoiceHub speakers / VoiceHub に登録されているスピーカーの検出およびHomeKitアクセサリ登録を設定します。",
       "items": [
         "autoDiscoverSpeakers",
         {
           "type": "fieldset",
-          "title": "検出対象カテゴリ",
+          "title": "Target Categories / 検出対象カテゴリ",
           "items": [
             "discoverGoogleHome",
             "discoverAlexa",
@@ -152,20 +152,20 @@
     },
     {
       "type": "fieldset",
-      "title": "その他の機能オプション",
+      "title": "Other Feature Options / その他の機能オプション",
       "items": [
         "enableDndSwitch"
       ]
     },
     {
       "type": "fieldset",
-      "title": "📢 プリセット発話スイッチ",
+      "title": "📢 Preset Speech Switches / プリセット発話スイッチ",
       "items": [
         {
           "key": "presets",
           "type": "array",
           "orderable": true,
-          "buttonText": "プリセットを追加",
+          "buttonText": "Add Preset / プリセットを追加",
           "items": [
             "presets[].name",
             "presets[].text",

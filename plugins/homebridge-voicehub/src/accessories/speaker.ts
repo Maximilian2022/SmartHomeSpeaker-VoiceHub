@@ -58,7 +58,7 @@ export class SpeakerAccessory {
   // --- Lightbulb 方式 (音量スライダー) ---
   async setOn(value: CharacteristicValue) {
     this.isMuted = !Boolean(value);
-    this.platform.log.debug(`[Speaker:${this.device.name}] 電源/ミュート切り替え: ${!this.isMuted}`);
+    this.platform.log.debug(`[Speaker:${this.device.name}] Power/Mute toggle / 電源/ミュート切り替え: ${!this.isMuted}`);
   }
 
   async getOn(): Promise<CharacteristicValue> {
@@ -68,9 +68,9 @@ export class SpeakerAccessory {
   async setBrightness(value: CharacteristicValue) {
     const vol = Number(value);
     this.currentVolume = Math.min(100, Math.max(0, vol));
-    this.platform.log.info(`[Speaker:${this.device.name}] 音量変更: ${this.currentVolume}%`);
+    this.platform.log.info(`[Speaker:${this.device.name}] Volume changed / 音量変更: ${this.currentVolume}%`);
     this.platform.client.setDeviceVolume(this.device.id, this.currentVolume).catch((err: any) => {
-      this.platform.log.warn(`[Speaker:${this.device.name}] 音量更新失敗: ${err.message || err}`);
+      this.platform.log.warn(`[Speaker:${this.device.name}] Volume update failed / 音量更新失敗: ${err.message || err}`);
     });
   }
 
@@ -81,7 +81,7 @@ export class SpeakerAccessory {
   // --- Speaker 方式 ---
   async setMute(value: CharacteristicValue) {
     this.isMuted = Boolean(value);
-    this.platform.log.debug(`[Speaker:${this.device.name}] ミュート: ${this.isMuted}`);
+    this.platform.log.debug(`[Speaker:${this.device.name}] Mute / ミュート: ${this.isMuted}`);
   }
 
   async getMute(): Promise<CharacteristicValue> {
@@ -90,9 +90,9 @@ export class SpeakerAccessory {
 
   async setVolume(value: CharacteristicValue) {
     this.currentVolume = Number(value);
-    this.platform.log.info(`[Speaker:${this.device.name}] 音量変更: ${this.currentVolume}%`);
+    this.platform.log.info(`[Speaker:${this.device.name}] Volume changed / 音量変更: ${this.currentVolume}%`);
     this.platform.client.setDeviceVolume(this.device.id, this.currentVolume).catch((err: any) => {
-      this.platform.log.warn(`[Speaker:${this.device.name}] 音量更新失敗: ${err.message || err}`);
+      this.platform.log.warn(`[Speaker:${this.device.name}] Volume update failed / 音量更新失敗: ${err.message || err}`);
     });
   }
 

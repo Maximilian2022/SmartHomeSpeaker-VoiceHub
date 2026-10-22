@@ -22,7 +22,7 @@ export class DndSwitchAccessory {
     this.service = this.accessory.getService(this.platform.Service.Switch)
       || this.accessory.addService(this.platform.Service.Switch);
 
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.displayName || '会議・おやすみモード (DND)');
+    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.displayName || 'DND Mode / 会議・おやすみモード');
 
     // ハンドラ登録
     this.service.getCharacteristic(this.platform.Characteristic.On)
@@ -35,13 +35,13 @@ export class DndSwitchAccessory {
 
   async setOn(value: CharacteristicValue) {
     const targetState = Boolean(value);
-    this.platform.log.info(`[DND] HomeKit からの操作: ${targetState ? 'ON (ミュート開始)' : 'OFF (ミュート解除)'}`);
+    this.platform.log.info(`[DND] HomeKit trigger / HomeKit 操作: ${targetState ? 'ON (Mute started / ミュート開始)' : 'OFF (Mute released / ミュート解除)'}`);
 
     try {
-      await this.platform.client.setDnd(targetState, 'HomeKit 操作');
+      await this.platform.client.setDnd(targetState, 'HomeKit Operation / HomeKit 操作');
       this.isDndActive = targetState;
     } catch (err: any) {
-      this.platform.log.error(`[DND] 操作失敗: ${err.message || err}`);
+      this.platform.log.error(`[DND] Operation failed / 操作失敗: ${err.message || err}`);
       throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
     }
   }
@@ -52,7 +52,7 @@ export class DndSwitchAccessory {
       this.isDndActive = status.isActive;
       return this.isDndActive;
     } catch (err: any) {
-      this.platform.log.warn(`[DND] 状態取得失敗: ${err.message || err}`);
+      this.platform.log.warn(`[DND] Failed to get status / 状態取得失敗: ${err.message || err}`);
       return this.isDndActive;
     }
   }
@@ -64,7 +64,7 @@ export class DndSwitchAccessory {
     if (this.isDndActive !== isActive) {
       this.isDndActive = isActive;
       this.service.updateCharacteristic(this.platform.Characteristic.On, isActive);
-      this.platform.log.info(`[DND] 外部変更を検知し状態を同期しました: ${isActive ? 'ON' : 'OFF'}`);
+      this.platform.log.info(`[DND] External state change synced / 外部変更を検知し状態を同期しました: ${isActive ? 'ON' : 'OFF'}`);
     }
   }
 
