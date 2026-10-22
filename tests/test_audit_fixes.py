@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 from app.main import app
@@ -165,6 +166,74 @@ class TestAuditFixes(unittest.TestCase):
         # 古いトークンは失効していること
         self.assertNotIn(old_token, ACTIVE_SESSIONS)
         self.assertEqual(settings_manager.get_admin_password(), "new-password-2")
+
+    def test_dynamic_openai_models(self):
+        """OpenAI モデル一覧の動的取得・不要モデル除外・ソート・フォールバックの検証"""
+        from app.services.ai_service import ai_service, DEFAULT_OPENAI_MODELS
+        from unittest.mock import patch, MagicMock
+
+        mock_openai_data = {
+            "object": "list",
+            "data": [
+                {"id": "gpt-4o-mini", "object": "model"},
+                {"id": "gpt-4o", "object": "model"},
+                {"id": "gpt-4o-2024-08-06", "object": "model"}, # スナップショット版 -> 除外
+                {"id": "o3-mini", "object": "model"},
+                {"id": "o1", "object": "model"},
+                {"id": "whisper-1", "object": "model"}, # 音声 -> 除外
+                {"id": "dall-e-3", "object": "model"}, # 画像 -> 除外
+                {"id": "text-embedding-3-small", "object": "model"}, # 埋め込み -> 除外
+                {"id": "babbage-002", "object": "model"}, # レガシー -> 除外
+                {"id": "gpt-4o-realtime-preview", "object": "model"}, # リアルタイム -> 除外
+                {"id": "ft:gpt-4o:my-org:custom", "object": "model"} # 微調整 -> 除外
+            ]
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = mock_openai_data
+
+        with patch("httpx.AsyncClient.get", return_value=mock_resp):
+            # 1. 正常取得と不要モデル除外のテスト
+            models = asyncio.run(ai_service.get_openai_models("sk-test-key", force_refresh=True))
+            model_ids = [m["id"] for m in models]
+
+            self.assertIn("gpt-4o-mini", model_ids)
+            self.assertIn("gpt-4o", model_ids)
+            self.assertIn("o3-mini", model_ids)
+            self.assertIn("o1", model_ids)
+
+            # 除外対象が含まれていないこと
+            self.assertNotIn("gpt-4o-2024-08-06", model_ids)
+            self.assertNotIn("whisper-1", model_ids)
+            self.assertNotIn("dall-e-3", model_ids)
+            self.assertNotIn("text-embedding-3-small", model_ids)
+            self.assertNotIn("babbage-002", model_ids)
+            self.assertNotIn("gpt-4o-realtime-preview", model_ids)
+
+            # 推奨ソート順: gpt-4o-mini が先頭
+            self.assertEqual(model_ids[0], "gpt-4o-mini")
+
+            # 2. キャッシュの検証 (API を呼ばずに返却)
+            cached_models = asyncio.run(ai_service.get_openai_models("sk-test-key", force_refresh=False))
+            self.assertEqual(models, cached_models)
+
+        # 3. エラー時のフォールバック検証
+        mock_err_resp = MagicMock()
+        mock_err_resp.status_code = 401
+        mock_err_resp.text = "Invalid API key"
+
+        with patch("httpx.AsyncClient.get", return_value=mock_err_resp):
+            fallback_models = asyncio.run(ai_service.get_openai_models("sk-invalid-key", force_refresh=True))
+            self.assertEqual(fallback_models, DEFAULT_OPENAI_MODELS)
+
+        # 4. API エンドポイント /api/ai/models?provider=openai の検証
+        res = self.client.get("/api/ai/models?provider=openai")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["provider"], "openai")
+        self.assertIn("models", data)
 
 if __name__ == "__main__":
     unittest.main()

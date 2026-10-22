@@ -129,7 +129,7 @@ When exposing an external domain (e.g., `voicehub.example.com`) using Cloudflare
     - Authenticated session cookie holders are automatically exempt from Webhook tokens when issuing speech commands (`/api/say`) via the GUI.
   - **When Admin Password is NOT Configured**:
     - For safety, external access to the Web GUI and management APIs remains strictly blocked with **`403 Forbidden`**.
-    - Only protected webhook endpoints (**`/api/say`**, **`/api/webhook`**, and **`/mcp/sse`, `/mcp/messages`**) are allowed with bearer token authentication.
+    - Only protected webhook endpoints (**`/api/say`**, **`/api/webhook`**, and **`/mcp/*`**) are allowed with bearer token authentication (dedicated health check endpoints **`/health`** and **`/api/health`** bypass authentication and return 200 OK).
 
 ### 2.2 Webhook Token Authentication (WEBHOOK_TOKEN)
 
@@ -172,6 +172,23 @@ In certain domestic IPv6 environments (such as IPoE / NGN networks), external IP
 * **Deduplication Engine (`deduplication`)**:
   - Prevents rapid repeated announcements triggered by motion sensors or camera bursts.
   - If identical text is sent from the same source within the cooldown window (`cooldownSeconds`, default 30s), playback is safely skipped and `200 OK` (`deduplicated: true`) is returned.
+
+### 2.6 Dedicated Health Check Endpoints (/health & /api/health)
+
+To ensure that Docker's `HEALTHCHECK` and external monitoring probes (Uptime Kuma, Beszel, etc.) operate continuously without failing when an admin password is set on the Web GUI, lightweight dedicated health check endpoints are provided:
+
+* **Endpoints**: `GET /health` and `GET /api/health`
+* **Authentication Behavior**: **Always exempt from authentication (bypassed)**, regardless of whether `ADMIN_PASSWORD` is configured.
+* **Response**: Returns HTTP 200 OK with `{"status": "ok", "app": "SmartHomeSpeaker-VoiceHub", "uptime": <uptime_seconds>}`.
+* **Docker Compose Example**:
+  ```yaml
+  healthcheck:
+    test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 15s
+  ```
 
 ---
 
@@ -501,16 +518,25 @@ Real-time disaster and severe weather alert states can be used as native "trigge
 
 Easily switch between AI providers by entering an API key or custom endpoint in settings:
 
-* **Google Gemini API**: Current models including `gemini-2.5-flash` and `gemini-2.5-pro`
-* **OpenAI API**: `gpt-4o`, `gpt-4o-mini`, `o3-mini`, etc.
+* **Google Gemini API**: Official models including `gemini-2.5-flash` and `gemini-2.5-pro`
+* **OpenAI API**: Official models including `gpt-4o-mini`, `gpt-4o`, `o3-mini`, `o1`, and `gpt-4-turbo`
 * **Local LLM (Ollama)**: Local instances (e.g., `http://localhost:11434` running Llama 3 or Qwen)
 * **DeepSeek API**: `deepseek-chat` and compatible models
 
-### 7.2 Model Auto-Discovery & Resilient Fallback (503 / 429 Resilience)
+### 7.2 Dynamic Model Discovery, Strict Filtering & Self-Healing
 
-* **Automatic Model Normalization**: Automatically migrates deprecated models found in configuration files to current recommendations (`gemini-2.5-flash`).
-* **Dynamic Discovery**: The "Refresh Models" button queries provider APIs for the latest available models.
-* **503 / 429 Failover**: If external AI APIs encounter transient rate limits or outages, Voice Hub gracefully falls back to rule-based templated summaries to keep announcements running.
+* **Dynamic Model Fetching from Official APIs (`GET /api/ai/models`)**:
+  - Entering an API key in settings or clicking the "🔄 Refresh Models" button queries the respective provider's official model discovery API.
+  - **Gemini**: Dynamically extracts models that support `generateContent` (text generation).
+  - **OpenAI**: Strictly extracts models in the `gpt-` and reasoning `o1` / `o3` families. Non-text models (Whisper / Audio / Realtime, DALL-E image generation, text embeddings, moderation, fine-tuned `ft:`) and legacy dated snapshots (e.g., `gpt-4o-2024-08-06`, `gpt-4-0613`) are completely filtered out.
+* **Recommended Model Priority Sorting & Descriptive Labels**:
+  - Cost-efficient and fast flagship models (OpenAI: `gpt-4o-mini` [Fast / Recommended], `gpt-4o` [High Quality / Recommended], `o3-mini` [Reasoning / Recommended] / Gemini: `gemini-2.5-flash` [Fast / Recommended], `gemini-2.5-pro` [High Quality / Recommended]) are automatically positioned at the top with clear labels.
+* **1-Hour In-Memory Cache & Safe Fallback**:
+  - Model lists are cached in memory for 1 hour to prevent redundant external API requests (bypassed with `forceRefresh=true` when clicking the refresh button).
+  - In the event of network failures or missing API keys, Voice Hub safely falls back to a curated default list of current models.
+* **Self-Healing Model Correction & 503 / 429 Resilience**:
+  - If a configuration contains an outdated or non-existent model name, Voice Hub automatically corrects it to the current recommended flagship (`gpt-4o-mini` / `gemini-2.5-flash`) at invocation time.
+  - If external AI APIs experience transient outages or rate limits (503 / 429), Voice Hub seamlessly generates rule-based template summaries to prevent announcement failures.
 
 ### 7.3 Morning Agenda Summary & Context Injection
 
@@ -630,7 +656,8 @@ Features a built-in FastAPI-native **MCP (Model Context Protocol) Server**, allo
 - **Endpoints**:
   - `GET /mcp/sse`: Client connection SSE stream.
   - `POST /mcp/messages`: JSON-RPC 2.0 message dispatch endpoint.
-- **Security**:
+- **Comprehensive Security Protection**:
+  - All endpoints under `/mcp` (`/mcp/*`) are comprehensively protected and accessible under `ADMIN_PASSWORD` environments with proper bearer token verification.
   - Requires `Authorization: Bearer <WEBHOOK_TOKEN>` header when `WEBHOOK_TOKEN` is configured.
   - Safely accessible via Cloudflare Tunnel for remote AI client interactions.
 

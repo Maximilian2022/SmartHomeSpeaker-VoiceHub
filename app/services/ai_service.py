@@ -1,6 +1,5 @@
 import os
 import time
-import hashlib
 import re
 from typing import List, Dict, Any, Optional
 import httpx
@@ -16,12 +15,25 @@ DEFAULT_GEMINI_MODELS = [
     {"id": "gemini-2.5-flash-lite", "name": "gemini-2.5-flash-lite (超軽量・即答)"}
 ]
 
+DEFAULT_OPENAI_MODELS = [
+    {"id": "gpt-4o-mini", "name": "gpt-4o-mini (高速・経済的・推奨)"},
+    {"id": "gpt-4o", "name": "gpt-4o (最高性能フラグシップ)"},
+    {"id": "o3-mini", "name": "o3-mini (高速推論特化)"},
+    {"id": "o1", "name": "o1 (高度推論モデル)"},
+    {"id": "gpt-4-turbo", "name": "gpt-4-turbo (GPT-4高性能版)"}
+]
+
 class AiService:
     def __init__(self):
         self._gemini_models_cache: Dict[str, Any] = {
-            "key_hash": "",
+            "api_key": "",
             "fetched_at": 0.0,
             "models": DEFAULT_GEMINI_MODELS
+        }
+        self._openai_models_cache: Dict[str, Any] = {
+            "api_key": "",
+            "fetched_at": 0.0,
+            "models": DEFAULT_OPENAI_MODELS
         }
 
     def mask_key(self, key: str) -> str:
@@ -195,15 +207,14 @@ class AiService:
         log.warning("[AiService] カレンダーAI要約が失敗したためフォールバックします")
         return ""
 
-    async def get_gemini_models(self, api_key: str) -> List[Dict[str, str]]:
+    async def get_gemini_models(self, api_key: str, force_refresh: bool = False) -> List[Dict[str, str]]:
         """
         Google Generative AI API から利用可能なモデル一覧を動的に取得。
         埋め込み、画像、実験用などの不要モデルを除外し、チャット・要約用モデルのみを厳選。
         キャッシュ (TTL: 1時間) を利用し、失敗時は安全なデフォルトリストにフォールバック。
         """
         now = time.time()
-        key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest() if api_key else ""
-        if self._gemini_models_cache.get("key_hash") == key_hash and (now - self._gemini_models_cache.get("fetched_at", 0)) < 3600:
+        if not force_refresh and self._gemini_models_cache.get("api_key") == api_key and (now - self._gemini_models_cache.get("fetched_at", 0)) < 3600:
             return self._gemini_models_cache.get("models", DEFAULT_GEMINI_MODELS)
 
         if not api_key:
@@ -265,7 +276,7 @@ class AiService:
                         filtered_models.sort(key=model_sort_key)
 
                         self._gemini_models_cache = {
-                            "key_hash": key_hash,
+                            "api_key": api_key,
                             "fetched_at": now,
                             "models": filtered_models
                         }
@@ -277,6 +288,109 @@ class AiService:
             log.warning(f"[AiService] Geminiモデル動的取得例外: {e}")
 
         return DEFAULT_GEMINI_MODELS
+
+    async def get_openai_models(self, api_key: str, force_refresh: bool = False) -> List[Dict[str, str]]:
+        """
+        OpenAI API (GET https://api.openai.com/v1/models) から利用可能なモデル一覧を動的に取得。
+        音声、画像、埋め込み、実験用・スナップショットを除外し、チャット・要約用主力モデルを厳選。
+        キャッシュ (TTL: 1時間) を利用し、失敗時は安全なデフォルトリストにフォールバック。
+        """
+        now = time.time()
+        if not force_refresh and self._openai_models_cache.get("api_key") == api_key and (now - self._openai_models_cache.get("fetched_at", 0)) < 3600:
+            return self._openai_models_cache.get("models", DEFAULT_OPENAI_MODELS)
+
+        if not api_key:
+            return DEFAULT_OPENAI_MODELS
+
+        try:
+            url = "https://api.openai.com/v1/models"
+            headers = {
+                "Authorization": f"Bearer {api_key.strip()}"
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(url, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    models_raw = data.get("data", [])
+                    filtered_models = []
+                    seen_ids = set()
+
+                    for m in models_raw:
+                        m_id = m.get("id", "").strip()
+                        if not m_id:
+                            continue
+
+                        # チャット・要約向けモデル（gpt-* または o1*, o3*, o4* 等）のみ対象
+                        is_chat_model = m_id.startswith("gpt-") or bool(re.match(r"^o[1-9]", m_id))
+                        if not is_chat_model:
+                            continue
+
+                        m_lower = m_id.lower()
+                        # 不要モデルの除外 (音声・画像・リアルタイム・検索・微調整・旧式・内部用)
+                        if any(bad in m_lower for bad in [
+                            "realtime", "audio", "search", "transcribe", "tts", "whisper",
+                            "embedding", "dall-e", "babbage", "davinci", "moderation",
+                            "instruct", "chatgpt-", "ft:"
+                        ]):
+                            continue
+
+                        # 日付スナップショット版（例: gpt-4o-2024-08-06, gpt-4-0613, gpt-3.5-turbo-0125 等）を除外してメインエイリアスに絞る
+                        if re.search(r"-\d{4}-\d{2}-\d{2}$", m_id) or re.search(r"-\d{4}$", m_id):
+                            continue
+
+                        if m_id in seen_ids:
+                            continue
+                        seen_ids.add(m_id)
+
+                        # ラベル付け
+                        label = m_id
+                        if m_id == "gpt-4o-mini":
+                            label = f"{m_id} (高速・経済的・推奨)"
+                        elif m_id == "gpt-4o":
+                            label = f"{m_id} (最高性能フラグシップ)"
+                        elif m_id == "o3-mini":
+                            label = f"{m_id} (高速推論特化)"
+                        elif m_id == "o1":
+                            label = f"{m_id} (高度推論モデル)"
+                        elif m_id == "o1-mini":
+                            label = f"{m_id} (軽量推論モデル)"
+                        elif m_id == "gpt-4-turbo":
+                            label = f"{m_id} (GPT-4高性能版)"
+                        elif m_id == "gpt-3.5-turbo":
+                            label = f"{m_id} (旧世代標準)"
+
+                        filtered_models.append({"id": m_id, "name": label})
+
+                    if filtered_models:
+                        # 並び順を整理: gpt-4o-mini を先頭、次に gpt-4o、o3-mini、o1、その他
+                        def openai_sort_key(item):
+                            mid = item["id"].lower()
+                            if mid == "gpt-4o-mini": return 0
+                            if mid == "gpt-4o": return 1
+                            if mid == "o3-mini": return 2
+                            if mid == "o1": return 3
+                            if mid == "o1-mini": return 4
+                            if "gpt-4-turbo" in mid: return 5
+                            if "gpt-4" in mid: return 6
+                            if "o" in mid: return 7
+                            if "gpt-3.5" in mid: return 20
+                            return 10
+
+                        filtered_models.sort(key=openai_sort_key)
+
+                        self._openai_models_cache = {
+                            "api_key": api_key,
+                            "fetched_at": now,
+                            "models": filtered_models
+                        }
+                        log.info(f"[AiService] OpenAI利用可能モデルを動的取得しました: {[m['id'] for m in filtered_models]}")
+                        return filtered_models
+                else:
+                    log.warning(f"[AiService] OpenAIモデル動的取得エラー (HTTP {res.status_code}): {res.text[:150]}")
+        except Exception as e:
+            log.warning(f"[AiService] OpenAIモデル動的取得例外: {e}")
+
+        return DEFAULT_OPENAI_MODELS
 
     async def _call_gemini(self, api_key: str, model: str, prompt: str) -> str:
         text, _ = await self._call_gemini_with_err(api_key, model, prompt)
@@ -334,7 +448,13 @@ class AiService:
         return text
 
     async def _call_openai_with_err(self, api_key: str, model: str, prompt: str) -> tuple[str, Optional[str]]:
-        valid_model = model or "gpt-4o-mini"
+        available_models = await self.get_openai_models(api_key)
+        available_ids = [m["id"] for m in available_models]
+        valid_model = model.strip() if model else ""
+        if not valid_model or valid_model not in available_ids:
+            valid_model = available_ids[0] if available_ids else "gpt-4o-mini"
+            if model and model != valid_model:
+                log.info(f"[AiService] OpenAIモデル '{model}' を利用可能推奨モデル '{valid_model}' に自動補正しました")
         try:
             is_reasoning_model = any(valid_model.startswith(prefix) for prefix in ["o1", "o3", "o4"])
             payload: Dict[str, Any] = {

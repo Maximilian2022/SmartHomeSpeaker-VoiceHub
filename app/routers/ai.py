@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter
 from pydantic import BaseModel
-from app.services.ai_service import ai_service
+from app.services.ai_service import ai_service, DEFAULT_GEMINI_MODELS, DEFAULT_OPENAI_MODELS
 from app.services.settings_service import settings_manager
 
 router = APIRouter()
@@ -15,34 +15,27 @@ class AiTestRequest(BaseModel):
     apiKey: Optional[str] = ""
     model: Optional[str] = ""
 
-GEMINI_MODELS = [
-    {"id": "gemini-2.5-flash", "name": "gemini-2.5-flash (最新主力・高速・推奨)"},
-    {"id": "gemini-2.5-pro", "name": "gemini-2.5-pro (最高峰推論・高精度)"},
-    {"id": "gemini-2.5-flash-lite", "name": "gemini-2.5-flash-lite (超軽量・即答)"}
-]
-
-
-OPENAI_MODELS = [
-    {"id": "gpt-4o-mini", "name": "gpt-4o-mini (高速・経済的・推奨)"},
-    {"id": "gpt-4o", "name": "gpt-4o (最高性能フラグシップ)"},
-    {"id": "o3-mini", "name": "o3-mini (高速推論特化)"},
-    {"id": "o1", "name": "o1 (高度推論モデル)"}
-]
+GEMINI_MODELS = DEFAULT_GEMINI_MODELS
+OPENAI_MODELS = DEFAULT_OPENAI_MODELS
 
 @router.get("/api/ai/status")
 async def get_ai_status():
     return ai_service.get_status()
 
 @router.get("/api/ai/models")
-async def get_ai_models(provider: str = "gemini"):
+async def get_ai_models(provider: str = "gemini", forceRefresh: bool = False, apiKey: Optional[str] = None):
     ai_conf = settings_manager.get().get("ai", {})
     from app.config import settings
     if provider == "openai":
-        models = OPENAI_MODELS
+        openai_key = (apiKey and apiKey.strip()) or ai_conf.get("openaiApiKey") or settings.openai_api_key
+        models = await ai_service.get_openai_models(openai_key or "", force_refresh=forceRefresh)
         cur = ai_conf.get("openaiModel", "gpt-4o-mini")
+        valid_ids = [m["id"] for m in models]
+        if cur not in valid_ids:
+            cur = valid_ids[0] if valid_ids else "gpt-4o-mini"
     else:
-        gemini_key = ai_conf.get("geminiApiKey") or settings.effective_gemini_key
-        models = await ai_service.get_gemini_models(gemini_key or "")
+        gemini_key = (apiKey and apiKey.strip()) or ai_conf.get("geminiApiKey") or settings.effective_gemini_key
+        models = await ai_service.get_gemini_models(gemini_key or "", force_refresh=forceRefresh)
         cur = ai_conf.get("geminiModel", "gemini-2.5-flash")
         valid_ids = [m["id"] for m in models]
         if cur not in valid_ids or any(p in cur for p in ["1.5", "1.0", "2.0"]):
@@ -55,7 +48,7 @@ async def get_ai_models(provider: str = "gemini"):
         "currentModel": cur,
         # 下位互換プロパティ
         "gemini": [m["id"] for m in models] if provider != "openai" else [m["id"] for m in GEMINI_MODELS],
-        "openai": [m["id"] for m in OPENAI_MODELS]
+        "openai": [m["id"] for m in models] if provider == "openai" else [m["id"] for m in OPENAI_MODELS]
     }
 
 @router.post("/api/ai/test")
