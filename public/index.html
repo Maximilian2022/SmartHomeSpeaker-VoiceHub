@@ -1515,7 +1515,11 @@
                 <div class="pill-radio-group" id="dndScriptFormatGroup">
                   <label class="pill-radio">
                     <input type="radio" name="dndScriptFormat" value="vbs" checked>
-                    <span data-i18n="settingsDnd.deviceIntegrationFormatVbs">.vbs (VBScript / 完全非表示・画面のチラつきなし・推奨)</span>
+                    <span data-i18n="settingsDnd.deviceIntegrationFormatVbs">.vbs (VBScript / 完全非表示・画面のチラつきなし)</span>
+                  </label>
+                  <label class="pill-radio">
+                    <input type="radio" name="dndScriptFormat" value="ps1">
+                    <span data-i18n="settingsDnd.deviceIntegrationFormatPs1">.ps1 (PowerShell / Windows 10・11 推奨)</span>
                   </label>
                   <label class="pill-radio">
                     <input type="radio" name="dndScriptFormat" value="bat">
@@ -1562,11 +1566,14 @@
                       <li data-i18n="settingsDnd.guideStepGHUB1">生成されたスクリプト（例: voicehub_dnd_toggle.vbs）をダウンロードし、PC上の任意のフォルダ（例: ドキュメント\VoiceHub\）に保存します。</li>
                       <li data-i18n="settingsDnd.guideStepGHUB2">Logitech G HUB を起動し、割り当てを行いたいマウスまたはキーボードのプロファイル画面を開きます。</li>
                       <li data-i18n="settingsDnd.guideStepGHUB3">画面左側メニューの「割り当て」アイコン（十字キーマーク）を選び、「システム」タブを開きます。</li>
-                      <li data-i18n="settingsDnd.guideStepGHUB4">「アプリケーションの起動」項目の「新規追加」をクリックし、保存したスクリプトファイル（.vbs または .bat）を指定します。</li>
+                      <li data-i18n="settingsDnd.guideStepGHUB4">「アプリケーションの起動」項目の「新規追加」をクリックし、実行ファイル（.bat や powershell.exe、wscript.exe）と引数を指定します。</li>
                       <li data-i18n="settingsDnd.guideStepGHUB5">登録された項目を、割り当てたい G キーやマウスのサイドボタンへドラッグ＆ドロップします。</li>
                     </ol>
-                    <div style="padding: 8px 12px; background: rgba(99, 102, 241, 0.08); border-left: 3px solid var(--primary); border-radius: 4px; font-size: 0.82rem;" data-i18n="settingsDnd.guideTipGHUB">
-                      💡 ワンポイント: .vbs 形式を選ぶと、実行時に黒いコマンドプロンプト画面が一瞬も開かず、ゲーム中や作業中でも完全サイレントに動作します！
+                    <div style="padding: 10px 14px; background: rgba(99, 102, 241, 0.08); border-left: 3px solid var(--primary); border-radius: 4px; font-size: 0.84rem; display: flex; flex-direction: column; gap: 4px;" data-i18n="settingsDnd.guideTipGHUB" data-i18n-html="true">
+                      <div>💡 <strong>G HUB での確実な起動設定:</strong></div>
+                      <div>・<strong>.vbs の場合:</strong> アプリケーションに <code>C:\Windows\System32\wscript.exe</code> を指定し、引数に <code>"C:\Path\To\voicehub_dnd_toggle.vbs"</code> を指定します。</div>
+                      <div>・<strong>.ps1 の場合:</strong> アプリケーションに <code>powershell.exe</code> を指定し、引数に <code>-WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Path\To\voicehub_dnd_toggle.ps1"</code> を指定します。</div>
+                      <div>・<strong>.bat の場合:</strong> スクリプトファイル（.bat）を直接「アプリケーションの起動」に指定できます。</div>
                     </div>
                   </div>
                 </details>
@@ -3904,6 +3911,6 @@ Body:
 
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="i18n.js?v=1.0.4"></script>
-  <script src="app.js?v=1.0.4"></script>
+  <script src="app.js?v=1.0.8"></script>
 </body>
 </html>

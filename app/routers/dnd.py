@@ -59,7 +59,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
     clean_pwd = sanitize_for_script(password)
 
     clean_fmt = fmt.lower().strip()
-    if clean_fmt not in ("vbs", "bat", "sh"):
+    if clean_fmt not in ("vbs", "ps1", "bat", "sh"):
         clean_fmt = "vbs"
 
     title = cfg["title"]
@@ -71,29 +71,70 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
         mime_type = "text/plain; charset=utf-8"
         vbs_post_data = body_json.replace('"', '""') if body_json else ""
         vbs_pwd = clean_pwd.replace('"', '""')
+        if vbs_post_data:
+            send_block = (
+                f'http.setRequestHeader "Content-Type", "application/json"\r\n'
+                f'http.Send "{vbs_post_data}"\r\n'
+            )
+        else:
+            send_block = "http.Send\r\n"
+
         content = (
             f"' VoiceHub DND - {title} (Silent Execution)\r\n"
             f"' Suitable for Logitech G HUB, Elgato Stream Deck, Windows Shortcuts\r\n"
             f"Option Explicit\r\n"
-            f"Dim url, http, adminPassword, postData\r\n\r\n"
+            f"Dim url, http, token\r\n\r\n"
             f'url = "{clean_host}{endpoint}"\r\n'
-            f'adminPassword = "{vbs_pwd}"\r\n'
-            f'postData = "{vbs_post_data}"\r\n\r\n'
+            f'token = "{vbs_pwd}"\r\n\r\n'
             f"On Error Resume Next\r\n"
-            f'Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")\r\n'
-            f"If http Is Nothing Then\r\n"
-            f'    Set http = CreateObject("MSXML2.ServerXMLHTTP")\r\n'
+            f'Set http = CreateObject("MSXML2.XMLHTTP")\r\n'
+            f"If Err.Number <> 0 Or http Is Nothing Then\r\n"
+            f"    Err.Clear\r\n"
+            f'    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")\r\n'
             f"End If\r\n"
-            f"If http Is Nothing Then\r\n"
-            f'    Set http = CreateObject("MSXML2.XMLHTTP")\r\n'
+            f"If Err.Number <> 0 Or http Is Nothing Then\r\n"
+            f"    Err.Clear\r\n"
+            f'    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")\r\n'
             f"End If\r\n\r\n"
             f'http.Open "POST", url, False\r\n'
-            f'http.setRequestHeader "Content-Type", "application/json"\r\n'
-            f'If adminPassword <> "" Then\r\n'
-            f'    http.setRequestHeader "x-admin-password", adminPassword\r\n'
-            f"End If\r\n\r\n"
-            f"http.Send postData\r\n"
+            f'If token <> "" Then\r\n'
+            f'    http.setRequestHeader "x-admin-password", token\r\n'
+            f'    http.setRequestHeader "x-webhook-token", token\r\n'
+            f'    http.setRequestHeader "Authorization", "Bearer " & token\r\n'
+            f"End If\r\n"
+            f"{send_block}"
             f"Set http = Nothing\r\n"
+        )
+    elif clean_fmt == "ps1":
+        filename = f"voicehub_dnd_{action}.ps1"
+        mime_type = "text/plain; charset=utf-8"
+        ps_pwd = clean_pwd.replace("'", "''")
+        if body_json:
+            escaped_body = body_json.replace("'", "''")
+            invoke_block = (
+                '    $headers["Content-Type"] = "application/json"\r\n'
+                f"    Invoke-RestMethod -Uri $url -Method Post -Headers $headers -Body '{escaped_body}' -TimeoutSec 5 | Out-Null\r\n"
+            )
+        else:
+            invoke_block = "    Invoke-RestMethod -Uri $url -Method Post -Headers $headers -TimeoutSec 5 | Out-Null\r\n"
+
+        content = (
+            f"# VoiceHub DND - {title}\r\n"
+            f"# Suitable for Logitech G HUB, Elgato Stream Deck, PowerShell\r\n"
+            f"$ErrorActionPreference = 'SilentlyContinue'\r\n"
+            f'$url = "{clean_host}{endpoint}"\r\n'
+            f'$token = "{ps_pwd}"\r\n'
+            f"$headers = @{{}}\r\n"
+            f'if ($token) {{\r\n'
+            f'    $headers["x-admin-password"] = $token\r\n'
+            f'    $headers["x-webhook-token"] = $token\r\n'
+            f'    $headers["Authorization"] = "Bearer $token"\r\n'
+            f'}}\r\n\r\n'
+            f"try {{\r\n"
+            f"{invoke_block}"
+            f"}} catch {{\r\n"
+            f"    # Silent exit on error\r\n"
+            f"}}\r\n"
         )
     elif clean_fmt == "bat":
         filename = f"voicehub_dnd_{action}.bat"
@@ -105,7 +146,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             data_arg = ""
 
         cmd_no_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}" {data_arg}'.strip() + " >nul"
-        cmd_with_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}" -H "x-admin-password: %ADMIN_PASSWORD%" {data_arg}'.strip() + " >nul"
+        cmd_with_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}" -H "x-admin-password: %ADMIN_PASSWORD%" -H "x-webhook-token: %ADMIN_PASSWORD%" -H "Authorization: Bearer %ADMIN_PASSWORD%" {data_arg}'.strip() + " >nul"
         bat_pwd = clean_pwd.replace('"', '').replace('%', '%%')
 
         content = (
@@ -126,7 +167,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
         mime_type = "text/x-shellscript; charset=utf-8"
         data_arg = f"-H 'Content-Type: application/json' -d '{body_json}'" if body_json else ""
         cmd_no_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}" {data_arg}'.strip() + " >/dev/null"
-        cmd_with_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}" -H "x-admin-password: $ADMIN_PASSWORD" {data_arg}'.strip() + " >/dev/null"
+        cmd_with_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}" -H "x-admin-password: $ADMIN_PASSWORD" -H "x-webhook-token: $ADMIN_PASSWORD" -H "Authorization: Bearer $ADMIN_PASSWORD" {data_arg}'.strip() + " >/dev/null"
         sh_pwd = clean_pwd.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
 
         content = (
@@ -263,12 +304,12 @@ async def release_dnd_queue():
 async def preview_dnd_script(
     request: Request,
     action: str = Query("toggle", description="Script action: toggle, 30m, 60m, unmute"),
-    format: str = Query("vbs", description="Script format: vbs, bat, sh"),
+    format: str = Query("vbs", description="Script format: vbs, ps1, bat, sh"),
     host: Optional[str] = Query(None, description="Custom VoiceHub host URL"),
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else get_effective_admin_password()
+    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get().get("webhookToken") or settings.webhook_token or "")
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return {
         "filename": filename,
@@ -282,12 +323,12 @@ async def preview_dnd_script(
 async def download_dnd_script(
     request: Request,
     action: str = Query("toggle", description="Script action: toggle, 30m, 60m, unmute"),
-    format: str = Query("vbs", description="Script format: vbs, bat, sh"),
+    format: str = Query("vbs", description="Script format: vbs, ps1, bat, sh"),
     host: Optional[str] = Query(None, description="Custom VoiceHub host URL"),
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else get_effective_admin_password()
+    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get().get("webhookToken") or settings.webhook_token or "")
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return Response(
         content=content.encode("utf-8"),

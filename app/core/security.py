@@ -239,7 +239,34 @@ def check_admin_auth(request: Request):
             detail="Admin password or Webhook token required for MCP"
         )
 
-    # 6. 静的アセット (WebUI) は除外
+    # 6. スマートホーム・外部デバイス連携エンドポイント (Homebridge / Home Assistant / G HUB / Stream Deck)
+    # 管理者パスワード設定時でも、Webhook トークンが付与されていれば認証を許可
+    INTEGRATION_PREFIXES = (
+        "/api/dnd/",
+        "/api/disaster/triggers",
+        "/api/devices",
+        "/api/status",
+    )
+    if any(path == prefix or path.startswith(prefix) for prefix in INTEGRATION_PREFIXES):
+        from app.services.settings_service import settings_manager
+        gui_wh_token = settings_manager.get().get("webhookToken", "").strip()
+        env_wh_token = (settings.webhook_token or "").strip()
+        valid_tokens = [t for t in (gui_wh_token, env_wh_token) if t]
+
+        cand_token = None
+        if auth_header.startswith("Bearer "):
+            cand_token = auth_header[7:].strip()
+        elif request.headers.get("x-webhook-token"):
+            cand_token = request.headers.get("x-webhook-token").strip()
+        elif request.headers.get("x-api-key"):
+            cand_token = request.headers.get("x-api-key").strip()
+        elif request.query_params.get("token"):
+            cand_token = request.query_params.get("token").strip()
+
+        if cand_token and any(hmac.compare_digest(cand_token, t) for t in valid_tokens):
+            return True
+
+    # 7. 静的アセット (WebUI) は除外
     if not path.startswith("/api/"):
         return True
 

@@ -12,14 +12,22 @@ class TestDndScripts(unittest.TestCase):
         self.assertEqual(filename, "voicehub_dnd_toggle.vbs")
         self.assertIn("text/plain", mime)
         self.assertIn('url = "http://192.168.1.50:8080/api/dnd/toggle"', content)
-        self.assertIn('adminPassword = "secret123"', content)
-        self.assertIn("MSXML2.ServerXMLHTTP", content)
+        self.assertIn('token = "secret123"', content)
+        self.assertIn("MSXML2.XMLHTTP", content)
 
     def test_build_dnd_script_vbs_30m(self):
         filename, content, mime = build_dnd_script("30m", "vbs", "http://192.168.1.50:8080", "")
         self.assertEqual(filename, "voicehub_dnd_30m.vbs")
         self.assertIn('url = "http://192.168.1.50:8080/api/dnd/quick"', content)
         self.assertIn('""minutes"": 30', content)
+
+    def test_build_dnd_script_ps1(self):
+        filename, content, mime = build_dnd_script("toggle", "ps1", "http://192.168.1.50:8080", "secret123")
+        self.assertEqual(filename, "voicehub_dnd_toggle.ps1")
+        self.assertIn("text/plain", mime)
+        self.assertIn('$url = "http://192.168.1.50:8080/api/dnd/toggle"', content)
+        self.assertIn('$token = "secret123"', content)
+        self.assertIn("Invoke-RestMethod", content)
 
     def test_build_dnd_script_bat(self):
         filename, content, mime = build_dnd_script("toggle", "bat", "http://192.168.1.50:8080", "secret123")
@@ -39,7 +47,7 @@ class TestDndScripts(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["filename"], "voicehub_dnd_toggle.vbs")
-        self.assertIn("MSXML2.ServerXMLHTTP", data["content"])
+        self.assertIn("MSXML2.XMLHTTP", data["content"])
 
     def test_api_script_download(self):
         res = self.client.get("/api/dnd/script/download?action=30m&format=bat&host=http://192.168.11.10:8080")

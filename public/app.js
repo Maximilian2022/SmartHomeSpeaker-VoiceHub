@@ -94,7 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
     "状態の更新に失敗しました": "Failed to update state",
     "接続テストに失敗しました": "Connection test failed",
     "接続に成功しました": "Connection succeeded",
-    "設定の保存に失敗しました": "Failed to save settings"
+    "設定の保存に失敗しました": "Failed to save settings",
+    "Webhook 認証トークンが未設定です": "Webhook authentication token is not set"
   };
 
   function translateToast(msg) {
@@ -2366,10 +2367,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const copyBtn = e.target.closest('.btn-copy-hist');
       if (copyBtn) {
         const text = copyBtn.getAttribute('data-text') || '';
-        try {
-          await navigator.clipboard.writeText(text);
+        const ok = await copyTextToClipboard(text);
+        if (ok) {
           showToast('発言テキストをクリップボードにコピーしました', 'success');
-        } catch (err) {
+        } else {
           showToast('コピーに失敗しました', 'error');
         }
         return;
@@ -2528,13 +2529,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // コピーボタン
     el.copyBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const targetId = btn.getAttribute('data-copy-target');
         const targetEl = document.getElementById(targetId);
         if (targetEl) {
-          navigator.clipboard.writeText(targetEl.textContent.trim());
-          btn.textContent = 'コピー完了!';
-          setTimeout(() => { btn.textContent = 'コピー'; }, 2000);
+          const ok = await copyTextToClipboard(targetEl.textContent.trim());
+          if (ok) {
+            btn.textContent = 'コピー完了!';
+            setTimeout(() => { btn.textContent = 'コピー'; }, 2000);
+          }
         }
       });
     });
@@ -3091,11 +3094,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // トークンコピーボタン
-    document.getElementById('btnCopyWebhookToken')?.addEventListener('click', () => {
-      if (tokenInput && tokenInput.value) {
-        navigator.clipboard.writeText(tokenInput.value).then(() => {
-          showToast('Webhook 認証トークンをコピーしました！', 'success');
-        });
+    document.getElementById('btnCopyWebhookToken')?.addEventListener('click', async (e) => {
+      const val = tokenInput ? tokenInput.value.trim() : '';
+      if (!val) {
+        showToast('Webhook 認証トークンが未設定です', 'warning');
+        return;
+      }
+      const ok = await copyTextToClipboard(val);
+      if (ok) {
+        const btn = e.currentTarget;
+        const origText = btn.textContent;
+        btn.textContent = '✓ コピー完了';
+        btn.classList.add('btn-saved');
+        setTimeout(() => {
+          btn.textContent = origText;
+          btn.classList.remove('btn-saved');
+        }, 2000);
+        showToast('Webhook 認証トークンをコピーしました！', 'success');
+      } else {
+        showToast('コピーに失敗しました', 'error');
       }
     });
 
@@ -3248,17 +3265,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ビルダーコードコピーボタン
-    document.getElementById('btnCopyBuilderCode')?.addEventListener('click', () => {
+    document.getElementById('btnCopyBuilderCode')?.addEventListener('click', async () => {
       const codeEl = document.getElementById('builderGeneratedCode');
       if (codeEl) {
         const text = codeEl.textContent || '';
-        navigator.clipboard.writeText(text).then(() => {
+        const ok = await copyTextToClipboard(text);
+        if (ok) {
           if (text.includes('YOUR_WEBHOOK_TOKEN')) {
             showToast('コピーしました！※ コード内の YOUR_WEBHOOK_TOKEN を実際の Webhook トークンに置き換えてください', 'info', 6000);
           } else {
             showToast('設定/コードをクリップボードにコピーしました！', 'success');
           }
-        });
+        } else {
+          showToast('コピーに失敗しました', 'error');
+        }
       }
     });
 
@@ -4764,19 +4784,11 @@ document.addEventListener('DOMContentLoaded', () => {
     copyBtn?.addEventListener('click', async () => {
       const code = previewBlock.textContent;
       if (!code) return;
-      try {
-        await navigator.clipboard.writeText(code);
+      const ok = await copyTextToClipboard(code);
+      if (ok) {
         showToast('スクリプトをクリップボードにコピーしました', 'success');
-      } catch (err) {
-        const ta = document.createElement('textarea');
-        ta.value = code;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        ta.remove();
-        showToast('スクリプトをクリップボードにコピーしました', 'success');
+      } else {
+        showToast('コピーに失敗しました', 'error');
       }
     });
 
@@ -4812,6 +4824,56 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       btn.disabled = false;
       btn.innerHTML = origHtml;
+    }
+  }
+
+  /**
+   * 安全なクリップボードコピー関数 (HTTPS / localhost / HTTP IPアドレス環境対応)
+   * @param {string} text コピーするテキスト
+   * @returns {Promise<boolean>} コピー成功可否
+   */
+  async function copyTextToClipboard(text) {
+    if (text === null || text === undefined) return false;
+    text = String(text);
+    if (!text) return false;
+
+    // 1. Secure Context (HTTPS or localhost) かつ navigator.clipboard が使用可能な場合
+    if (window.isSecureContext && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch (err) {
+        console.warn('[Clipboard] navigator.clipboard.writeText failed, falling back to execCommand:', err);
+      }
+    }
+
+    // 2. HTTP (IPアドレス) 環境またはフォールバック: textarea + document.execCommand('copy')
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '0';
+      textarea.style.left = '-9999px';
+      textarea.style.width = '2em';
+      textarea.style.height = '2em';
+      textarea.style.padding = '0';
+      textarea.style.border = 'none';
+      textarea.style.outline = 'none';
+      textarea.style.boxShadow = 'none';
+      textarea.style.background = 'transparent';
+      textarea.setAttribute('readonly', '');
+      document.body.appendChild(textarea);
+
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      return successful;
+    } catch (err) {
+      console.error('[Clipboard] document.execCommand fallback failed:', err);
+      return false;
     }
   }
 
@@ -5392,23 +5454,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Homebridge インストールコマンドコピー
-    document.getElementById('btnCopyInstallCmd')?.addEventListener('click', () => {
-      navigator.clipboard.writeText('npm install -g homebridge-voicehub').then(() => {
+    document.getElementById('btnCopyInstallCmd')?.addEventListener('click', async () => {
+      const ok = await copyTextToClipboard('npm install -g homebridge-voicehub');
+      if (ok) {
         showToast('インストールコマンドをコピーしました', 'success');
-      }).catch(() => {
+      } else {
         showToast('コピーに失敗しました', 'error');
-      });
+      }
     });
 
     // Homebridge 設定 JSON コピー
-    document.getElementById('btnCopyHomebridgeJson')?.addEventListener('click', () => {
+    document.getElementById('btnCopyHomebridgeJson')?.addEventListener('click', async () => {
       const pre = document.getElementById('preHomebridgeConfigJson');
       if (pre) {
-        navigator.clipboard.writeText(pre.textContent).then(() => {
+        const ok = await copyTextToClipboard(pre.textContent);
+        if (ok) {
           showToast('Homebridge 設定 JSON をコピーしました', 'success');
-        }).catch(() => {
+        } else {
           showToast('コピーに失敗しました', 'error');
-        });
+        }
       }
     });
   }
@@ -6823,26 +6887,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // コピーボタン
-    btnCopyClaude?.addEventListener('click', () => {
+    btnCopyClaude?.addEventListener('click', async () => {
       const text = document.getElementById('preClaudeConfig')?.textContent || '';
-      navigator.clipboard.writeText(text).then(() => {
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
         if (text.includes('YOUR_WEBHOOK_TOKEN')) {
           showToast('コピーしました！※ URL 内の YOUR_WEBHOOK_TOKEN を実際の Webhook トークン（または管理者パスワード）に置き換えてください', 'info', 6000);
         } else {
           showToast('Claude Desktop 設定 JSON をクリップボードにコピーしました！', 'success');
         }
-      });
+      } else {
+        showToast('コピーに失敗しました', 'error');
+      }
     });
 
-    btnCopyCursor?.addEventListener('click', () => {
+    btnCopyCursor?.addEventListener('click', async () => {
       const text = document.getElementById('preCursorConfig')?.textContent || '';
-      navigator.clipboard.writeText(text).then(() => {
+      const ok = await copyTextToClipboard(text);
+      if (ok) {
         if (text.includes('YOUR_WEBHOOK_TOKEN')) {
           showToast('コピーしました！※ URL 内の YOUR_WEBHOOK_TOKEN を実際の Webhook トークン（または管理者パスワード）に置き換えてください', 'info', 6000);
         } else {
           showToast('Cursor / Cline 設定 JSON をクリップボードにコピーしました！', 'success');
         }
-      });
+      } else {
+        showToast('コピーに失敗しました', 'error');
+      }
     });
 
     // シミュレーター: ツール選択切り替え

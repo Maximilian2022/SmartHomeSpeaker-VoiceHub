@@ -1,4 +1,4 @@
-# Smart Home Speaker Voice Hub 🎙️
+# Smart Speaker Voice Hub 🎙️
 
 **日本語** | [English](README-en.md)
 
