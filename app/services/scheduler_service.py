@@ -264,7 +264,7 @@ class SchedulerService:
         while True:
             try:
                 now = datetime.now(self.tz)
-                if now.minute != last_minute and now.second < 10:
+                if now.minute != last_minute:
                     last_minute = now.minute
                     for sched in self.schedules:
                         if sched.get("enabled", True):

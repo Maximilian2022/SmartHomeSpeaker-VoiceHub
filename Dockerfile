@@ -40,6 +40,6 @@ RUN chmod +x entrypoint.sh bin/alexa_remote_control.sh 2>/dev/null || true \
 EXPOSE 8080 8081 1984 8554
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://127.0.0.1:8080/api/status > /dev/null 2>&1 || exit 1
+    CMD curl -f http://127.0.0.1:8080/health > /dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]

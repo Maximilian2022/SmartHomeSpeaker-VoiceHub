@@ -12,7 +12,7 @@ services:
       - voice_cache:/app/public/voice
       - voice_logs:/logs
     healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8080/api/status > /dev/null 2>&1 || exit 1" ]
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8080/health > /dev/null 2>&1 || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -36,14 +36,17 @@ async def get_ai_status():
 @router.get("/api/ai/models")
 async def get_ai_models(provider: str = "gemini"):
     ai_conf = settings_manager.get().get("ai", {})
+    from app.config import settings
     if provider == "openai":
         models = OPENAI_MODELS
         cur = ai_conf.get("openaiModel", "gpt-4o-mini")
     else:
-        models = GEMINI_MODELS
+        gemini_key = ai_conf.get("geminiApiKey") or settings.effective_gemini_key
+        models = await ai_service.get_gemini_models(gemini_key or "")
         cur = ai_conf.get("geminiModel", "gemini-2.5-flash")
-        if any(p in cur for p in ["1.5", "1.0", "2.0"]):
-            cur = "gemini-2.5-flash"
+        valid_ids = [m["id"] for m in models]
+        if cur not in valid_ids or any(p in cur for p in ["1.5", "1.0", "2.0"]):
+            cur = valid_ids[0] if valid_ids else "gemini-2.5-flash"
 
     return {
         "success": True,
@@ -51,7 +54,7 @@ async def get_ai_models(provider: str = "gemini"):
         "models": models,
         "currentModel": cur,
         # 下位互換プロパティ
-        "gemini": [m["id"] for m in GEMINI_MODELS],
+        "gemini": [m["id"] for m in models] if provider != "openai" else [m["id"] for m in GEMINI_MODELS],
         "openai": [m["id"] for m in OPENAI_MODELS]
     }
 

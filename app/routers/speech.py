@@ -8,7 +8,12 @@ from fastapi.responses import FileResponse
 from app.services.speech_service import speech_service
 from app.services.tts_service import tts_service
 from app.services.scheduled_speech_service import scheduled_speech_service
-from app.core.security import validate_webhook_token, check_tunnel_access, is_tunnel_request
+from app.core.security import (
+    validate_webhook_token,
+    check_tunnel_access,
+    is_tunnel_request,
+    extract_client_ip,
+)
 from app.core.logger import get_logger
 
 log = get_logger("Speech")
@@ -16,7 +21,7 @@ log = get_logger("Speech")
 router = APIRouter()
 
 class SayRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=10000, description="発話テキスト (最大10,000文字)")
     devices: Optional[Union[str, List[str]]] = None
     targets: Optional[Union[str, List[str]]] = None
     target: Optional[Union[str, List[str]]] = None
@@ -42,17 +47,6 @@ class SayRequest(BaseModel):
     at: Optional[Any] = None
     scheduled_at: Optional[Any] = Field(default=None, alias="scheduledAt")
     datetime: Optional[Any] = None
-
-def extract_client_ip(request: Request) -> str:
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip:
-        return cf_ip.strip()
-    x_forwarded = request.headers.get("x-forwarded-for")
-    if x_forwarded:
-        return x_forwarded.split(",")[0].strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "127.0.0.1"
 
 def detect_user_agent_client(ua: str) -> str:
     ua_lower = ua.lower()

@@ -2467,7 +2467,7 @@
                 <p style="margin-bottom: 12px;" data-i18n="settingsWebhook.geminiGuideBody" data-i18n-html="true">サーバーに共通の API Key を置くのではなく、<strong>「各個人が使っている Gemini (Web版 / Advanced / Gems)」</strong> にカスタム指示を与えることで、自分の予定・天気に合わせたパーソナルなAI要約アナウンスを自宅スピーカーから発話させることができます。</p>
                 <div style="background: rgba(0,0,0,0.3); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px;">
                   <div style="font-weight: 600; color: var(--accent); margin-bottom: 6px;" data-i18n="settingsWebhook.geminiPromptHeader">📋 Gemini (Gems / カスタム指示) 向け プロンプト例:</div>
-                  <pre style="margin: 0; font-size: 0.8rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-all;" data-i18n="settingsWebhook.geminiSamplePrompt">私の Google カレンダーの今日の予定と現在の天気を参照して、朝にふさわしい明るく元気な挨拶と1日のスケジュール要約（150文字程度）を作成してください。
+                  <pre id="geminiSamplePromptPre" style="margin: 0; font-size: 0.8rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-all;" data-i18n="settingsWebhook.geminiSamplePrompt">私の Google カレンダーの今日の予定と現在の天気を参照して、朝にふさわしい明るく元気な挨拶と1日のスケジュール要約（150文字程度）を作成してください。
 作成後、以下の Webhook API に POST リクエストを送信して自宅のスピーカーで発声させてください。
 
 ■ 送信先 Webhook:

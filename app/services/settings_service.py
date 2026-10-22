@@ -1,15 +1,20 @@
+import os
 import json
+import shutil
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List
 from app.config import DATA_DIR, settings
 
 SETTINGS_FILE = DATA_DIR / "settings.json"
+SETTINGS_BAK_FILE = DATA_DIR / "settings.json.bak"
+SETTINGS_TMP_FILE = DATA_DIR / "settings.json.tmp"
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "defaultDeviceId": settings.effective_default_ip,
     "favoriteDevices": [],
-    "webhookToken": settings.webhook_token,
-    "adminPassword": settings.effective_admin_password,
+    "webhookToken": None,
+    "adminPassword": None,
     "calendar": {
         "enabled": False,
         "calendars": [],
@@ -404,32 +409,83 @@ class SettingsManager:
                     }
 
     def _load(self) -> Dict[str, Any]:
-        if not SETTINGS_FILE.exists():
-            self._save(DEFAULT_SETTINGS)
-            return dict(DEFAULT_SETTINGS)
-        try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                merged = dict(DEFAULT_SETTINGS)
-                for k, v in data.items():
-                    if isinstance(v, dict) and k in merged and isinstance(merged[k], dict):
-                        merged[k] = {**merged[k], **v}
-                    else:
-                        merged[k] = v
-                self._normalize_mqtt(merged)
-                self._normalize_ai(merged)
-                self._normalize_tts_providers(merged)
-                return merged
-        except Exception as e:
-            print(f"[SettingsManager] Load error: {e}")
-            return dict(DEFAULT_SETTINGS)
+        self._load_failed = False
+        # 1. 通常のファイル読み込み
+        if SETTINGS_FILE.exists():
+            try:
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    merged = deepcopy(DEFAULT_SETTINGS)
+                    for k, v in data.items():
+                        if isinstance(v, dict) and k in merged and isinstance(merged[k], dict):
+                            merged[k] = {**merged[k], **v}
+                        else:
+                            merged[k] = v
+                    self._normalize_mqtt(merged)
+                    self._normalize_ai(merged)
+                    self._normalize_tts_providers(merged)
+                    return merged
+            except Exception as e:
+                print(f"[SettingsManager] settings.json ロード失敗 (破損の可能性): {e}")
+
+        # 2. バックアップファイルからの自動復元試行
+        if SETTINGS_BAK_FILE.exists():
+            try:
+                print("[SettingsManager] バックアップファイル (settings.json.bak) からの復元を試みます...")
+                with open(SETTINGS_BAK_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    merged = deepcopy(DEFAULT_SETTINGS)
+                    for k, v in data.items():
+                        if isinstance(v, dict) and k in merged and isinstance(merged[k], dict):
+                            merged[k] = {**merged[k], **v}
+                        else:
+                            merged[k] = v
+                    self._normalize_mqtt(merged)
+                    self._normalize_ai(merged)
+                    self._normalize_tts_providers(merged)
+                    print("[SettingsManager] バックアップからの復元に成功しました")
+                    return merged
+            except Exception as be:
+                print(f"[SettingsManager] バックアップからの復元も失敗: {be}")
+
+        # 3. 復元不能な場合
+        if SETTINGS_FILE.exists():
+            print("[SettingsManager] 警告: 既存の settings.json が破損しており復元できませんでした。上書き保存を防止します。")
+            self._load_failed = True
+        else:
+            # 初回起動時はデフォルト保存
+            init_data = deepcopy(DEFAULT_SETTINGS)
+            self._save(init_data)
+
+        return deepcopy(DEFAULT_SETTINGS)
 
     def _save(self, data: Dict[str, Any]):
+        if getattr(self, "_load_failed", False):
+            print("[SettingsManager] 警告: ロード失敗状態のため既存ファイルの上書き保存を安全にスキップしました")
+            return
         try:
-            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            # 1. 一時ファイル (.tmp) へアトミック書き込み
+            with open(SETTINGS_TMP_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+
+            # 2. 既存の正常ファイルをバックアップ (.bak)
+            if SETTINGS_FILE.exists():
+                try:
+                    shutil.copy2(SETTINGS_FILE, SETTINGS_BAK_FILE)
+                except Exception:
+                    pass
+
+            # 3. アトミック置換
+            os.replace(SETTINGS_TMP_FILE, SETTINGS_FILE)
         except Exception as e:
             print(f"[SettingsManager] Save error: {e}")
+            if SETTINGS_TMP_FILE.exists():
+                try:
+                    SETTINGS_TMP_FILE.unlink()
+                except Exception:
+                    pass
 
     def get(self) -> Dict[str, Any]:
         return self.settings
@@ -488,10 +544,11 @@ class SettingsManager:
         return is_fav
 
     def get_admin_password(self) -> str:
-        """設定ファイル (settings.json) を優先し、未設定なら .my.env の値を返す"""
-        gui_val = self.settings.get("adminPassword")
-        if gui_val is not None and str(gui_val).strip() != "":
-            return str(gui_val).strip()
+        """設定ファイル (settings.json) を優先し、未設定 (None) の場合のみ .my.env の値を返す"""
+        if "adminPassword" in self.settings:
+            gui_val = self.settings.get("adminPassword")
+            if gui_val is not None:
+                return str(gui_val).strip()
         return settings.effective_admin_password
 
     def set_admin_password(self, password: str) -> str:
@@ -499,5 +556,13 @@ class SettingsManager:
         self.settings["adminPassword"] = clean
         self._save(self.settings)
         return clean
+
+    def get_webhook_token(self) -> str:
+        """設定ファイル (settings.json) を優先し、未設定 (None) の場合のみ .my.env の値を返す"""
+        if "webhookToken" in self.settings:
+            val = self.settings.get("webhookToken")
+            if val is not None:
+                return str(val).strip()
+        return settings.webhook_token or ""
 
 settings_manager = SettingsManager()

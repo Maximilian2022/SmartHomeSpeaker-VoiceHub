@@ -1,4 +1,7 @@
 import os
+import time
+import hashlib
+import re
 from typing import List, Dict, Any, Optional
 import httpx
 from app.config import settings
@@ -7,9 +10,19 @@ from app.core.logger import get_logger
 
 log = get_logger("AI")
 
+DEFAULT_GEMINI_MODELS = [
+    {"id": "gemini-2.5-flash", "name": "gemini-2.5-flash (最新主力・高速・推奨)"},
+    {"id": "gemini-2.5-pro", "name": "gemini-2.5-pro (最高峰推論・高精度)"},
+    {"id": "gemini-2.5-flash-lite", "name": "gemini-2.5-flash-lite (超軽量・即答)"}
+]
+
 class AiService:
     def __init__(self):
-        pass
+        self._gemini_models_cache: Dict[str, Any] = {
+            "key_hash": "",
+            "fetched_at": 0.0,
+            "models": DEFAULT_GEMINI_MODELS
+        }
 
     def mask_key(self, key: str) -> str:
         if not key:
@@ -182,19 +195,107 @@ class AiService:
         log.warning("[AiService] カレンダーAI要約が失敗したためフォールバックします")
         return ""
 
+    async def get_gemini_models(self, api_key: str) -> List[Dict[str, str]]:
+        """
+        Google Generative AI API から利用可能なモデル一覧を動的に取得。
+        埋め込み、画像、実験用などの不要モデルを除外し、チャット・要約用モデルのみを厳選。
+        キャッシュ (TTL: 1時間) を利用し、失敗時は安全なデフォルトリストにフォールバック。
+        """
+        now = time.time()
+        key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest() if api_key else ""
+        if self._gemini_models_cache.get("key_hash") == key_hash and (now - self._gemini_models_cache.get("fetched_at", 0)) < 3600:
+            return self._gemini_models_cache.get("models", DEFAULT_GEMINI_MODELS)
+
+        if not api_key:
+            return DEFAULT_GEMINI_MODELS
+
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(url)
+                if res.status_code == 200:
+                    data = res.json()
+                    models_raw = data.get("models", [])
+                    filtered_models = []
+                    seen_ids = set()
+
+                    for m in models_raw:
+                        methods = m.get("supportedGenerationMethods", [])
+                        if "generateContent" not in methods:
+                            continue
+                        m_id = m.get("name", "").replace("models/", "").strip()
+                        if not m_id.startswith("gemini-"):
+                            continue
+                        
+                        # 関係ない特殊・専用モデルの厳格な除外 (テキスト要約・発話生成に無関係なもの)
+                        m_lower = m_id.lower()
+                        if any(bad in m_lower for bad in ["embedding", "aqa", "image", "imagen", "learnlm", "robotics", "computer-use", "custom"]):
+                            continue
+                        # 日付スナップショット版（例: gemini-1.5-flash-001 等の固定版）は除外してメインエイリアスに絞る
+                        if re.search(r"-\d{3}$", m_id) or re.search(r"-\d{8}$", m_id):
+                            continue
+                        
+                        if m_id in seen_ids:
+                            continue
+                        seen_ids.add(m_id)
+
+                        display_name = m.get("displayName") or m_id
+                        # 推奨等のラベル付け
+                        label = display_name
+                        if "2.5-flash" in m_id:
+                            label = f"{m_id} (最新主力・高速・推奨)"
+                        elif "2.5-pro" in m_id:
+                            label = f"{m_id} (最高峰推論・高精度)"
+                        elif "flash-lite" in m_id:
+                            label = f"{m_id} (超軽量・即答)"
+                        elif display_name != m_id:
+                            label = f"{m_id} ({display_name})"
+
+                        filtered_models.append({"id": m_id, "name": label})
+
+                    if filtered_models:
+                        # 並び順を整理: flash系を先頭、pro系を次に
+                        def model_sort_key(item):
+                            mid = item["id"]
+                            if "2.5-flash" in mid: return 0
+                            if "2.5-pro" in mid: return 1
+                            if "flash" in mid: return 2
+                            if "pro" in mid: return 3
+                            return 10
+                        filtered_models.sort(key=model_sort_key)
+
+                        self._gemini_models_cache = {
+                            "key_hash": key_hash,
+                            "fetched_at": now,
+                            "models": filtered_models
+                        }
+                        log.info(f"[AiService] Gemini利用可能モデルを動的取得しました: {[m['id'] for m in filtered_models]}")
+                        return filtered_models
+                else:
+                    log.warning(f"[AiService] Geminiモデル動的取得エラー (HTTP {res.status_code}): {res.text[:150]}")
+        except Exception as e:
+            log.warning(f"[AiService] Geminiモデル動的取得例外: {e}")
+
+        return DEFAULT_GEMINI_MODELS
+
     async def _call_gemini(self, api_key: str, model: str, prompt: str) -> str:
         text, _ = await self._call_gemini_with_err(api_key, model, prompt)
         return text
 
     async def _call_gemini_with_err(self, api_key: str, model: str, prompt: str) -> tuple[str, Optional[str]]:
-        # 廃止済みモデル（Gemini 1.5/2.0等）の自動補正
-        valid_model = model or "gemini-3.5-flash"
-        if any(p in valid_model for p in ["1.5", "1.0", "2.0"]):
-            log.warning(f"[AiService] 廃止済みモデル '{valid_model}' が指定されたため、最新推奨モデル 'gemini-3.5-flash' に自動補正します")
-            valid_model = "gemini-3.5-flash"
+        # 動的に利用可能モデル一覧を取得して検証
+        available_models = await self.get_gemini_models(api_key)
+        available_ids = [m["id"] for m in available_models]
 
-        # フォールバック候補モデル（メインモデル以外を順次試行）
-        fallback_candidates = [m for m in ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-flash-latest"] if m != valid_model]
+        valid_model = model.strip() if model else ""
+        # 指定モデルが旧世代または未指定・利用不可の場合は最新の推奨モデルに補正
+        if not valid_model or valid_model not in available_ids or any(p in valid_model for p in ["1.5", "1.0", "2.0"]):
+            valid_model = available_ids[0] if available_ids else "gemini-2.5-flash"
+            if model and model != valid_model:
+                log.info(f"[AiService] モデル '{model}' を利用可能推奨モデル '{valid_model}' に自動補正しました")
+
+        # フォールバック候補モデル（動的モデルリストからメイン以外を順次試行）
+        fallback_candidates = [m_id for m_id in available_ids if m_id != valid_model]
         models_to_try = [valid_model] + fallback_candidates[:2]
 
         last_error = "要約の生成に失敗しました"
@@ -244,6 +345,12 @@ class AiService:
                 payload["max_completion_tokens"] = 150
             else:
                 payload["max_tokens"] = 150
+
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key.strip()}",
+                "Content-Type": "application/json"
+            }
 
             async with httpx.AsyncClient(timeout=15.0) as client:
                 res = await client.post(url, headers=headers, json=payload)

@@ -10,6 +10,7 @@ from app.core.security import (
     get_effective_admin_password,
     is_https_request,
     login_rate_limiter,
+    extract_client_ip as get_client_ip,
 )
 
 router = APIRouter()
@@ -20,16 +21,6 @@ class LoginRequest(BaseModel):
 class PasswordChangeRequest(BaseModel):
     currentPassword: Optional[str] = ""
     newPassword: str
-
-def get_client_ip(request: Request) -> str:
-    """Cloudflare Tunnel / プロキシ環境を考慮したクライアントIP取得"""
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip:
-        return cf_ip.strip()
-    x_forwarded = request.headers.get("x-forwarded-for")
-    if x_forwarded:
-        return x_forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "127.0.0.1"
 
 @router.get("/api/auth/status")
 async def auth_status(request: Request):
@@ -127,6 +118,9 @@ async def set_password(req: PasswordChangeRequest, request: Request, response: R
     new_pass = req.newPassword.strip()
     settings_manager.set_admin_password(new_pass)
 
+    # パスワード変更または解除時は、既存の全セッションを一括失効 (セキュリティ堅牢化)
+    ACTIVE_SESSIONS.clear()
+
     if new_pass:
         # 新しいパスワードで新セッショントークンを発行
         token = generate_session_token(new_pass)
@@ -141,8 +135,6 @@ async def set_password(req: PasswordChangeRequest, request: Request, response: R
         )
     else:
         # パスワード解除時はCookie削除
-        if cookie_token and cookie_token in ACTIVE_SESSIONS:
-            ACTIVE_SESSIONS.remove(cookie_token)
         response.delete_cookie("auth_token")
 
     return {

@@ -160,17 +160,37 @@ class MCPService:
             log.info(f"[MCP] Session removed: {session_id}")
 
     def verify_auth(self, token_candidate: Optional[str], client_ip: Optional[str] = None, is_tunnel: bool = False) -> bool:
-        """Webhook トークンとの照合 (Cloudflare Tunnel 経由時はトークン必須。宅内LAN直アクセスのみ未指定時免除)"""
+        """
+        MCP認証の検証:
+        1. Webhookトークン または 管理者パスワード または 有効セッションとの照合
+        2. 管理者パスワード設定時: 認証トークン/パスワード必須 (無認証アクセスは不可)
+        3. 未設定時: トンネル経由時はトークン必須、宅内LAN直接アクセスのみ免除
+        """
         from app.config import settings
+        from app.core.security import ACTIVE_SESSIONS
         configured_token = settings_manager.get().get("webhookToken", "").strip() or (settings.webhook_token or "").strip()
-        if not configured_token:
-            return True
+        admin_pass = settings_manager.get_admin_password()
+
         if token_candidate:
-            return hmac.compare_digest(token_candidate, configured_token)
-        # トンネル経由の場合はトークン必須（免除不可）
+            tok = token_candidate.strip()
+            if configured_token and hmac.compare_digest(tok, configured_token):
+                return True
+            if admin_pass and hmac.compare_digest(tok, admin_pass):
+                return True
+            if tok in ACTIVE_SESSIONS:
+                return True
+
+        # 管理者パスワードが設定されている場合は認証必須
+        if admin_pass:
+            return False
+
+        # Webhookトークンが設定されている場合はトークン必須
+        if configured_token:
+            return False
+
+        # どちらも未設定の場合: トンネル経由は遮断、宅内LAN直接のみ免除
         if is_tunnel:
             return False
-        # トークン未指定の場合: プライベートIP（宅内LAN直接）からのアクセスであれば免除
         if client_ip and is_private_ip(client_ip):
             return True
         return False

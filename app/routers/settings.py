@@ -111,28 +111,109 @@ async def get_chimes():
         "catalog": CHIME_CATALOG
     }
 
+MASK_STR = "********"
+
+def mask_sensitive_settings(data: Dict[str, Any]) -> Dict[str, Any]:
+    """秘密情報 (APIキー、トークン、パスワード) をマスク処理"""
+    from copy import deepcopy
+    res = deepcopy(data)
+    
+    # 1. 管理者パスワード
+    effective_pass = settings_manager.get_admin_password()
+    res["hasAdminPassword"] = bool(effective_pass)
+    res["adminPassword"] = MASK_STR if effective_pass else ""
+    
+    # 2. Webhook トークン
+    effective_token = settings_manager.get_webhook_token()
+    res["hasWebhookToken"] = bool(effective_token)
+    if res.get("webhookToken"):
+        res["webhookToken"] = MASK_STR
+
+    # 3. AI サービス API キー
+    if "ai" in res and isinstance(res["ai"], dict):
+        if res["ai"].get("geminiApiKey"):
+            res["ai"]["hasGeminiKey"] = True
+            res["ai"]["geminiApiKey"] = MASK_STR
+        else:
+            res["ai"]["hasGeminiKey"] = False
+        if res["ai"].get("openaiApiKey"):
+            res["ai"]["hasOpenaiKey"] = True
+            res["ai"]["openaiApiKey"] = MASK_STR
+        else:
+            res["ai"]["hasOpenaiKey"] = False
+
+    # 4. MQTT パスワード
+    if "mqtt" in res and isinstance(res["mqtt"], dict):
+        if res["mqtt"].get("password"):
+            res["mqtt"]["hasPassword"] = True
+            res["mqtt"]["password"] = MASK_STR
+
+    # 5. ONVIF パスワード
+    if "onvif" in res and isinstance(res["onvif"], dict):
+        if res["onvif"].get("defaultPassword"):
+            res["onvif"]["hasPassword"] = True
+            res["onvif"]["defaultPassword"] = MASK_STR
+
+    # 6. TTS プロバイダー API キー
+    if "ttsProviders" in res and isinstance(res["ttsProviders"], dict):
+        for p_name, p_conf in res["ttsProviders"].items():
+            if isinstance(p_conf, dict) and p_conf.get("apiKey"):
+                p_conf["apiKey"] = MASK_STR
+
+    return res
+
+def unmask_sensitive_payload(payload: Dict[str, Any], current_settings: Dict[str, Any]) -> Dict[str, Any]:
+    """マスク値 (********) が送られてきた場合は既存の設定値を維持"""
+    cleaned = dict(payload)
+    
+    # 管理者パスワードの直接更新はセキュリティのため完全禁止 (/api/auth/password を利用)
+    cleaned.pop("adminPassword", None)
+
+    # Webhook トークン
+    if cleaned.get("webhookToken") == MASK_STR:
+        cleaned["webhookToken"] = current_settings.get("webhookToken")
+
+    # AI API キー
+    if "ai" in cleaned and isinstance(cleaned["ai"], dict):
+        cur_ai = current_settings.get("ai", {})
+        if cleaned["ai"].get("geminiApiKey") == MASK_STR:
+            cleaned["ai"]["geminiApiKey"] = cur_ai.get("geminiApiKey")
+        if cleaned["ai"].get("openaiApiKey") == MASK_STR:
+            cleaned["ai"]["openaiApiKey"] = cur_ai.get("openaiApiKey")
+
+    # MQTT パスワード
+    if "mqtt" in cleaned and isinstance(cleaned["mqtt"], dict):
+        cur_mqtt = current_settings.get("mqtt", {})
+        if cleaned["mqtt"].get("password") == MASK_STR:
+            cleaned["mqtt"]["password"] = cur_mqtt.get("password")
+
+    # ONVIF パスワード
+    if "onvif" in cleaned and isinstance(cleaned["onvif"], dict):
+        cur_onvif = current_settings.get("onvif", {})
+        if cleaned["onvif"].get("defaultPassword") == MASK_STR:
+            cleaned["onvif"]["defaultPassword"] = cur_onvif.get("defaultPassword")
+
+    # TTS プロバイダー API キー
+    if "ttsProviders" in cleaned and isinstance(cleaned["ttsProviders"], dict):
+        cur_providers = current_settings.get("ttsProviders", {})
+        for p_name, p_conf in cleaned["ttsProviders"].items():
+            if isinstance(p_conf, dict) and p_conf.get("apiKey") == MASK_STR:
+                p_conf["apiKey"] = cur_providers.get(p_name, {}).get("apiKey")
+
+    return cleaned
+
 @router.get("/api/settings")
 async def get_settings():
     raw = dict(settings_manager.get())
-    effective_pass = settings_manager.get_admin_password()
-    raw["hasAdminPassword"] = bool(effective_pass)
-    # 平文パスワードは漏洩防止のため返却時は常にマスク (設定有無のみ hasAdminPassword で提供)
-    raw["adminPassword"] = "********" if effective_pass else ""
-    return raw
+    return mask_sensitive_settings(raw)
 
 @router.put("/api/settings")
 @router.post("/api/settings")
 async def update_settings(payload: Dict[str, Any]):
-    cleaned_payload = dict(payload)
-    # adminPassword が "********" (マスク値) の場合は変更なしとしてスキップ
-    if cleaned_payload.get("adminPassword") == "********":
-        cleaned_payload.pop("adminPassword", None)
-    
+    current_settings = settings_manager.get()
+    cleaned_payload = unmask_sensitive_payload(payload, current_settings)
     res = dict(settings_manager.update(cleaned_payload))
-    effective_pass = settings_manager.get_admin_password()
-    res["hasAdminPassword"] = bool(effective_pass)
-    res["adminPassword"] = "********" if effective_pass else ""
-    return res
+    return mask_sensitive_settings(res)
 
 @router.post("/api/settings/sync-test")
 async def sync_test():

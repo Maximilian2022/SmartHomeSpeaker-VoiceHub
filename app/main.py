@@ -3,9 +3,9 @@ import re
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import PUBLIC_DIR, VOICE_DIR, SOUND_DIR, settings
 from app.core.security import check_tunnel_access, check_admin_auth
@@ -120,7 +120,6 @@ log = get_logger("API")
 # CORS (宅内WebGUIおよびローカル連携用: RFC 1918 プライベートIP、localhost、設定されたトンネルドメインを許可)
 cors_regex = r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$"
 if settings.tunnel_domain:
-    import re
     escaped_domain = re.escape(settings.tunnel_domain)
     cors_regex = rf"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|{escaped_domain})(:\d+)?$"
 
@@ -154,9 +153,8 @@ async def logging_and_security_middleware(request: Request, call_next):
             content={"error": exc.detail, "detail": exc.detail}
         ))
 
-    # 頻繁なステータスポーリング (/api/dnd/status, /api/logs 等) は DEBUG レベル相当にする (ログ肥大化防止)
-    is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/api/logs", "/favicon.ico")
-
+    # 頻繁なステータスポーリング (/api/dnd/status, /api/logs, /health 等) は DEBUG レベル相当にする (ログ肥大化防止)
+    is_frequent_poll = path in ("/api/dnd/status", "/api/status", "/api/logs", "/health", "/api/health", "/favicon.ico")
 
     try:
         response = await call_next(request)
@@ -172,6 +170,7 @@ async def logging_and_security_middleware(request: Request, call_next):
         ))
 
     except Exception as exc:
+        import traceback
         tb = traceback.format_exc()
         log.error(f"Unhandled Exception on [{request.method}] {path}:\n{tb}")
         return JSONResponse(
@@ -198,14 +197,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
     tb = traceback.format_exc()
     log.error(f"Global Exception on [{request.method}] {request.url.path}: {exc}\n{tb}")
     return JSONResponse(
         status_code=500,
         content={
             "error": "Internal Server Error",
-            "message": str(exc),
-            "detail": str(exc)
+            "message": "An internal server error occurred.",
+            "detail": "An internal server error occurred."
         }
     )
 

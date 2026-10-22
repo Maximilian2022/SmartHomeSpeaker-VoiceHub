@@ -54,7 +54,8 @@ login_rate_limiter = LoginRateLimiter()
 def get_effective_admin_password() -> str:
     """settings.json の設定を最優先し、未設定なら .my.env の値を返す"""
     from app.services.settings_service import settings_manager
-    return settings_manager.get_admin_password()
+    val = settings_manager.get_admin_password()
+    return val if isinstance(val, str) else ""
 
 def is_private_ip(ip_str: str) -> bool:
     try:
@@ -112,19 +113,59 @@ def validate_webhook_token(request: Request, body_token: Optional[str] = None):
     if cookie_token and cookie_token in ACTIVE_SESSIONS:
         return True
 
-    # 2. 宅内ブラウザGUIからの同一オリジンアクセスは自動免除 (※Cloudflare Tunnel 経由時は絶対に免除しない)
-    if not is_tunnel_request(request):
+def extract_client_ip(request: Request) -> str:
+    """
+    クライアントIPの安全な取得。
+    - Cloudflare Tunnel 経由のリクエスト (is_tunnel_request) のみ cf-connecting-ip または x-forwarded-for を信用。
+    - 直接接続 (LAN / ローカル) の場合は、ヘッダー偽装 (IP Spoofing) を防ぐため request.client.host のみを信用。
+    """
+    if is_tunnel_request(request):
+        cf_ip = request.headers.get("cf-connecting-ip")
+        if cf_ip:
+            return cf_ip.strip()
+        x_forwarded = request.headers.get("x-forwarded-for")
+        if x_forwarded:
+            return x_forwarded.split(",")[0].strip()
+
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+def validate_webhook_token(request: Request, body_token: Optional[str] = None):
+    from app.services.settings_service import settings_manager
+    expected_token = settings_manager.get().get("webhookToken") or settings.webhook_token
+    if not expected_token:
+        return True
+
+    # 1. 認証済み管理者セッション Cookie (auth_token) を持つ場合は Tunnel / LAN を問わず自動免除
+    cookie_token = request.cookies.get("auth_token")
+    if cookie_token and cookie_token in ACTIVE_SESSIONS:
+        return True
+
+    # 2. 宅内ブラウザGUIからの同一オリジンアクセス (※Cloudflare Tunnel 経由時は絶対に免除しない)
+    # 管理者パスワード未設定の宅内LAN環境でのみ、ブラウザUIの操作性のため同一オリジンを免除 (パスワード設定時はCookie認証必須で偽装を遮断)
+    admin_password = get_effective_admin_password()
+    if not admin_password and not is_tunnel_request(request):
         client_host = request.client.host if request.client else ""
         sec_fetch_site = request.headers.get("sec-fetch-site", "")
         referer = request.headers.get("referer", "")
-        if is_private_ip(client_host) and (sec_fetch_site in ("same-origin", "same-site") or (referer and is_private_ip(referer.split("://")[-1].split(":")[0].split("/")[0]))):
+        is_browser_origin = sec_fetch_site in ("same-origin", "same-site") or (referer and is_private_ip(referer.split("://")[-1].split(":")[0].split("/")[0]))
+        if is_private_ip(client_host) and is_browser_origin:
             return True
 
-    # 3. Authorization: Bearer <token>
+    # 2. X-Admin-Password による管理者認証
+    admin_password = get_effective_admin_password()
+    x_admin_pass = request.headers.get("x-admin-password")
+    if admin_password and x_admin_pass and hmac.compare_digest(x_admin_pass, admin_password):
+        return True
+
+    # 3. Authorization: Bearer <token> (Webhook トークン または 管理者パスワード)
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
         if hmac.compare_digest(token, expected_token):
+            return True
+        if admin_password and (token in ACTIVE_SESSIONS or hmac.compare_digest(token, admin_password)):
             return True
 
     # 4. X-API-KEY / X-Webhook-Token
@@ -174,9 +215,32 @@ def check_admin_auth(request: Request):
         if token in ACTIVE_SESSIONS or hmac.compare_digest(token, admin_password):
             return True
 
-    # ログイン関連・静的アセット・公開WebHookは除外
     path = request.url.path
-    if path in ("/api/auth/login", "/api/auth/status") or path in ("/api/say", "/api/webhook") or not path.startswith("/api/"):
+    # 3. ヘルスチェック専用エンドポイント (無認証・常時通過)
+    if path in ("/health", "/api/health"):
+        return True
+
+    # 4. ログイン関連および公開Webhookは除外
+    if path in ("/api/auth/login", "/api/auth/status") or path in ("/api/say", "/api/webhook"):
+        return True
+
+    # 5. MCP エンドポイントは Webhook トークン または 管理者パスワードで保護
+    if path == "/mcp" or path.startswith("/mcp/"):
+        from app.services.settings_service import settings_manager
+        wh_token = settings_manager.get().get("webhookToken") or settings.webhook_token
+        if wh_token:
+            if auth_header.startswith("Bearer ") and hmac.compare_digest(auth_header[7:].strip(), wh_token):
+                return True
+            q_token = request.query_params.get("token")
+            if q_token and hmac.compare_digest(q_token, wh_token):
+                return True
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin password or Webhook token required for MCP"
+        )
+
+    # 6. 静的アセット (WebUI) は除外
+    if not path.startswith("/api/"):
         return True
 
     raise HTTPException(

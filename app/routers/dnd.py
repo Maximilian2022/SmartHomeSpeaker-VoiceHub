@@ -11,6 +11,7 @@ from app.services.speech_service import speech_service
 from app.services.ai_service import ai_service
 from app.services.mqtt_service import mqtt_service
 from app.core.logger import get_logger
+from app.core.security import get_effective_admin_password
 
 log = get_logger("DndRouter")
 router = APIRouter()
@@ -42,14 +43,20 @@ DND_SCRIPT_ACTIONS = {
     },
 }
 
+def sanitize_for_script(val: str) -> str:
+    """スクリプト注入防止のため改行文字等を除去"""
+    return str(val or "").replace("\r", "").replace("\n", "").strip()
+
 def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tuple[str, str, str]:
     """
     Returns (filename, script_content, mime_type)
     """
     cfg = DND_SCRIPT_ACTIONS.get(action, DND_SCRIPT_ACTIONS["toggle"])
-    clean_host = (host or "http://localhost:8080").strip().rstrip("/")
+    clean_host = sanitize_for_script(host or "http://localhost:8080").rstrip("/").replace('"', '')
     if not (clean_host.startswith("http://") or clean_host.startswith("https://")):
         clean_host = "http://" + clean_host
+
+    clean_pwd = sanitize_for_script(password)
 
     clean_fmt = fmt.lower().strip()
     if clean_fmt not in ("vbs", "bat", "sh"):
@@ -63,13 +70,14 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
         filename = f"voicehub_dnd_{action}.vbs"
         mime_type = "text/plain; charset=utf-8"
         vbs_post_data = body_json.replace('"', '""') if body_json else ""
+        vbs_pwd = clean_pwd.replace('"', '""')
         content = (
             f"' VoiceHub DND - {title} (Silent Execution)\r\n"
             f"' Suitable for Logitech G HUB, Elgato Stream Deck, Windows Shortcuts\r\n"
             f"Option Explicit\r\n"
             f"Dim url, http, adminPassword, postData\r\n\r\n"
             f'url = "{clean_host}{endpoint}"\r\n'
-            f'adminPassword = "{password}"\r\n'
+            f'adminPassword = "{vbs_pwd}"\r\n'
             f'postData = "{vbs_post_data}"\r\n\r\n'
             f"On Error Resume Next\r\n"
             f'Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")\r\n'
@@ -98,6 +106,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
 
         cmd_no_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}" {data_arg}'.strip() + " >nul"
         cmd_with_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}" -H "x-admin-password: %ADMIN_PASSWORD%" {data_arg}'.strip() + " >nul"
+        bat_pwd = clean_pwd.replace('"', '').replace('%', '%%')
 
         content = (
             f"@echo off\r\n"
@@ -105,7 +114,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             f":: VoiceHub DND - {title}\r\n"
             f":: Suitable for Logitech G HUB, Elgato Stream Deck, Command Line\r\n\r\n"
             f'set "VOICEHUB_HOST={clean_host}"\r\n'
-            f'set "ADMIN_PASSWORD={password}"\r\n\r\n'
+            f'set "ADMIN_PASSWORD={bat_pwd}"\r\n\r\n'
             f'if "%ADMIN_PASSWORD%"=="" (\r\n'
             f"    {cmd_no_pwd}\r\n"
             f") else (\r\n"
@@ -118,13 +127,14 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
         data_arg = f"-H 'Content-Type: application/json' -d '{body_json}'" if body_json else ""
         cmd_no_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}" {data_arg}'.strip() + " >/dev/null"
         cmd_with_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}" -H "x-admin-password: $ADMIN_PASSWORD" {data_arg}'.strip() + " >/dev/null"
+        sh_pwd = clean_pwd.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
 
         content = (
             f"#!/usr/bin/env bash\n"
             f"# VoiceHub DND - {title}\n"
             f"# Suitable for Stream Deck (macOS/Linux), Shortcuts, Terminal\n\n"
             f'VOICEHUB_HOST="{clean_host}"\n'
-            f'ADMIN_PASSWORD="{password}"\n\n'
+            f'ADMIN_PASSWORD="{sh_pwd}"\n\n'
             f'if [ -z "$ADMIN_PASSWORD" ]; then\n'
             f"    {cmd_no_pwd}\n"
             f"else\n"
@@ -258,7 +268,7 @@ async def preview_dnd_script(
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else settings.effective_admin_password
+    pwd = password if password is not None else get_effective_admin_password()
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return {
         "filename": filename,
@@ -277,7 +287,7 @@ async def download_dnd_script(
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else settings.effective_admin_password
+    pwd = password if password is not None else get_effective_admin_password()
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return Response(
         content=content.encode("utf-8"),

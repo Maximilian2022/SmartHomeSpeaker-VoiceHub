@@ -11,6 +11,16 @@ from app.core.security import is_tunnel_request
 router = APIRouter()
 START_TIME = time.time()
 
+@router.get("/health")
+@router.get("/api/health")
+async def health_check() -> Dict[str, Any]:
+    """コンテナ・プロキシ監視用の超軽量ヘルスチェックエンドポイント (無認証)"""
+    return {
+        "status": "ok",
+        "app": "SmartHomeSpeaker-VoiceHub",
+        "uptime": int(time.time() - START_TIME)
+    }
+
 @router.get("/api/status")
 async def get_system_status(request: Request) -> Dict[str, Any]:
     def_ip = device_manager.get_default_device_ip()

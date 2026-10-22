@@ -404,6 +404,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (el.serverStatusText) el.serverStatusText.textContent = isEn() ? `Running (${data.serverIp}:${data.port})` : `稼働中 (${data.serverIp}:${data.port})`;
       updateDefaultDeviceDisplay();
       if (el.apiEndpointUrl) el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
+      const lanLabel = document.getElementById('builderLanUrlLabel');
+      if (lanLabel && data.serverIp) {
+        lanLabel.textContent = `http://${data.serverIp}:${data.port}/api/say`;
+      }
 
       // キャッシュ容量表示
       if (data.cacheStats && el.cacheStatusText) {
@@ -428,6 +432,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const tunnelLabel = document.getElementById('builderTunnelUrlLabel');
         if (tunnelLabel) tunnelLabel.textContent = `https://${data.tunnelDomain}/api/say`;
 
+        // 外部ドメイン経由で開いている場合は、Webhookビルダーのデフォルトを Tunnel にする
+        const currentHost = location.hostname || 'localhost';
+        const isLocalAccess = /^(?:127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.)/i.test(currentHost);
+        if (!isLocalAccess) {
+          const radioTunnel = document.querySelector('input[name="builderUrlType"][value="tunnel"]');
+          if (radioTunnel) radioTunnel.checked = true;
+        }
+
         const txtMcpTunnel = document.getElementById('txtMcpTunnelDomain');
         if (txtMcpTunnel && !txtMcpTunnel.value) {
           txtMcpTunnel.value = data.tunnelDomain;
@@ -436,6 +448,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (typeof updateMcpConfigSnippets === 'function') {
         updateMcpConfigSnippets();
+      }
+      if (typeof updateGeminiGuidePrompt === 'function') {
+        updateGeminiGuidePrompt();
       }
 
       // HomePod 台数の反映
@@ -2789,12 +2804,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isTunnel = document.querySelector('input[name="builderUrlType"]:checked')?.value === 'tunnel';
     const tunnelDomain = state.serverInfo?.tunnelDomain;
-    const localHost = state.serverInfo?.serverIp || window.location.hostname || 'localhost';
-    const localPort = state.serverInfo?.port || window.location.port || 8080;
+
+    const currentHost = location.hostname || 'localhost';
+    const isLocalAccess = /^(?:127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.)/i.test(currentHost);
+    const localIp = (isLocalAccess ? currentHost : (state.serverInfo?.serverIp || state.settings?.serverIp || '192.168.11.244'));
+    const localPort = state.serverInfo?.port || state.settings?.port || (location.port || '8080');
+
     const baseUrl = (isTunnel && tunnelDomain)
       ? `https://${tunnelDomain}`
-      : `http://${localHost}:${localPort}`;
-    const token = document.getElementById('txtWebhookTokenVal')?.value || state.serverInfo?.webhookToken || '';
+      : `http://${localIp}:${localPort}`;
+
+    let token = state.serverInfo?.webhookToken
+      || state.serverStatus?.webhookToken
+      || document.getElementById('txtWebhookTokenVal')?.value
+      || state.settings?.webhookToken
+      || '';
+    if (token === '********') {
+      token = document.getElementById('txtWebhookTokenVal')?.value || '';
+      if (token === '********') token = '';
+    }
+
+    // Tunnel 経由時または管理者パスワード設定時は認証トークンが必須
+    const adminPass = state.settings?.adminPassword || '';
+    const tokenRequired = isTunnel || Boolean(adminPass);
+    const tokenForCode = token || (tokenRequired ? 'YOUR_WEBHOOK_TOKEN' : '');
 
     const voice = document.getElementById('builderVoice')?.value;
     const rate = document.getElementById('builderRate')?.value;
@@ -2819,8 +2852,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (builderSelectedTab === 'curl-post') {
       let cmd = `curl -X POST ${baseUrl}/api/say \\\n  -H "Content-Type: application/json" \\\n`;
-      if (token) {
-        cmd += `  -H "Authorization: Bearer ${token}" \\\n`;
+      if (tokenForCode) {
+        cmd += `  -H "Authorization: Bearer ${tokenForCode}" \\\n`;
       }
       cmd += `  -d '${JSON.stringify(payloadObj, null, 2)}'`;
       codeEl.textContent = cmd;
@@ -2835,7 +2868,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (voice) params.set('voice', voice);
       if (rate) params.set('rate', rate);
       if (atVal) params.set('at', atVal);
-      if (token) params.set('token', token);
+      if (tokenForCode) params.set('token', tokenForCode);
       codeEl.textContent = `curl "${baseUrl}/api/say?${params.toString()}"`;
     } else if (builderSelectedTab === 'json-body') {
       codeEl.textContent = JSON.stringify(payloadObj, null, 2);
@@ -2844,11 +2877,54 @@ document.addEventListener('DOMContentLoaded', () => {
       iftttGuide += `1. URL:\n   ${baseUrl}/api/say\n\n`;
       iftttGuide += `2. Method:\n   POST\n\n`;
       iftttGuide += `3. Content Type:\n   application/json\n\n`;
-      if (token) {
-        iftttGuide += `4. Additional Headers:\n   Authorization: Bearer ${token}\n\n`;
+      if (tokenForCode) {
+        iftttGuide += `4. Additional Headers:\n   Authorization: Bearer ${tokenForCode}\n\n`;
       }
       iftttGuide += `5. Body (JSON):\n${JSON.stringify(payloadObj, null, 2)}`;
       codeEl.textContent = iftttGuide;
+    }
+  }
+
+  function updateGeminiGuidePrompt() {
+    const preEl = document.getElementById('geminiSamplePromptPre');
+    if (!preEl) return;
+
+    let token = state.serverInfo?.webhookToken
+      || state.serverStatus?.webhookToken
+      || document.getElementById('txtWebhookTokenVal')?.value
+      || state.settings?.webhookToken
+      || '';
+    if (token === '********') {
+      token = document.getElementById('txtWebhookTokenVal')?.value || '';
+      if (token === '********') token = '';
+    }
+
+    const tunnelDomain = state.serverInfo?.tunnelDomain || state.serverStatus?.tunnelDomain || state.settings?.tunnelDomain;
+    const currentHost = location.hostname || 'localhost';
+    const isLocalAccess = /^(?:127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.)/i.test(currentHost);
+    const localIp = (isLocalAccess ? currentHost : (state.serverInfo?.serverIp || state.settings?.serverIp || '192.168.11.244'));
+    const localPort = state.serverInfo?.port || state.settings?.port || (location.port || '8080');
+
+    // 外部AIサービスからのアクセスには公開 URL が必要
+    const targetUrl = tunnelDomain ? `https://${tunnelDomain}/api/say` : `http://${localIp}:${localPort}/api/say`;
+    const tokenHeader = token
+      ? `Headers: Content-Type: application/json, Authorization: Bearer ${token}`
+      : (tunnelDomain ? `Headers: Content-Type: application/json, Authorization: Bearer YOUR_WEBHOOK_TOKEN` : `Headers: Content-Type: application/json`);
+
+    // 代表スピーカー名の取得
+    const sampleDevices = state.devices && state.devices.length > 0
+      ? [state.devices[0].name || state.devices[0].ip]
+      : ["部屋"];
+    if (state.devices && state.devices.length > 1) {
+      sampleDevices.push(state.devices[1].name || state.devices[1].ip);
+    }
+
+    const devicesJson = JSON.stringify(sampleDevices);
+
+    if (isEn()) {
+      preEl.textContent = `Please check my Google Calendar schedule for today and the current weather, and compose a bright, cheerful morning greeting and a 1-day summary (about 150 characters).\nThen send a POST request to the following Webhook API to announce it on my home speakers:\n\n■ Target Webhook:\nPOST ${targetUrl}\n${tokenHeader}\nBody:\n{\n  "text": "Generated summary text",\n  "devices": ${devicesJson}\n}`;
+    } else {
+      preEl.textContent = `私の Google カレンダーの今日の予定と現在の天気を参照して、朝にふさわしい明るく元気な挨拶と1日のスケジュール要約（150文字程度）を作成してください。\n作成後、以下の Webhook API に POST リクエストを送信して自宅のスピーカーで発声させてください。\n\n■ 送信先 Webhook:\nPOST ${targetUrl}\n${tokenHeader}\nBody:\n{\n  "text": "作成したAI文章",\n  "devices": ${devicesJson}\n}`;
     }
   }
 
@@ -2995,6 +3071,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // トークン表示トグル
     const tokenInput = document.getElementById('txtWebhookTokenVal');
+    if (tokenInput) {
+      tokenInput.addEventListener('input', () => {
+        updateBuilderCode();
+        if (typeof updateGeminiGuidePrompt === 'function') updateGeminiGuidePrompt();
+      });
+    }
     const btnToggle = document.getElementById('btnToggleTokenVisibility');
     if (btnToggle && tokenInput) {
       btnToggle.addEventListener('click', () => {
@@ -3156,6 +3238,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.serverInfo) state.serverInfo.webhookToken = token;
         updateBuilderCode();
         if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
+        if (typeof updateGeminiGuidePrompt === 'function') updateGeminiGuidePrompt();
         done(true, '✓ 保存完了');
         showToast('Webhook 認証トークンを保存しました！', 'success');
       } catch (e) {
@@ -3168,8 +3251,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnCopyBuilderCode')?.addEventListener('click', () => {
       const codeEl = document.getElementById('builderGeneratedCode');
       if (codeEl) {
-        navigator.clipboard.writeText(codeEl.textContent).then(() => {
-          showToast('設定/コードをクリップボードにコピーしました！', 'success');
+        const text = codeEl.textContent || '';
+        navigator.clipboard.writeText(text).then(() => {
+          if (text.includes('YOUR_WEBHOOK_TOKEN')) {
+            showToast('コピーしました！※ コード内の YOUR_WEBHOOK_TOKEN を実際の Webhook トークンに置き換えてください', 'info', 6000);
+          } else {
+            showToast('設定/コードをクリップボードにコピーしました！', 'success');
+          }
         });
       }
     });
@@ -6586,18 +6674,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const preCursor = document.getElementById('preCursorConfig');
     if (!preClaude && !preCursor) return;
 
-    const token = state.serverInfo?.webhookToken
+    // トークン取得: 実値のみ採用。伏字 '********' の場合は除外
+    let token = state.serverInfo?.webhookToken
       || state.serverStatus?.webhookToken
       || document.getElementById('txtWebhookTokenVal')?.value
       || state.settings?.webhookToken
       || '';
+    if (token === '********') {
+      token = document.getElementById('txtWebhookTokenVal')?.value || '';
+      if (token === '********') token = '';
+    }
 
-    const host = location.host || '127.0.0.1:8080';
-    const proto = location.protocol || 'http:';
+    // 宅内ローカルホストの判定:
+    // アクセス元がローカルIP(127.0.0.1, localhost, 10.x, 192.168.x, 172.16-31.x)ならそのホスト名を使う。
+    // トンネル等の外部ドメイン経由でアクセスしている場合は、サーバーの実内部IP (serverIp) とポートを使う！
+    const currentHost = location.hostname || 'localhost';
+    const isLocalAccess = /^(?:127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.)/i.test(currentHost);
+
+    const localIp = (isLocalAccess ? currentHost : (state.serverInfo?.serverIp || state.settings?.serverIp || '192.168.11.244'));
+    const localPort = state.serverInfo?.port || state.settings?.port || (location.port || '8080');
+    const localHost = `${localIp}:${localPort}`;
 
     let sseUrl = '';
     if (mcpConnectionMode === 'local') {
-      sseUrl = `${proto}//${host}/mcp/sse`;
+      // 宅内ローカル接続: http://<localIp>:<localPort>/mcp/sse
+      // 管理者パスワード設定時や外部からの安全のため、トークンがあればクエリに付加
+      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+      sseUrl = `http://${localHost}/mcp/sse${tokenParam}`;
     } else {
       const inputTunnel = document.getElementById('txtMcpTunnelDomain')?.value?.trim();
       let tunnelDomain = inputTunnel
@@ -6607,10 +6710,10 @@ document.addEventListener('DOMContentLoaded', () => {
         || state.settings?.tunnelDomain;
 
       if (!tunnelDomain) {
-        const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?::[0-9]+)?$|^localhost(?::[0-9]+)?$/i.test(host);
-        tunnelDomain = isIp ? 'your-tunnel-domain.com' : host;
+        tunnelDomain = isLocalAccess ? 'your-tunnel-domain.com' : currentHost;
       }
-      sseUrl = `https://${tunnelDomain}/mcp/sse${token ? '?token=' + encodeURIComponent(token) : ''}`;
+      const tokenStr = token ? encodeURIComponent(token) : 'YOUR_WEBHOOK_TOKEN';
+      sseUrl = `https://${tunnelDomain}/mcp/sse?token=${tokenStr}`;
     }
 
     // Claude Desktop 設定
@@ -6663,6 +6766,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const preSimResult = document.getElementById('preMcpSimResult');
     const selSimTarget = document.getElementById('mcpSimSpeakTarget');
 
+    // アクセス元判定: トンネル等の外部ドメイン経由で開いている場合は初期モードを「インターネット」にする
+    const currentHost = location.hostname || 'localhost';
+    const isLocalAccess = /^(?:127\.0\.0\.1|localhost|10\.|192\.168\.|172\.(?:1[6-9]|2[0-9]|3[0-1])\.)/i.test(currentHost);
+    if (!isLocalAccess && location.protocol === 'https:') {
+      mcpConnectionMode = 'internet';
+      btnInternet?.classList.add('active');
+      btnLocal?.classList.remove('active');
+      if (tunnelGroup) tunnelGroup.style.display = 'block';
+    }
+
     // 初期値の補完
     if (txtTunnel && !txtTunnel.value) {
       const autoDomain = state.serverInfo?.tunnelDomain || state.serverStatus?.tunnelDomain || '';
@@ -6701,18 +6814,34 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('Tunnel ドメインを設定値にリセットしました', 'info');
     });
 
+    // Webhook トークン入力欄の変更にもリアルタイム追従
+    const txtWhToken = document.getElementById('txtWebhookTokenVal');
+    if (txtWhToken) {
+      txtWhToken.addEventListener('input', () => {
+        updateMcpConfigSnippets();
+      });
+    }
+
     // コピーボタン
     btnCopyClaude?.addEventListener('click', () => {
       const text = document.getElementById('preClaudeConfig')?.textContent || '';
       navigator.clipboard.writeText(text).then(() => {
-        showToast('Claude Desktop 設定 JSON をクリップボードにコピーしました！', 'success');
+        if (text.includes('YOUR_WEBHOOK_TOKEN')) {
+          showToast('コピーしました！※ URL 内の YOUR_WEBHOOK_TOKEN を実際の Webhook トークン（または管理者パスワード）に置き換えてください', 'info', 6000);
+        } else {
+          showToast('Claude Desktop 設定 JSON をクリップボードにコピーしました！', 'success');
+        }
       });
     });
 
     btnCopyCursor?.addEventListener('click', () => {
       const text = document.getElementById('preCursorConfig')?.textContent || '';
       navigator.clipboard.writeText(text).then(() => {
-        showToast('Cursor / Cline 設定 JSON をクリップボードにコピーしました！', 'success');
+        if (text.includes('YOUR_WEBHOOK_TOKEN')) {
+          showToast('コピーしました！※ URL 内の YOUR_WEBHOOK_TOKEN を実際の Webhook トークン（または管理者パスワード）に置き換えてください', 'info', 6000);
+        } else {
+          showToast('Cursor / Cline 設定 JSON をクリップボードにコピーしました！', 'success');
+        }
       });
     });
 

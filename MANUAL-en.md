@@ -1,6 +1,6 @@
 # Smart Home Speaker Voice Hub Comprehensive Technical Manual (MANUAL-en.md) 📘
 
-[日本語 (Japanese)](Manual.md) | **English**
+[日本語 (Japanese)](MANUAL.md) | **English**
 
 This document serves as the comprehensive technical manual for **Smart Home Speaker Voice Hub**, covering system architecture, smart speaker integration specifications, the companion Homebridge plugin, Model Context Protocol (MCP) server, multi-MQTT broker connectivity, access control & perimeter security design, and the complete REST API reference omitted from [README-en.md](README-en.md).
 
