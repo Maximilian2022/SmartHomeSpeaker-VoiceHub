@@ -281,10 +281,19 @@ document.addEventListener('DOMContentLoaded', () => {
   let alexaPollTimer = null;
 
   // 認証関連ヘルパー
-  function showLoginOverlay() {
+  let isAuthExpiredHandled = false;
+
+  function showLoginOverlay(msg) {
     if (!el.loginOverlay) return;
     el.loginOverlay.style.display = 'flex';
-    if (el.loginErrorMsg) el.loginErrorMsg.style.display = 'none';
+    if (el.loginErrorMsg) {
+      if (msg) {
+        el.loginErrorMsg.textContent = msg;
+        el.loginErrorMsg.style.display = 'block';
+      } else {
+        el.loginErrorMsg.style.display = 'none';
+      }
+    }
     if (el.loginPassword) {
       el.loginPassword.value = '';
       setTimeout(() => el.loginPassword.focus(), 100);
@@ -293,7 +302,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function hideLoginOverlay() {
     if (el.loginOverlay) el.loginOverlay.style.display = 'none';
+    isAuthExpiredHandled = false;
   }
+
+  function handleAuthRequired(msg) {
+    if (isAuthExpiredHandled) return;
+    isAuthExpiredHandled = true;
+    if (globalEventSource) {
+      try { globalEventSource.close(); } catch (e) {}
+    }
+    const defaultMsg = isEn() ? 'Session expired or admin password required. Please log in.' : 'セッションの有効期限が切れたか、管理者認証が必要です。再度ログインしてください。';
+    showLoginOverlay(msg || defaultMsg);
+  }
+
+  // グローバル fetch インターセプター (401 Unauthorized の自動検知)
+  const originalFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const res = await originalFetch.apply(this, args);
+    try {
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : '');
+      // ログイン自身やステータス確認自身は401処理対象外
+      if (res && res.status === 401 && !url.includes('/api/auth/login') && !url.includes('/api/auth/status')) {
+        handleAuthRequired();
+      }
+    } catch (e) {
+      console.warn('[AuthInterceptor] Error checking 401 response:', e);
+    }
+    return res;
+  };
 
   async function checkAuthStatus() {
     try {
@@ -1649,6 +1685,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof showToast === 'function') {
               showToast('ログインしました', 'success');
             }
+            initEventSource();
             await loadInitialData();
           } else {
             if (el.loginErrorMsg) {
@@ -4047,6 +4084,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadDndStatus() {
+    if (isAuthExpiredHandled) return;
     try {
       const res = await fetch('/api/dnd/status');
       if (!res.ok) return;
@@ -5201,6 +5239,10 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (res.status === 401) {
+        showToast(isEn() ? 'Admin authentication required. Please log in.' : '管理者認証が必要です。ログインしてください。', 'error');
+        return false;
+      }
       if (!res.ok) throw new Error('設定保存失敗');
       const updated = await res.json();
       state.settings = updated;

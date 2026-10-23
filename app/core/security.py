@@ -2,13 +2,109 @@ import hashlib
 import hmac
 import ipaddress
 import secrets
-from typing import Optional
+import json
+import threading
+from pathlib import Path
 import time
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List, Tuple, Any
 from fastapi import Request, HTTPException, status
-from app.config import settings
+from app.config import settings, DATA_DIR
 
-ACTIVE_SESSIONS = set()
+
+class PersistentSessionSet(set):
+    """
+    ファイル (data/sessions.json) に永続化されるセッション管理 Set。
+    既存の ACTIVE_SESSIONS (set) と 100% 互換性を保ちながら、
+    コンテナやプロセスの再起動を跨いでログインセッションを維持する。
+    """
+    def __init__(self, file_path: Optional[Path] = None, default_ttl: int = 30 * 86400):
+        super().__init__()
+        self.file_path = file_path or (DATA_DIR / "sessions.json")
+        self.default_ttl = default_ttl
+        self.session_data: Dict[str, Dict[str, Any]] = {}
+        self._lock = threading.Lock()
+        self._load()
+
+    def _load(self):
+        with self._lock:
+            try:
+                if self.file_path.exists():
+                    with open(self.file_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    now = time.time()
+                    valid_tokens = set()
+                    valid_data = {}
+                    for token, info in data.items():
+                        if isinstance(info, dict):
+                            expires_at = info.get("expires_at", 0)
+                            if expires_at > now:
+                                valid_tokens.add(token)
+                                valid_data[token] = info
+                        elif isinstance(info, (int, float)):
+                            if info > now:
+                                valid_tokens.add(token)
+                                valid_data[token] = {"expires_at": info}
+                    super().clear()
+                    super().update(valid_tokens)
+                    self.session_data = valid_data
+            except Exception:
+                pass
+
+    def _save(self):
+        try:
+            self.file_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self.file_path.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(self.session_data, f, indent=2)
+            temp_path.replace(self.file_path)
+        except Exception:
+            pass
+
+    def add(self, token: str, ttl: Optional[int] = None):
+        ttl = ttl or self.default_ttl
+        now = time.time()
+        with self._lock:
+            self.session_data[token] = {
+                "created_at": now,
+                "expires_at": now + ttl
+            }
+            super().add(token)
+            self._save()
+
+    def remove(self, token: str):
+        with self._lock:
+            self.session_data.pop(token, None)
+            super().remove(token)
+            self._save()
+
+    def discard(self, token: str):
+        with self._lock:
+            if token in self.session_data:
+                self.session_data.pop(token, None)
+            super().discard(token)
+            self._save()
+
+    def clear(self):
+        with self._lock:
+            self.session_data.clear()
+            super().clear()
+            self._save()
+
+    def __contains__(self, token: object) -> bool:
+        if not isinstance(token, str):
+            return False
+        if not super().__contains__(token):
+            return False
+        info = self.session_data.get(token)
+        if info:
+            expires_at = info.get("expires_at", 0)
+            if expires_at <= time.time():
+                self.discard(token)
+                return False
+        return True
+
+
+ACTIVE_SESSIONS = PersistentSessionSet()
 
 class LoginRateLimiter:
     """ブルートフォース攻撃・辞書攻撃を防ぐIPベースのレートリミッター"""
