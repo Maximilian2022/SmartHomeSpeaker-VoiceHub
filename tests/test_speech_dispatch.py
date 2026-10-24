@@ -67,15 +67,17 @@ class TestSpeechDispatch(unittest.IsolatedAsyncioTestCase):
         with patch.dict(settings_manager.settings, {"deduplication": {"enabled": True, "cooldownSeconds": 30}}):
             # 1回目の発話 (成功)
             with patch("app.services.speech_service.tts_service.synthesize", new_callable=AsyncMock) as mock_tts, \
+                 patch("app.services.speech_service.cast_service.play_audio", new_callable=AsyncMock) as mock_cast, \
                  patch("app.services.devices_service.device_manager.get_devices", new_callable=AsyncMock) as mock_devs:
                 mock_tts.return_value = {"filename": "test.mp3", "filepath": "/tmp/test.mp3", "duration": 1.0, "voice": "nanami", "fallback": False}
+                mock_cast.return_value = True
                 mock_devs.return_value = [{"name": "Default Speaker", "ip": "192.168.1.50", "type": "google"}]
 
-                res1 = await speech_service.speak(text="重複テストメッセージ", client_name="TestClient", urgent=False)
+                res1 = await speech_service.speak(text="重複テストメッセージ", targets=["192.168.1.50"], client_name="TestClient", urgent=False)
                 self.assertTrue(res1.get("success"))
 
                 # 2回目の発話 (30秒以内なので重複スキップ)
-                res2 = await speech_service.speak(text="重複テストメッセージ", client_name="TestClient", urgent=False)
+                res2 = await speech_service.speak(text="重複テストメッセージ", targets=["192.168.1.50"], client_name="TestClient", urgent=False)
                 self.assertEqual(res2.get("status"), "skipped")
                 self.assertTrue(res2.get("deduplicated"))
 
