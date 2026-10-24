@@ -461,10 +461,31 @@ document.addEventListener('DOMContentLoaded', () => {
         el.cacheStatusText.textContent = `Cache: ${data.cacheStats.totalMB} MB / ${data.cacheStats.maxMB} MB`;
       }
 
-      // Webhook Token の反映
+      // Webhook Token の反映 & バッジ表示更新
       const tokenInput = document.getElementById('txtWebhookTokenVal');
-      if (tokenInput && data.webhookToken) {
-        tokenInput.value = data.webhookToken;
+      const tokenBadge = document.getElementById('webhookTokenBadge');
+      if (data.hasWebhookToken) {
+        if (tokenBadge) {
+          tokenBadge.className = 'badge-success';
+          tokenBadge.innerHTML = isEn() ? 'Protected <span>Enabled</span>' : '認証保護 <span>有効</span>';
+        }
+        if (tokenInput) {
+          if (data.webhookToken) {
+            tokenInput.value = data.webhookToken;
+          } else {
+            tokenInput.value = '';
+            tokenInput.placeholder = isEn() ? '🔒 Token active (Admin login required to view/edit)' : '🔒 トークン設定済み (管理者ログインで表示・変更可能)';
+          }
+        }
+      } else {
+        if (tokenBadge) {
+          tokenBadge.className = 'badge-secondary';
+          tokenBadge.innerHTML = isEn() ? 'Public <span>Disabled</span>' : '認証 <span>未設定 (不要)</span>';
+        }
+        if (tokenInput) {
+          tokenInput.value = '';
+          tokenInput.placeholder = isEn() ? 'No token (Authentication not required)' : 'トークン未設定 (未設定の場合は認証不要)';
+        }
       }
 
       // Cloudflare Tunnel 情報の反映
@@ -3298,6 +3319,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const btn = e.currentTarget;
       const done = setButtonSaving(btn, '保存中...');
       const token = tokenInput ? tokenInput.value.trim() : '';
+
+      // トークンが空で、かつ既に設定されていた場合の誤消去防止確認
+      if (!token && state.serverInfo?.hasWebhookToken) {
+        const ok = confirm(isEn() ? 'Are you sure you want to delete the webhook token and make API access public?' : 'Webhook 認証トークンを削除して認証保護を無効化しますか？');
+        if (!ok) {
+          done(false);
+          return;
+        }
+      }
+
       try {
         const res = await fetch('/api/settings', {
           method: 'PUT',
@@ -3305,12 +3336,25 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify({ webhookToken: token })
         });
         if (!res.ok) throw new Error('保存失敗');
-        if (state.serverInfo) state.serverInfo.webhookToken = token;
+        if (state.serverInfo) {
+          state.serverInfo.webhookToken = token;
+          state.serverInfo.hasWebhookToken = Boolean(token);
+        }
+        const tokenBadge = document.getElementById('webhookTokenBadge');
+        if (tokenBadge) {
+          if (token) {
+            tokenBadge.className = 'badge-success';
+            tokenBadge.innerHTML = isEn() ? 'Protected <span>Enabled</span>' : '認証保護 <span>有効</span>';
+          } else {
+            tokenBadge.className = 'badge-secondary';
+            tokenBadge.innerHTML = isEn() ? 'Public <span>Disabled</span>' : '認証 <span>未設定 (不要)</span>';
+          }
+        }
         updateBuilderCode();
         if (typeof updateMcpConfigSnippets === 'function') updateMcpConfigSnippets();
         if (typeof updateGeminiGuidePrompt === 'function') updateGeminiGuidePrompt();
         done(true, '✓ 保存完了');
-        showToast('Webhook 認証トークンを保存しました！', 'success');
+        showToast(token ? 'Webhook 認証トークンを保存しました！' : 'Webhook 認証トークンを削除しました (認証不要モード)', 'success');
       } catch (e) {
         done(false);
         showToast('トークン保存エラー: ' + e.message, 'error');

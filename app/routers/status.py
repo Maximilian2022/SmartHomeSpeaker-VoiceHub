@@ -6,7 +6,8 @@ from app.services.tts_service import tts_service
 from app.services.devices_service import device_manager
 from app.services.alexa_service import alexa_service
 from app.services.homepod_service import homepod_service
-from app.core.security import is_tunnel_request
+from app.services.settings_service import settings_manager
+from app.core.security import is_tunnel_request, ACTIVE_SESSIONS, get_effective_admin_password
 
 router = APIRouter()
 START_TIME = time.time()
@@ -29,8 +30,18 @@ async def get_system_status(request: Request) -> Dict[str, Any]:
 
     import sys
     is_tunnel = is_tunnel_request(request)
-    # 外部トンネル経由の場合は生トークンを決して返さない
-    token_str = None if is_tunnel else (settings.webhook_token or None)
+    effective_token = settings_manager.get_webhook_token()
+    
+    # セキュリティ方針:
+    # - LAN / 直接接続: GUI設定・ビルダー表示のため生トークンを返却
+    # - Cloudflare Tunnel (外部): 管理者セッション認証済み (auth_token Cookie) の場合のみトークンを返却。未認証外部アクセス時は隠蔽 (None)
+    cookie_token = request.cookies.get("auth_token")
+    is_admin_session = bool(cookie_token and cookie_token in ACTIVE_SESSIONS)
+    
+    if not is_tunnel or is_admin_session:
+        token_str = effective_token or None
+    else:
+        token_str = None
 
     return {
         "serverIp": settings.effective_wireless_ip,
@@ -44,7 +55,7 @@ async def get_system_status(request: Request) -> Dict[str, Any]:
         "homepodCount": len(homepod_service.devices_cache),
         "pythonVersion": sys.version.split()[0],
         "uptime": int(time.time() - START_TIME),
-        "hasWebhookToken": bool(settings.webhook_token),
+        "hasWebhookToken": bool(effective_token),
         "webhookToken": token_str
     }
 

@@ -168,7 +168,7 @@ class MCPService:
         """
         from app.config import settings
         from app.core.security import ACTIVE_SESSIONS
-        configured_token = (settings_manager.get().get("webhookToken") or "").strip() or (settings.webhook_token or "").strip()
+        configured_token = settings_manager.get_webhook_token()
         admin_pass = settings_manager.get_admin_password()
 
         if token_candidate:

@@ -238,5 +238,67 @@ class TestAuditFixes(unittest.TestCase):
         self.assertEqual(data["provider"], "openai")
         self.assertIn("models", data)
 
+    def test_oauth_protected_resource_metadata(self):
+        """MCP クライアント (Claude / Cursor) の RFC 8414 リソースメタデータエンドポイントが 200 OK を返すこと"""
+        res1 = self.client.get("/.well-known/oauth-protected-resource")
+        self.assertEqual(res1.status_code, 200)
+        self.assertIn("resource", res1.json())
+        self.assertIn("scopes_supported", res1.json())
+
+        res2 = self.client.get("/.well-known/oauth-protected-resource/mcp/sse")
+        self.assertEqual(res2.status_code, 200)
+        self.assertIn("resource", res2.json())
+
+    def test_status_webhook_token_resolution_and_tunnel_masking(self):
+        """GET /api/status での実効 Webhook トークン解決とトンネル経由マスクの検証"""
+        with patch.object(settings_manager, "get_webhook_token", return_value="test-token-xyz"):
+            # 1. LAN アクセス: トークンが平文で返る
+            res_lan = self.client.get("/api/status")
+            self.assertEqual(res_lan.status_code, 200)
+            data_lan = res_lan.json()
+            self.assertTrue(data_lan.get("hasWebhookToken"))
+            self.assertEqual(data_lan.get("webhookToken"), "test-token-xyz")
+
+            # 管理者パスワード設定時
+            settings_manager.set_admin_password("test-admin-pw")
+            try:
+                tunnel_headers = {"cf-ray": "123456789-NRT"}
+                
+                # 2. 未ログイン Tunnel アクセス (Webhook Token 連携ヘッダー付き): 200 OK だが生トークンは隠蔽 (webhookToken=None)
+                res_tunnel = self.client.get("/api/status", headers={**tunnel_headers, "x-webhook-token": "test-token-xyz"})
+                self.assertEqual(res_tunnel.status_code, 200)
+                data_tunnel = res_tunnel.json()
+                self.assertTrue(data_tunnel.get("hasWebhookToken"))
+                self.assertIsNone(data_tunnel.get("webhookToken"))
+
+                # 3. 認証済み管理者セッション (Cookie) による Tunnel アクセス: トークンが平文で返る
+                ACTIVE_SESSIONS.add("mock-session-token")
+                try:
+                    res_authed = self.client.get(
+                        "/api/status",
+                        headers=tunnel_headers,
+                        cookies={"auth_token": "mock-session-token"}
+                    )
+                    self.assertEqual(res_authed.status_code, 200)
+                    data_authed = res_authed.json()
+                    self.assertTrue(data_authed.get("hasWebhookToken"))
+                    self.assertEqual(data_authed.get("webhookToken"), "test-token-xyz")
+                finally:
+                    ACTIVE_SESSIONS.discard("mock-session-token")
+            finally:
+                settings_manager.set_admin_password("")
+
+    def test_rain_alarm_forecast_graceful_error_handling(self):
+        """外部気象 API 障害時でも GET /api/rain-alarm/forecast が 500 にならず 200 フォールバックを返すこと"""
+        from unittest.mock import AsyncMock
+        with patch("app.services.rain_alarm_service.rain_alarm_service.fetch_forecast", side_effect=RuntimeError("JMA Timeout")):
+            res = self.client.get("/api/rain-alarm/forecast?lat=35.6&lon=139.7")
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertEqual(data.get("currentRainfall"), 0.0)
+            self.assertEqual(data.get("timeline"), [])
+            self.assertEqual(data.get("providerUsed"), "error")
+            self.assertIn("JMA Timeout", data.get("error", ""))
+
 if __name__ == "__main__":
     unittest.main()

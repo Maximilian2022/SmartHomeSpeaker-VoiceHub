@@ -105,12 +105,14 @@ class SpeechService:
                 seen_keys.add(key)
                 unique_targets.append(d)
 
-        # Google Cast ネイティブグループ集約
+        # Google Cast ネイティブグループ集約 (失敗時の個別フォールバック用に元リストも保持)
         has_all = any(t.upper() in ("ALL", "*", "GH:ALL", "GOOGLE:ALL") for t in target_list)
         google_devs = [d for d in unique_targets if d.get("type") == "google"]
         if has_all and len(google_devs) > 1:
             cast_group = next((d for d in google_devs if d.get("isGroup")), None)
             if cast_group:
+                individual_devs = [d for d in google_devs if not d.get("isGroup")]
+                cast_group["_fallback_members"] = individual_devs
                 unique_targets = [d for d in unique_targets if d.get("type") != "google" or d == cast_group]
 
         return unique_targets
@@ -396,6 +398,50 @@ class SpeechService:
                 "status": "success" if is_ok else "error",
                 "error": err_msg
             })
+
+        # Google Cast ネイティブグループ失敗時の個別スピーカー群への自動フォールバック
+        for i, dev in enumerate(unique_targets):
+            fallback_members = dev.get("_fallback_members")
+            res_val = results[i] if i < len(results) else False
+            is_ok = (res_val is True or (isinstance(res_val, dict) and res_val.get("status") != "error"))
+            if fallback_members and not is_ok:
+                log.warning(f"[Speech] ⚠️ Google Cast ネイティブグループ '{dev.get('name') or dev.get('ip')}' への再生が失敗したため、個別スピーカー {len(fallback_members)} 台へ自動フォールバックします")
+                fb_tasks = []
+                for fb_dev in fallback_members:
+                    fb_ip = str(fb_dev.get("ip", ""))
+                    if ":" in fb_ip:
+                        parts = fb_ip.split(":")
+                        fb_host = parts[0]
+                        try:
+                            fb_port = int(parts[1])
+                        except ValueError:
+                            fb_port = 8009
+                    else:
+                        fb_host = fb_dev.get("host") or fb_ip
+                        fb_port = int(fb_dev.get("port", 8009))
+                    log.info(f"[Dispatch -> Google Cast Fallback] {fb_dev.get('name') or fb_ip} ({fb_host}:{fb_port})")
+                    coro = cast_service.play_audio(fb_host, fb_port, audio_url, effective_vol)
+                    fb_tasks.append(_run_delayed(google_delay, coro))
+                if fb_tasks:
+                    fb_results = await asyncio.gather(*fb_tasks, return_exceptions=True)
+                    for j, fb_dev in enumerate(fallback_members):
+                        fb_name = fb_dev.get("name") or fb_dev.get("ip")
+                        fb_val = fb_results[j] if j < len(fb_results) else False
+                        fb_ok = (fb_val is True or (isinstance(fb_val, dict) and fb_val.get("status") != "error"))
+                        fb_err = None
+                        if isinstance(fb_val, Exception):
+                            fb_err = f"{type(fb_val).__name__}: {fb_val}"
+                            log.error(f"[Dispatch Result] ❌ {fb_name} (フォールバック) failed: {fb_err}")
+                        elif not fb_ok:
+                            fb_err = "Fallback playback failed"
+                            log.warning(f"[Dispatch Result] ❌ {fb_name} (フォールバック) failed")
+                        else:
+                            log.info(f"[Dispatch Result] ✅ {fb_name} (フォールバック) success")
+                        detailed_results.append({
+                            "target": f"{fb_name} (個別フォールバック)",
+                            "status": "success" if fb_ok else "error",
+                            "error": fb_err
+                        })
 
         has_success = any(r["status"] == "success" for r in detailed_results)
         all_success = len(detailed_results) > 0 and all(r["status"] == "success" for r in detailed_results)

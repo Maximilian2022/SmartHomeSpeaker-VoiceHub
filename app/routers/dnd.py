@@ -313,7 +313,7 @@ async def preview_dnd_script(
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get().get("webhookToken") or settings.webhook_token or "")
+    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get_webhook_token() or "")
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return {
         "filename": filename,
@@ -332,7 +332,7 @@ async def download_dnd_script(
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get().get("webhookToken") or settings.webhook_token or "")
+    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get_webhook_token() or "")
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return Response(
         content=content.encode("utf-8"),

@@ -200,3 +200,20 @@ async def test_mcp_tool(req: McpTestRequest):
     res = await mcp_service.execute_tool(req.tool, req.arguments, client_name="WebGUI Simulator", client_ip="127.0.0.1")
     return res
 
+# --- RFC 8414 / RFC 9728 OAuth 2.0 Protected Resource Metadata (MCP クライアント自動検出用) ---
+
+@router.get("/.well-known/oauth-protected-resource")
+@router.get("/.well-known/oauth-protected-resource/mcp/sse")
+@router.get("/.well-known/oauth-protected-resource/mcp")
+async def oauth_protected_resource_metadata(request: Request):
+    """Claude Desktop / Cursor 等の MCP クライアントからの RFC 8414 / RFC 9728 認可プローブ応答 (404 WARNING 抑止)"""
+    base_url = str(request.base_url).rstrip("/")
+    return {
+        "resource": f"{base_url}/mcp/sse",
+        "authorization_servers": [],
+        "scopes_supported": ["speak", "status", "history"],
+        "bearer_methods_supported": ["header", "query"],
+        "resource_documentation": f"{base_url}/"
+    }
+
+

@@ -198,17 +198,6 @@ def check_tunnel_access(request: Request):
                 detail="Forbidden: Web GUI and management APIs are restricted to internal LAN when ADMIN_PASSWORD is not configured."
             )
 
-def validate_webhook_token(request: Request, body_token: Optional[str] = None):
-    from app.services.settings_service import settings_manager
-    expected_token = settings_manager.get().get("webhookToken") or settings.webhook_token
-    if not expected_token:
-        return True
-
-    # 1. 認証済み管理者セッション Cookie (auth_token) を持つ場合は Tunnel / LAN を問わず自動免除
-    cookie_token = request.cookies.get("auth_token")
-    if cookie_token and cookie_token in ACTIVE_SESSIONS:
-        return True
-
 def extract_client_ip(request: Request) -> str:
     """
     クライアントIPの安全な取得。
@@ -229,7 +218,16 @@ def extract_client_ip(request: Request) -> str:
 
 def validate_webhook_token(request: Request, body_token: Optional[str] = None):
     from app.services.settings_service import settings_manager
-    expected_token = settings_manager.get().get("webhookToken") or settings.webhook_token
+    raw_token = None
+    if hasattr(settings_manager, "get_webhook_token"):
+        res = settings_manager.get_webhook_token()
+        if isinstance(res, str):
+            raw_token = res
+    if not raw_token and hasattr(settings_manager, "get"):
+        raw_token = settings_manager.get().get("webhookToken")
+    if not raw_token:
+        raw_token = settings.webhook_token
+    expected_token = str(raw_token or "").strip()
     if not expected_token:
         return True
 
@@ -323,7 +321,7 @@ def check_admin_auth(request: Request):
     # 5. MCP エンドポイントは Webhook トークン または 管理者パスワードで保護
     if path == "/mcp" or path.startswith("/mcp/"):
         from app.services.settings_service import settings_manager
-        wh_token = settings_manager.get().get("webhookToken") or settings.webhook_token
+        wh_token = settings_manager.get_webhook_token()
         if wh_token:
             if auth_header.startswith("Bearer ") and hmac.compare_digest(auth_header[7:].strip(), wh_token):
                 return True
@@ -346,9 +344,8 @@ def check_admin_auth(request: Request):
     )
     if any(path == prefix or path.startswith(prefix) for prefix in INTEGRATION_PREFIXES):
         from app.services.settings_service import settings_manager
-        gui_wh_token = (settings_manager.get().get("webhookToken") or "").strip()
-        env_wh_token = (settings.webhook_token or "").strip()
-        valid_tokens = [t for t in (gui_wh_token, env_wh_token) if t]
+        eff_wh_token = settings_manager.get_webhook_token()
+        valid_tokens = [t for t in (eff_wh_token, (settings.webhook_token or "").strip()) if t]
 
         cand_token = None
         if auth_header.startswith("Bearer "):

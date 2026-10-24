@@ -3,6 +3,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 from app.services.rain_alarm_service import rain_alarm_service
 from app.services.settings_service import settings_manager
+from app.core.logger import get_logger
+
+log = get_logger("RainAlarmRouter")
 
 router = APIRouter(prefix="/api/rain-alarm", tags=["RainAlarm"])
 
@@ -54,7 +57,13 @@ async def get_live_forecast(
             "providerUsed": provider_used
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"降雨予測データの取得に失敗しました: {str(e)}")
+        log.warning(f"Failed to fetch rain forecast (lat={lat}, lon={lon}): {e}")
+        return {
+            "currentRainfall": 0.0,
+            "timeline": [],
+            "providerUsed": "error",
+            "error": str(e)
+        }
 
 
 @router.get("/radar-time")
