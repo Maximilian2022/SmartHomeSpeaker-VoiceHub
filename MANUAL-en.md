@@ -37,6 +37,8 @@ This document serves as the comprehensive technical manual for **Smart Home Spea
    - 6.2 [JMA Weather Warning API Polling & Diff State Machine](#62-jma-weather-warning-api-polling--diff-state-machine)
    - 6.3 [JMA Weather Forecast Integration (Morning Summary Injection)](#63-jma-weather-forecast-integration-morning-summary-injection)
    - 6.4 [Notification Speaker Control & Urgent Mode](#64-notification-speaker-control--urgent-mode)
+   - 6.5 [Smart Home Disaster Automation Triggers (Apple Home / Home Assistant / Alexa / Google Home)](#65-smart-home-disaster-automation-triggers-apple-home--home-assistant--alexa--google-home)
+   - 6.6 [Rain Alarm, Approaching Rain Alerts & Rain Radar Overlay (Japan Only)](#66-rain-alarm-approaching-rain-alerts--rain-radar-overlay-japan-only)
 7. [AI Integration Engine (AI Service)](#7-ai-integration-engine-ai-service)
    - 7.1 [Supported Providers (Google Gemini / OpenAI / Local LLM)](#71-supported-providers-google-gemini--openai--local-llm)
    - 7.2 [Model Auto-Discovery & Resilient Fallback (503 / 429 Resilience)](#72-model-auto-discovery--resilient-fallback-503--429-resilience)
@@ -63,7 +65,7 @@ This document serves as the comprehensive technical manual for **Smart Home Spea
     - 11.4 [Real-Time Connection Status Summary Board](#114-real-time-connection-status-summary-board)
 12. [Web GUI Interface Specifications](#12-web-gui-interface-specifications)
     - 12.1 [macOS-Style 2-Column Vertical Navigation](#121-macos-style-2-column-vertical-navigation)
-    - 12.2 [Speech History (Real-Time Recording, Replay, Preview)](#122-speech-history-real-time-recording-replay-preview)
+    - 12.2 [Speech History (Real-Time Recording, Replay, Preview & Filters)](#122-speech-history-real-time-recording-replay-preview--filters)
     - 12.3 [Webhook Command Builder & Plugin Documentation Modal](#123-webhook-command-builder--plugin-documentation-modal)
     - 12.4 [Visual Feedback & Modern Micro-Animations](#124-visual-feedback--modern-micro-animations)
 13. [Complete REST API Reference](#13-complete-rest-api-reference)
@@ -509,6 +511,22 @@ Real-time disaster and severe weather alert states can be used as native "trigge
 * **Simulation & Test Function**:
   - Test smart home automations on-demand via the Web UI "Test ON for 10s" buttons or `POST /api/disaster/triggers/test`.
 
+### 6.6 Rain Alarm, Approaching Rain Alerts & Rain Radar Overlay (Japan Only)
+
+Integrates with the Japan Meteorological Agency (JMA) High-Resolution Precipitation Nowcast (`hrpns`) to proactively detect approaching rain clouds and automatically broadcast warnings before precipitation starts.
+
+* **Automated Cloud Monitoring & Spoken Broadcasts**:
+  - Automatically predicts incoming rain (approx. 10 to 30 minutes in advance), heavy rainfall alerts, and clear-weather notifications ("Rain has stopped") based on configured geographic coordinates (latitude and longitude).
+  - Helps households remember to bring in laundry or take an umbrella.
+  - Check interval, target speaker scope, chime sounds, and threshold intensity (mm/h) are fully configurable in the Web UI.
+* **Nowcast Overlay & Max Native Zoom Support (`maxNativeZoom: 10`)**:
+  - Displays real-time JMA rain radar tiles directly on the Leaflet map in the Web UI ("🌦️ Rain Radar Overlay").
+  - Complies with JMA tile delivery limits (maximum native zoom 10) by leveraging Leaflet's `maxNativeZoom: 10`. Zoom levels 11 and above automatically use high-resolution overscaling / stretch interpolation, ensuring crisp rain radar rendering at any scale without blank tiles.
+* **Official JMA Color Legend with Glassmorphism**:
+  - Floating legend control (`bottomleft`) strictly following the official 8-step JMA precipitation intensity color scale (0–1, 1–5, 5–10, 10–20, 20–30, 30–50, 50–80, 80+ mm/h).
+  - Toggles seamlessly with the radar layer and displays descriptive tooltips (e.g., "Violent Rain", "Very Heavy Rain") on hover. Fully responsive to Japanese/English language switching.
+* **Smart Home Disaster Automation Trigger Integration**:
+  - Activates HomeKit virtual motion sensors (`Rain Approaching`) and Home Assistant MQTT Binary Sensors (`binary_sensor.*_rain_alarm`) when rain clouds approach, allowing motorized shutters or smart windows to automatically close.
 
 ---
 
@@ -741,10 +759,15 @@ The settings panel features a clean two-column layout:
 - **Left Column**: Category-based menu (General & Speech, Integrations & APIs, Advanced System Settings).
 - **Right Column**: Responsive configuration cards corresponding to the selected category.
 
-### 12.2 Speech History (Real-Time Recording, Replay, Preview)
+### 12.2 Speech History (Real-Time Recording, Replay, Preview & Filters)
 Maintains a rolling log of the last 100 announcements:
-- Color-coded badges denote request sources (Web UI, schedules, calendar, external APIs).
-- One-click actions for Re-broadcast, Browser Preview, and Text Copy.
+- **Comprehensive Source Badges & Dedicated Filter Pills**:
+  - Color-coded badges denote request sources (Web UI, schedules, calendar, 🌧️ Rain Alarm, 🚨 Disaster Alerts, MCP, MQTT, external APIs).
+  - Top filter pill buttons ("All", "Web UI", "Schedule", "Calendar", "🌧️ Rain Alarm", "🚨 Disaster") enable instant filtering of announcement logs.
+- **Full Pipeline Execution Status Tracking**:
+  - In addition to successful broadcasts (`success`), logs capture DND suppressions (`suppressed` / `queued`), deduplication suppressions (`skipped`), unresolvable speaker targets, and TTS synthesis errors (`error`) with actionable status messages.
+- **One-Click Actions**:
+  - Instant Re-broadcast, Browser Preview, and Text Copy from history cards.
 
 ### 12.3 Webhook Command Builder & Plugin Documentation Modal
 - **Webhook Command Builder**: Interactively select speakers and enter text to generate ready-to-copy cURL, JSON, and IFTTT snippets.

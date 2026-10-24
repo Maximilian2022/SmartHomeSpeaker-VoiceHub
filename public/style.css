@@ -2011,6 +2011,36 @@ input:checked + .slider:before {
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
+.source-badge.source-rain_alarm {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+}
+
+.source-badge.source-disaster {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.source-badge.source-mcp {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+}
+
+.source-badge.source-mqtt {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.source-badge.source-scheduled_speech {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+}
+
 .history-time {
   font-size: 0.8rem;
   color: var(--text-sub);
@@ -3008,6 +3038,81 @@ input:checked + .slider:before {
   color: #ffffff;
   font-weight: 600;
 }
+
+/* ================= 雨雲レーダー凡例 (Rain Radar Legend) ================= */
+.rain-radar-legend {
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 6px 10px 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  color: var(--text-main, #f8fafc);
+  font-family: var(--font-family);
+  font-size: 0.72rem;
+  user-select: none;
+  width: 240px;
+  max-width: calc(100vw - 40px);
+  margin-bottom: 8px !important;
+  margin-left: 8px !important;
+  pointer-events: auto;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.rain-radar-legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: #cbd5e1;
+}
+
+.rain-radar-legend-badge {
+  font-size: 0.62rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.rain-radar-legend-bar {
+  display: flex;
+  width: 100%;
+  height: 9px;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) inset;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.rain-radar-legend-seg {
+  flex: 1;
+  height: 100%;
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  position: relative;
+}
+
+.rain-radar-legend-seg:hover {
+  transform: scaleY(1.35);
+  filter: brightness(1.25);
+  z-index: 2;
+}
+
+.rain-radar-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  font-size: 0.62rem;
+  color: #94a3b8;
+  font-weight: 500;
+  padding: 0 1px;
+}
+
 
 
 

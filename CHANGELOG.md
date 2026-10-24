@@ -3,6 +3,39 @@
 すべての重要な変更はこのファイルに記録されます。
 フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいています。
 
+## [1.0.11] - 2026-10-24
+
+### 追加・新機能 (Added)
+- **気象庁高解像度降水ナウキャスト公式配色準拠の雨雲レーダー凡例 (`public/app.js`, `public/style.css`, `public/locales/ja.json`, `public/locales/en.json`)**:
+  - 気象庁公式カラーテーブル（8段階: 0〜1, 1〜5, 5〜10, 10〜20, 20〜30, 30〜50, 50〜80, 80+ mm/h）に 100% 準拠した美しいフロート凡例コントロール（Leaflet `bottomleft`）を新設。
+  - ダーク・グラスモーフィズムデザイン（半透明ぼかし背景、角丸、陰影）を採用し、地図上の視認性を確保。
+  - 各色バーへのマウスホバーで「猛烈な雨」「非常に激しい雨」などの詳細な雨の強さ解説ツールチップを表示。
+  - 「🌦️ 雨雲レーダー重ね合わせ」トグルスイッチの ON/OFF に完全連動し、レーダー非表示時は凡例も連動して非表示化。
+  - WebUI の日英言語切り替え（`voicehub:language-changed`）にリアルタイム連動。
+- **WebUI 発言履歴フィルターピルの拡充 (`public/index.html`, `public/app.js`, `public/style.css`)**:
+  - 発言履歴画面のフィルターピルに「🌧️ 雨アラーム」と「🚨 防災速報」の専用フィルターボタンを追加。
+  - 送信元バッジ（`source-rain_alarm`, `source-disaster`, `source-mcp`, `source-mqtt`, `source-scheduled_speech`）の専用カラーとバッジスタイルを定義。
+
+### 修正・堅牢化 (Fixed / Reliability)
+- **雨雲レーダーの尺度・ズーム表示不具合修正 (`public/app.js`)**:
+  - 気象庁の高解像度降水ナウキャスト（`hrpns`）タイルの仕様（最大ズームレベルが 10 までで、ズーム 11 以上は空の透明画像が返却される）に起因し、デフォルト尺度（ズーム 12）で雨雲が表示されず、2段階縮小（マイナス）しないと表示されなかった問題を解消。
+  - `rainRadarLayer`（Leaflet タイルレイヤー）に `maxNativeZoom: 10, maxZoom: 18, minZoom: 4` を設定。ズーム 11 以上のデフォルト尺度や拡大時でも、Leaflet がズーム 10 のタイルを自動的にオーバースケール（高解像度ストレッチ補間）して拡大描画するよう改善。
+  - 地図初期化時の初期ズームを局地と周辺地域が見渡しやすい `zoom: 11` に最適化。
+- **防災速報コールバックの引数エラー解消 (`app/main.py`)**:
+  - `disaster_service`（緊急地震速報・気象警報）から `source="disaster"` などのキーワード引数が渡された際、`app/main.py` 内の `on_disaster_speech` に `**kwargs` が欠落していたため `TypeError` が送出され、音声が再生されず履歴にも残らなかった不具合を完全解消。
+- **全音声発話・履歴記録パイプラインの全面堅牢化 (`app/services/speech_service.py`, `app/services/rain_alarm_service.py`, `app/services/history_service.py`)**:
+  - `rain_alarm_service._speak_alert`: DND 先回り return を撤廃して `speech_service.speak` に一本化し、DND 発動時でも履歴に「DND抑制」または保留キューとして確実に記録。
+  - 重複排除（Deduplication）による同一メッセージ抑止時: `status: "skipped"`、抑止理由メッセージ付きで発言履歴に記録。
+  - 対象スピーカー未解決（No valid target devices found）時: `status: "error"`、エラー理由付きで発言履歴に記録。
+  - TTS 音声合成例外発生時: `try...except` で安全に捕捉し、`status: "error"`、エラー詳細付きで発言履歴に記録。
+  - `history_service.derive_source_label` に `rain_alarm`, `disaster`, `mqtt`, `mcp`, `scheduled_speech`, `system` を追加し、あらゆる経路からの発言の送信元ラベルを正確に導出。
+- **WebUI キャッシュバスター更新 (`public/index.html`)**:
+  - `app.js?v=1.0.13` に更新。
+- **単体・統合テストの追加 (`tests/test_speech_dispatch.py`)**:
+  - 防災速報コールバック、雨アラーム連携、重複スキップ履歴、宛先未解決エラー履歴、TTS合成エラー履歴、送信元ラベル導出を検証する 6 件のテストを新設（テスト総数 77 件、100% PASS）。
+
+---
+
 ## [1.0.10] - 2026-10-23
 
 ### 追加・新機能 (Added)

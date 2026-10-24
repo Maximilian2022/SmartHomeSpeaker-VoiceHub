@@ -423,12 +423,7 @@ class RainAlarmService:
         }
 
     async def _speak_alert(self, text: str, alert_type: str):
-        """DND確認の上、設定先スピーカーへアナウンスを発話"""
-        # DNDチェック
-        if dnd_service.is_in_dnd():
-            log.info(f"[RainAlarm] DND（おやすみモード）中のため音声発話をスキップしました: '{text}'")
-            return
-
+        """設定先スピーカーへアナウンスを発話（DND評価・保留・履歴記録は speech_service に委譲）"""
         conf = settings_manager.get().get("rainAlarm", {})
         disaster_conf = settings_manager.get().get("disaster", {})
 

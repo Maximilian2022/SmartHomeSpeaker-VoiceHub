@@ -57,8 +57,8 @@ async def lifespan(app: FastAPI):
     await scheduled_speech_service.start()
 
     # 防災速報コールバックの設定
-    async def on_disaster_speech(text: str, targets=None, urgent: bool = True, volume_level: int = None):
-        await speech_service.speak(text=text, targets=targets or "ALL", urgent=urgent, volume_level=volume_level)
+    async def on_disaster_speech(text: str, targets=None, urgent: bool = True, volume_level: int = None, **kwargs):
+        await speech_service.speak(text=text, targets=targets or "ALL", urgent=urgent, volume_level=volume_level, **kwargs)
 
     disaster_service.set_speech_executor(on_disaster_speech)
     await disaster_service.start()

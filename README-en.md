@@ -20,7 +20,7 @@ Originally created as a personal home automation utility to deliver daily notifi
   Out-of-the-box text-to-speech powered by community-maintained Edge-TTS, with seamless plug-and-play extension and cascading fallback to official Azure Speech Service, Google Cloud TTS, or fully offline local engines (VOICEVOX, SHAREVOX, COEIROINK).
   *(Note: Edge-TTS relies on unofficial endpoints; for mission-critical guarantees, using the official Azure Speech Service free-tier is supported and recommended).*
 - **Intuitive Web UI & Real-Time Controls**:
-  Easily send announcements directly from your desktop or mobile browser. Includes live browser preview before broadcast and one-click replay from speech history.
+  Easily send announcements directly from your desktop or mobile browser. Includes live browser preview, filtered speech history (by rain alarm, disaster, schedule, etc.), one-click replay, and a real-time rain radar overlay with official JMA color legends.
 - **Scheduled & Future Speech (Timers & Reminders)**:
   Schedule broadcasts for future execution with intuitive syntax, such as `at: "+10m"` (remind in 10 minutes) or `at: "19:30"` (dinner announcement at 19:30). Configurable via Web UI, Webhook, MQTT, or MCP.
 - **Daily Schedules & Calendar Sync**:

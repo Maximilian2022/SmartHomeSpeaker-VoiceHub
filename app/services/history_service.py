@@ -58,9 +58,15 @@ class HistoryManager:
             "web_ui": "Web UI (即時発言)",
             "quick_test": "Web UI (テスト)",
             "schedule": "定期スケジュール",
+            "scheduled_speech": "発声予約 (日時指定)",
             "calendar": "カレンダー連携",
             "tunnel_webhook": "Cloudflare Tunnel (外部)",
             "dnd_queue": "DND保留再生",
+            "rain_alarm": "雨アラーム",
+            "disaster": "防災速報",
+            "mcp": "MCP連携",
+            "mqtt": "MQTT連携",
+            "system": "システム通知",
             "api": "外部 API / Webhook"
         }
         return mapping.get(source, "外部 API / Webhook")

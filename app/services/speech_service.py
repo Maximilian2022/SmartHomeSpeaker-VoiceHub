@@ -137,15 +137,32 @@ class SpeechService:
         if not text:
             return {"status": "error", "message": "Text cannot be empty"}
 
+        effective_source = source or ("web_ui" if "Mozilla" in client_name or "Web" in client_name else "api")
+
         # 1. 重複排除 (Deduplication)
         dedup_conf = settings_manager.get().get("deduplication", {})
         if not urgent and dedup_conf.get("enabled", True):
             cooldown = dedup_conf.get("cooldownSeconds", 30)
             if deduplicator.is_duplicate(text, client_name, cooldown):
+                skip_msg = f"直前の同一通知から {cooldown} 秒以内のため重複スキップしました"
+                self.record_history({
+                    "text": text,
+                    "source": effective_source,
+                    "sourceLabel": source_label,
+                    "clientName": client_name,
+                    "clientIp": client_ip or "",
+                    "targets": [targets] if isinstance(targets, str) else (targets or ["デフォルト"]),
+                    "voice": voice or "ja-JP-NanamiNeural",
+                    "status": "skipped",
+                    "statusMessage": skip_msg,
+                    "urgent": urgent,
+                    "wasQueued": False,
+                    "results": []
+                })
                 return {
                     "success": True,
                     "status": "skipped",
-                    "message": f"直前の同一通知から {cooldown} 秒以内のためスキップしました",
+                    "message": skip_msg,
                     "deduplicated": True,
                     "results": []
                 }
@@ -153,8 +170,6 @@ class SpeechService:
         # 2. DND 評価 (おやすみ・会議モード)
         current_meeting = calendar_service.get_current_meeting_title()
         dnd_result = dnd_service.evaluate(active_event_title=current_meeting, urgent=urgent)
-
-        effective_source = source or ("web_ui" if "Mozilla" in client_name or "Web" in client_name else "api")
 
         if dnd_result.get("active"):
             action = dnd_result.get("action", "skip")
@@ -249,7 +264,23 @@ class SpeechService:
                 unique_targets = [d for d in unique_targets if d.get("type") != "alexa" or d == alexa_group]
 
         if not unique_targets:
-            return {"status": "error", "message": "No valid target devices found"}
+            err_msg = "対象スピーカーが見つかりませんでした (No valid target devices found)"
+            log.warning(f"[Speech] {err_msg}: targets={targets}")
+            self.record_history({
+                "text": text,
+                "source": effective_source,
+                "sourceLabel": source_label,
+                "clientName": client_name,
+                "clientIp": client_ip or "",
+                "targets": [targets] if isinstance(targets, str) else (targets or ["デフォルト"]),
+                "voice": voice or "ja-JP-NanamiNeural",
+                "status": "error",
+                "statusMessage": err_msg,
+                "urgent": urgent,
+                "wasQueued": False,
+                "results": []
+            })
+            return {"status": "error", "message": err_msg}
 
         # 4. 音声合成 (TTS)
         opt_voice = voice or tts_service.get_default_voice_id()
@@ -264,15 +295,34 @@ class SpeechService:
             speech = {"filename": "", "filepath": "", "duration": 0.0, "cached": False, "voice": "alexa", "fallback": False}
             audio_url = ""
         else:
-            speech = await tts_service.synthesize(
-                text=text,
-                voice=opt_voice,
-                rate=opt_rate,
-                pitch=opt_pitch,
-                chime=opt_chime,
-                urgent=urgent
-            )
-            audio_url = f"{self.server_base_url}/voice/{speech['filename']}"
+            try:
+                speech = await tts_service.synthesize(
+                    text=text,
+                    voice=opt_voice,
+                    rate=opt_rate,
+                    pitch=opt_pitch,
+                    chime=opt_chime,
+                    urgent=urgent
+                )
+                audio_url = f"{self.server_base_url}/voice/{speech['filename']}"
+            except Exception as e:
+                err_msg = f"音声合成に失敗しました ({e})"
+                log.error(f"[Speech] TTS合成エラー: {e}", exc_info=True)
+                self.record_history({
+                    "text": text,
+                    "source": effective_source,
+                    "sourceLabel": source_label,
+                    "clientName": client_name,
+                    "clientIp": client_ip or "",
+                    "targets": [d.get("name") or d.get("ip") for d in unique_targets],
+                    "voice": opt_voice,
+                    "status": "error",
+                    "statusMessage": err_msg,
+                    "urgent": urgent,
+                    "wasQueued": False,
+                    "results": [{"target": d.get("name") or d.get("ip"), "status": "error", "error": str(e)} for d in unique_targets]
+                })
+                return {"status": "error", "message": err_msg}
 
         effective_vol = self._get_effective_volume(volume_level)
 

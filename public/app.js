@@ -1428,6 +1428,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.historyFilter === 'api') {
           return item.source === 'api' || item.source === 'tunnel_webhook' || item.source === 'webhook';
         }
+        if (state.historyFilter === 'rain_alarm') {
+          return item.source === 'rain_alarm';
+        }
+        if (state.historyFilter === 'disaster') {
+          return item.source === 'disaster';
+        }
         return item.source === state.historyFilter;
       });
     }
@@ -7857,15 +7863,68 @@ document.addEventListener('DOMContentLoaded', () => {
   let rainMapInstance = null;
   let rainMarkerInstance = null;
   let rainRadarLayer = null;
+  let rainRadarLegendControl = null;
   let isRadarOverlayActive = true;
   let lastRadarTime = null;
+
+  function createRadarLegendControl() {
+    if (!window.L) return null;
+    const LegendControl = L.Control.extend({
+      options: { position: 'bottomleft' },
+      onAdd: function() {
+        const div = L.DomUtil.create('div', 'rain-radar-legend');
+        div.id = 'rainRadarLegendControl';
+        const titleText = (window.t ? window.t('settingsDisaster.radarLegendTitle') : null) || '降水強度 (mm/h)';
+        const lvl0 = (window.t ? window.t('settingsDisaster.radarLevel0') : null) || '0〜1 mm/h: ごく弱い雨';
+        const lvl1 = (window.t ? window.t('settingsDisaster.radarLevel1') : null) || '1〜5 mm/h: 弱い雨';
+        const lvl5 = (window.t ? window.t('settingsDisaster.radarLevel5') : null) || '5〜10 mm/h: 本降りの雨';
+        const lvl10 = (window.t ? window.t('settingsDisaster.radarLevel10') : null) || '10〜20 mm/h: やや強い雨';
+        const lvl20 = (window.t ? window.t('settingsDisaster.radarLevel20') : null) || '20〜30 mm/h: 強い雨 (土砂降り)';
+        const lvl30 = (window.t ? window.t('settingsDisaster.radarLevel30') : null) || '30〜50 mm/h: 激しい雨 (バケツを引っくり返したよう)';
+        const lvl50 = (window.t ? window.t('settingsDisaster.radarLevel50') : null) || '50〜80 mm/h: 非常に激しい雨 (滝のよう)';
+        const lvl80 = (window.t ? window.t('settingsDisaster.radarLevel80') : null) || '80 mm/h〜: 猛烈な雨 (息苦しくなるような圧迫感)';
+        const noticeText = (window.t ? window.t('settingsDisaster.radarLegendNotice') : null) || '気象庁 降水ナウキャスト凡例';
+
+        div.innerHTML = `
+          <div class="rain-radar-legend-header">
+            <span>🌦️ ${escapeHtml(titleText)}</span>
+            <span class="rain-radar-legend-badge" title="${escapeHtml(noticeText)}">JMA</span>
+          </div>
+          <div class="rain-radar-legend-bar" title="${escapeHtml(noticeText)}">
+            <div class="rain-radar-legend-seg" style="background:#F2F2FF;" title="${escapeHtml(lvl0)}"></div>
+            <div class="rain-radar-legend-seg" style="background:#A0D2FF;" title="${escapeHtml(lvl1)}"></div>
+            <div class="rain-radar-legend-seg" style="background:#218CFF;" title="${escapeHtml(lvl5)}"></div>
+            <div class="rain-radar-legend-seg" style="background:#0041FF;" title="${escapeHtml(lvl10)}"></div>
+            <div class="rain-radar-legend-seg" style="background:#FAF500;" title="${escapeHtml(lvl20)}"></div>
+            <div class="rain-radar-legend-seg" style="background:#FF9900;" title="${escapeHtml(lvl30)}"></div>
+            <div class="rain-radar-legend-seg" style="background:#FF2800;" title="${escapeHtml(lvl50)}"></div>
+            <div class="rain-radar-legend-seg" style="background:#B40068;" title="${escapeHtml(lvl80)}"></div>
+          </div>
+          <div class="rain-radar-legend-labels">
+            <span>0</span>
+            <span>1</span>
+            <span>5</span>
+            <span>10</span>
+            <span>20</span>
+            <span>30</span>
+            <span>50</span>
+            <span>80+</span>
+          </div>
+        `;
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+      }
+    });
+    return new LegendControl();
+  }
 
   async function initRainAlarmMap(lat, lon) {
     const mapContainer = document.getElementById('rainAlarmMap');
     if (!mapContainer || typeof window.L === 'undefined') return;
 
     if (rainMapInstance) {
-      rainMapInstance.setView([lat, lon], rainMapInstance.getZoom() || 12);
+      rainMapInstance.setView([lat, lon], rainMapInstance.getZoom() || 11);
       if (rainMarkerInstance) rainMarkerInstance.setLatLng([lat, lon]);
       return;
     }
@@ -7873,7 +7932,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       rainMapInstance = L.map('rainAlarmMap', {
         center: [lat, lon],
-        zoom: 12,
+        zoom: 11,
         zoomControl: true
       });
 
@@ -7898,6 +7957,13 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       await updateRadarOverlay();
+
+      // 言語変更時に凡例を再描画
+      window.addEventListener('voicehub:language-changed', () => {
+        if (rainMapInstance && isRadarOverlayActive) {
+          updateRadarOverlay();
+        }
+      });
     } catch (err) {
       console.warn('[RainAlarm] Leaflet初期化エラー:', err);
     }
@@ -7919,6 +7985,11 @@ document.addEventListener('DOMContentLoaded', () => {
       rainRadarLayer = null;
     }
 
+    if (rainRadarLegendControl) {
+      rainMapInstance.removeControl(rainRadarLegendControl);
+      rainRadarLegendControl = null;
+    }
+
     if (!isRadarOverlayActive) return;
 
     try {
@@ -7936,9 +8007,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const tileUrl = `https://www.jma.go.jp/bosai/jmatile/data/nowc/${basetime}/none/${validtime}/surf/hrpns/{z}/{x}/{y}.png`;
       rainRadarLayer = L.tileLayer(tileUrl, {
         opacity: 0.65,
+        maxNativeZoom: 10,
         maxZoom: 18,
+        minZoom: 4,
         zIndex: 100
       }).addTo(rainMapInstance);
+
+      // 雨雲レーダー有効時は凡例を表示
+      rainRadarLegendControl = createRadarLegendControl();
+      if (rainRadarLegendControl) {
+        rainRadarLegendControl.addTo(rainMapInstance);
+      }
     } catch (err) {
       console.warn('[RainAlarm] レーダーオーバーレイ更新エラー:', err);
     }
