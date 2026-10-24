@@ -408,14 +408,20 @@ class TtsService:
 
     def get_cache_stats(self) -> Dict[str, Any]:
         now = time.time()
-        if hasattr(self, "_cached_stats") and (now - getattr(self, "_cached_stats_time", 0.0) < 60.0):
+        if hasattr(self, "_cached_stats") and (now - getattr(self, "_cached_stats_time", 0.0) < 120.0):
             return self._cached_stats
 
         try:
-            files = list(self.voice_dir.glob("*.mp3"))
-            total_bytes = sum(f.stat().st_size for f in files)
+            total_bytes = 0
+            count = 0
+            with os.scandir(str(self.voice_dir)) as it:
+                for entry in it:
+                    if entry.is_file() and entry.name.endswith(".mp3"):
+                        count += 1
+                        total_bytes += entry.stat().st_size
+
             stats = {
-                "count": len(files),
+                "count": count,
                 "totalBytes": total_bytes,
                 "totalMB": f"{total_bytes / 1024 / 1024:.2f}",
                 "maxMB": "1024"

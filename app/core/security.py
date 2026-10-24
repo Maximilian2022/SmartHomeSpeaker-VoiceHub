@@ -192,7 +192,7 @@ def check_tunnel_access(request: Request):
             return
 
         path = request.url.path
-        if not (path == "/api/say" or path == "/api/webhook" or path.startswith("/mcp")):
+        if not (path == "/api/say" or path == "/api/webhook" or path.startswith("/mcp") or path.startswith("/.well-known/")):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: Web GUI and management APIs are restricted to internal LAN when ADMIN_PASSWORD is not configured."
@@ -289,6 +289,10 @@ def generate_session_token(password: str = "") -> str:
     ACTIVE_SESSIONS.add(token)
     return token
 
+def is_admin_session(token: Optional[str]) -> bool:
+    """指定されたトークンが有効な管理者セッションか判定"""
+    return bool(token and token in ACTIVE_SESSIONS)
+
 def check_admin_auth(request: Request):
     admin_password = get_effective_admin_password()
     if not admin_password:
@@ -310,24 +314,33 @@ def check_admin_auth(request: Request):
             return True
 
     path = request.url.path
-    # 3. ヘルスチェック専用エンドポイント (無認証・常時通過)
-    if path in ("/health", "/api/health"):
+    # 3. ヘルスチェック専用エンドポイント & RFC 8414 MCP認可メタデータ (無認証・常時通過)
+    if path in ("/health", "/api/health") or path.startswith("/.well-known/"):
         return True
 
-    # 4. ログイン関連および公開Webhookは除外
-    if path in ("/api/auth/login", "/api/auth/status") or path in ("/api/say", "/api/webhook"):
+    # 4. ログイン関連、公開Webhook、およびシステムバージョン表示 (GET) は除外
+    if path in ("/api/auth/login", "/api/auth/status") or path in ("/api/say", "/api/webhook") or (path == "/api/system/version" and request.method == "GET"):
         return True
 
     # 5. MCP エンドポイントは Webhook トークン または 管理者パスワードで保護
     if path == "/mcp" or path.startswith("/mcp/"):
         from app.services.settings_service import settings_manager
         wh_token = settings_manager.get_webhook_token()
-        if wh_token:
-            if auth_header.startswith("Bearer ") and hmac.compare_digest(auth_header[7:].strip(), wh_token):
-                return True
-            q_token = request.query_params.get("token")
-            if q_token and hmac.compare_digest(q_token, wh_token):
-                return True
+        valid_tokens = [t for t in (wh_token, (settings.webhook_token or "").strip(), admin_password) if t]
+
+        cand_token = None
+        if auth_header.startswith("Bearer "):
+            cand_token = auth_header[7:].strip()
+        elif request.headers.get("x-webhook-token"):
+            cand_token = request.headers.get("x-webhook-token").strip()
+        elif request.headers.get("x-api-key"):
+            cand_token = request.headers.get("x-api-key").strip()
+        elif request.query_params.get("token"):
+            cand_token = request.query_params.get("token").strip()
+
+        if cand_token and any(hmac.compare_digest(cand_token, t) for t in valid_tokens):
+            return True
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Admin password or Webhook token required for MCP"
@@ -339,10 +352,13 @@ def check_admin_auth(request: Request):
         "/api/dnd/",
         "/api/disaster/triggers",
         "/api/devices",
+        "/api/groups",
         "/api/status",
         "/api/events",
     )
-    if any(path == prefix or path.startswith(prefix) for prefix in INTEGRATION_PREFIXES):
+    is_integration = any(path == prefix or path.startswith(prefix) for prefix in INTEGRATION_PREFIXES) or (path == "/api/history" and request.method == "GET")
+
+    if is_integration:
         from app.services.settings_service import settings_manager
         eff_wh_token = settings_manager.get_webhook_token()
         valid_tokens = [t for t in (eff_wh_token, (settings.webhook_token or "").strip()) if t]

@@ -67,7 +67,7 @@ async def test_disaster(req: Optional[TestDisasterRequest] = None):
         return res
     except Exception as e:
         log.error(f"Disaster test error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to trigger disaster test")
 
 class DisasterTriggerTestRequest(BaseModel):
     target: str = "eew"  # "eew" | "warning" | "rain"
@@ -80,7 +80,7 @@ async def get_disaster_triggers():
         return disaster_service.get_trigger_status()
     except Exception as e:
         log.error(f"Failed to get disaster trigger status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve disaster trigger status")
 
 @router.post("/api/disaster/triggers/test")
 async def test_disaster_trigger(req: DisasterTriggerTestRequest):
@@ -90,5 +90,5 @@ async def test_disaster_trigger(req: DisasterTriggerTestRequest):
         return await disaster_service.trigger_test_state(target=req.target, duration_sec=req.duration or 10)
     except Exception as e:
         log.error(f"Failed to test disaster trigger: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to trigger test state")
 

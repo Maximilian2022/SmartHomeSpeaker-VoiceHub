@@ -20,7 +20,9 @@
     "unmute": "Unmute",
     "muteBtnTitle": "Toggle Mute / Unmute with one tap",
     "logout": "Logout",
-    "language": "Language"
+    "language": "Language",
+    "versionTitle": "VoiceHub Version (Click to open update settings)",
+    "updateAvailableTitle": "New version available (Click for details)"
   },
   "tabs": {
     "say": "Direct Speech",
@@ -1556,5 +1558,23 @@
   "systemLogs": {
     "lineCountPrefix": "Lines:",
     "archivePrefix": "Archive:"
+  },
+  "settingsUpdate": {
+    "versionHeader": "🏷️ System Version Information",
+    "versionSub": "Check current version and latest releases",
+    "currentVerLabel": "Current Version",
+    "latestVerLabel": "Latest Release",
+    "btnUpdateNow": "Update Now",
+    "btnViewReleaseNotes": "GitHub Release Notes",
+    "btnCheckUpdate": "Check for Updates",
+    "btnUpdateNowDirect": "Update Now",
+    "cliCommandLabel": "Manual CLI update command",
+    "watchtowerHeader": "🛡️ Watchtower & Auto-Update Settings",
+    "watchtowerSub": "Safe container auto-update management from outside",
+    "autoUpdateToggleTitle": "Overnight Auto-Update",
+    "autoUpdateToggleDesc": "When a new release is detected, automatically recreates the containers via Watchtower at the specified time.<br>※Default is <strong>OFF</strong> to prevent accidental overwrites in development.",
+    "autoUpdateTimeLabel": "Auto-update execution time (Default: 04:00)",
+    "autoUpdateTimeHelp": "Specify an off-peak night time (e.g. 04:00).",
+    "watchtowerParamTitle": "Watchtower Internal Connection Parameters"
   }
 }

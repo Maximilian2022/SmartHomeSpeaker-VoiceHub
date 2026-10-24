@@ -34,10 +34,13 @@ from app.routers import (
     mcp,
     logs,
     rain_alarm,
-    events
+    events,
+    system
 )
 from app.core.logger import init_system_logging, get_logger
 from app.services.mqtt_service import mqtt_service
+from app.services.update_service import update_service
+from app.version import __version__
 
 # システムロギングの初期化 (Uvicorn / stdout キャプチャ統合)
 init_system_logging()
@@ -94,10 +97,14 @@ async def lifespan(app: FastAPI):
     from app.services.rain_alarm_service import rain_alarm_service
     rain_alarm_service.start()
 
+    # アップデート監視・自動更新ワーカー開始 (1日1回チェック & 夜間自動更新)
+    update_service.start()
+
     yield
 
     # 終了時処理 (明示的なシステム終了/シャットダウンバナーログ)
     sys_log.info("🛑 [VoiceHub] システム終了 / シャットダウン処理開始 (Shutting down...)")
+    update_service.stop()
     rain_alarm_service.stop()
     await mqtt_service.stop()
     from app.services.devices_service import device_manager
@@ -107,7 +114,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Smart Home Speaker Voice Hub",
-    version="2.0.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -229,6 +236,7 @@ app.include_router(mcp.router)
 app.include_router(logs.router)
 app.include_router(rain_alarm.router)
 app.include_router(events.router)
+app.include_router(system.router)
 
 
 

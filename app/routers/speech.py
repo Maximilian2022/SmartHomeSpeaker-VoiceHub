@@ -225,7 +225,8 @@ async def api_preview_get(
         )
         return FileResponse(speech["filepath"], media_type="audio/mp3")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(f"TTS preview synthesis error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to synthesize speech preview")
 
 @router.get("/api/say")
 async def api_say_get(

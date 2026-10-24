@@ -3,7 +3,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.services.mqtt_service import mqtt_service
 from app.services.settings_service import settings_manager
+from app.core.logger import get_logger
 
+log = get_logger("MqttRouter")
 router = APIRouter()
 
 class MqttTestRequest(BaseModel):
@@ -29,7 +31,8 @@ async def test_mqtt(req: MqttTestRequest):
         res = await mqtt_service.test_publish(req.text, req.target, broker_id=req.brokerId)
         return res
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log.error(f"Failed to test MQTT: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to publish MQTT test message")
 
 class HaDiscoveryRequest(BaseModel):
     clear: bool = False
@@ -42,5 +45,6 @@ async def trigger_ha_discovery(req: HaDiscoveryRequest = HaDiscoveryRequest()):
         res = await mqtt_service.publish_ha_discovery(clear=req.clear, broker_id=req.brokerId)
         return res
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        log.error(f"Failed to publish HA discovery: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to configure Home Assistant discovery")
 

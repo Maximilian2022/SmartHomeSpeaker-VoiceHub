@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     
     go2rtc_api_url: str = Field(default="http://127.0.0.1:1984", alias="GO2RTC_API_URL")
+    
+    watchtower_url: str = Field(default="http://127.0.0.1:8082", alias="WATCHTOWER_URL")
+    watchtower_token: str = Field(default="voicehub-watchtower-token", alias="WATCHTOWER_TOKEN")
 
     model_config = SettingsConfigDict(
         env_file=str(BASE_DIR / ".my.env"),

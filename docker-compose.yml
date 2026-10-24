@@ -17,6 +17,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -33,6 +35,26 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # 自動/即時バージョンアップ管理 (Watchtower API待機モード)
+  # ※勝手な定期更新は完全無効化 (WATCHTOWER_HTTP_API_PERIODIC_POLLS=false) されており、
+  #   WebUI から指示された時、または夜間自動更新がONの時のみ安全に更新を実行します。
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower-VoiceHub
+    restart: unless-stopped
+    network_mode: "host"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_HTTP_API_UPDATE=true
+      - WATCHTOWER_HTTP_API_TOKEN=voicehub-watchtower-token
+      - WATCHTOWER_HTTP_API_PERIODIC_POLLS=false
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_HTTP_API_PORT=8082
 
 volumes:
   voice_data:

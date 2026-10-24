@@ -461,9 +461,30 @@ document.addEventListener('DOMContentLoaded', () => {
         el.cacheStatusText.textContent = `Cache: ${data.cacheStats.totalMB} MB / ${data.cacheStats.maxMB} MB`;
       }
 
+      // バージョン情報 & 更新通知バッジの反映
+      const headerVerText = document.getElementById('headerVersionText');
+      const headerUpdateBtn = document.getElementById('headerUpdateBtn');
+      const headerUpdateText = document.getElementById('headerUpdateText');
+
+      if (data.version && headerVerText) {
+        headerVerText.textContent = data.version;
+      }
+      if (headerUpdateBtn) {
+        if (data.hasUpdate) {
+          headerUpdateBtn.style.display = 'inline-flex';
+          if (headerUpdateText) {
+            headerUpdateText.textContent = isEn() ? `${data.latestVersion || 'New'} Available` : `${data.latestVersion || '新版'} 利用可能`;
+          }
+        } else {
+          headerUpdateBtn.style.display = 'none';
+        }
+      }
+
       // Webhook Token の反映 & バッジ表示更新
       const tokenInput = document.getElementById('txtWebhookTokenVal');
       const tokenBadge = document.getElementById('webhookTokenBadge');
+      const tokenSourceNotice = document.getElementById('webhookTokenSourceNotice');
+
       if (data.hasWebhookToken) {
         if (tokenBadge) {
           tokenBadge.className = 'badge-success';
@@ -477,6 +498,16 @@ document.addEventListener('DOMContentLoaded', () => {
             tokenInput.placeholder = isEn() ? '🔒 Token active (Admin login required to view/edit)' : '🔒 トークン設定済み (管理者ログインで表示・変更可能)';
           }
         }
+        if (tokenSourceNotice) {
+          if (data.webhookTokenSource === 'env') {
+            tokenSourceNotice.style.display = 'block';
+            tokenSourceNotice.innerHTML = isEn()
+              ? '⚙️ Loaded automatically from environment variable (<code>.my.env</code>).'
+              : '⚙️ 環境変数 (<code>.my.env</code>) より自動読み込み中。ここで保存すると <code>settings.json</code> で上書き設定されます。';
+          } else {
+            tokenSourceNotice.style.display = 'none';
+          }
+        }
       } else {
         if (tokenBadge) {
           tokenBadge.className = 'badge-secondary';
@@ -485,6 +516,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tokenInput) {
           tokenInput.value = '';
           tokenInput.placeholder = isEn() ? 'No token (Authentication not required)' : 'トークン未設定 (未設定の場合は認証不要)';
+        }
+        if (tokenSourceNotice) {
+          tokenSourceNotice.style.display = 'none';
         }
       }
 
@@ -1820,6 +1854,8 @@ document.addEventListener('DOMContentLoaded', () => {
               if (typeof updateBuilderCode === 'function') updateBuilderCode();
             } else if (subtabId === 'subtab-settings-tts') {
               if (typeof loadTtsProvidersSettings === 'function') loadTtsProvidersSettings();
+            } else if (subtabId === 'subtab-settings-update') {
+              if (typeof loadUpdateStatus === 'function') loadUpdateStatus();
             }
           }
         });
@@ -5147,11 +5183,34 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const hbTokenEl = document.getElementById('homebridgeTokenDisplay');
       if (hbTokenEl) {
-        if (data.webhookToken) {
-          hbTokenEl.textContent = `${data.webhookToken.slice(0, 6)}...${data.webhookToken.slice(-4)}`;
-          hbTokenEl.title = data.webhookToken;
+        const rawTok = data.webhookToken || state.serverInfo?.webhookToken;
+        if (rawTok && rawTok !== '********') {
+          hbTokenEl.textContent = `${rawTok.slice(0, 6)}...${rawTok.slice(-4)}`;
+          hbTokenEl.title = rawTok;
+        } else if (data.hasWebhookToken || state.serverInfo?.hasWebhookToken) {
+          hbTokenEl.textContent = isEn() ? '🔒 Configured (Protected)' : '🔒 設定済み (認証保護 有効)';
+          hbTokenEl.title = 'Webhook Token is active';
         } else {
-          hbTokenEl.textContent = 'なし (未設定)';
+          hbTokenEl.textContent = isEn() ? 'None (Public)' : 'なし (未設定・認証不要)';
+        }
+      }
+
+      // 12. システム更新 & Watchtower 自動更新設定の反映
+      const sysUpdate = data.systemUpdate || {};
+      const chkAutoUp = document.getElementById('chkAutoUpdate');
+      const txtAutoTime = document.getElementById('txtAutoUpdateTime');
+      const txtWtUrl = document.getElementById('txtWatchtowerUrl');
+      const txtWtTok = document.getElementById('txtWatchtowerToken');
+
+      if (chkAutoUp) chkAutoUp.checked = Boolean(sysUpdate.autoUpdate);
+      if (txtAutoTime && sysUpdate.autoUpdateTime) txtAutoTime.value = sysUpdate.autoUpdateTime;
+      if (txtWtUrl && sysUpdate.watchtowerUrl) txtWtUrl.value = sysUpdate.watchtowerUrl;
+      if (txtWtTok) {
+        if (sysUpdate.watchtowerToken && sysUpdate.watchtowerToken !== '********') {
+          txtWtTok.value = sysUpdate.watchtowerToken;
+        } else if (sysUpdate.hasWatchtowerToken) {
+          txtWtTok.value = '';
+          txtWtTok.placeholder = '******** (設定済み)';
         }
       }
     } catch (e) {
@@ -9474,8 +9533,257 @@ document.addEventListener('DOMContentLoaded', () => {
     updateAutoScrollUI();
   }
 
+  // =========================================================================
+  // システム更新 & Watchtower 自動更新 サブタブ制御
+  // =========================================================================
+  let updateState = {
+    currentVersion: '',
+    latestVersion: '',
+    hasUpdate: false,
+    releaseName: '',
+    releaseNotes: '',
+    releaseUrl: '',
+    publishedAt: '',
+    watchtower: { available: false, message: '' }
+  };
+
+  async function loadUpdateStatus(forceRefresh = false) {
+    try {
+      const url = forceRefresh ? '/api/system/check-update' : '/api/system/version';
+      const method = forceRefresh ? 'POST' : 'GET';
+      const res = await fetch(url, { method });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      updateState = { ...updateState, ...data };
+
+      // 1. バージョン情報カード
+      const lblCur = document.getElementById('lblCurrentVersion');
+      const lblLat = document.getElementById('lblLatestVersion');
+      const badgeStatus = document.getElementById('badgeUpdateStatus');
+      const lblStatus = document.getElementById('lblUpdateStatusText');
+
+      if (lblCur) lblCur.textContent = data.currentVersion || 'v--';
+      if (lblLat) lblLat.textContent = data.latestVersion || 'v--';
+
+      if (badgeStatus && lblStatus) {
+        if (data.hasUpdate) {
+          badgeStatus.style.background = 'rgba(56, 189, 248, 0.15)';
+          badgeStatus.style.color = '#38bdf8';
+          badgeStatus.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+          lblStatus.textContent = isEn() ? 'Update Available' : '新バージョン利用可能';
+        } else {
+          badgeStatus.style.background = 'rgba(16, 185, 129, 0.15)';
+          badgeStatus.style.color = '#34d399';
+          badgeStatus.style.borderColor = 'rgba(16, 185, 129, 0.35)';
+          lblStatus.textContent = isEn() ? 'Up to date' : '最新バージョンです';
+        }
+      }
+
+      // 2. 新バージョン案内カード
+      const noticeCard = document.getElementById('cardNewVersionNotice');
+      if (noticeCard) {
+        if (data.hasUpdate) {
+          noticeCard.style.display = 'block';
+          const titleEl = document.getElementById('lblNewReleaseTitle');
+          const dateEl = document.getElementById('lblNewReleaseDate');
+          const notesEl = document.getElementById('lblNewReleaseNotes');
+          const linkEl = document.getElementById('linkReleaseDetails');
+
+          if (titleEl) titleEl.textContent = data.releaseName || `${data.latestVersion} が利用可能です`;
+          if (dateEl && data.publishedAt) {
+            try {
+              dateEl.textContent = new Date(data.publishedAt).toLocaleDateString();
+            } catch (_) {
+              dateEl.textContent = data.publishedAt;
+            }
+          }
+          if (notesEl) notesEl.textContent = data.releaseNotes || (isEn() ? 'No release notes provided.' : 'リリースノートはありません。');
+          if (linkEl && data.releaseUrl) linkEl.href = data.releaseUrl;
+        } else {
+          noticeCard.style.display = 'none';
+        }
+      }
+
+      // 3. Watchtower 接続状態バッジ
+      const wtBadge = document.getElementById('badgeWatchtowerStatus');
+      const wtStatus = document.getElementById('lblWatchtowerStatusText');
+      if (wtBadge && wtStatus && data.watchtower) {
+        if (data.watchtower.available) {
+          wtBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+          wtBadge.style.color = '#34d399';
+          wtBadge.style.borderColor = 'rgba(16, 185, 129, 0.35)';
+          wtStatus.textContent = isEn() ? 'Watchtower: Ready' : '🟢 Watchtower 待機中 (接続正常)';
+        } else {
+          wtBadge.style.background = 'rgba(234, 179, 8, 0.15)';
+          wtBadge.style.color = '#facc15';
+          wtBadge.style.borderColor = 'rgba(234, 179, 8, 0.35)';
+          wtStatus.textContent = isEn() ? 'Watchtower: Offline' : '🟡 Watchtower 未実行 (手動更新のみ)';
+        }
+      }
+
+      // 4. ヘッダーの同期
+      const headerVer = document.getElementById('headerVersionText');
+      const headerBtn = document.getElementById('headerUpdateBtn');
+      const headerText = document.getElementById('headerUpdateText');
+      if (headerVer && data.currentVersion) headerVer.textContent = data.currentVersion;
+      if (headerBtn) {
+        if (data.hasUpdate) {
+          headerBtn.style.display = 'inline-flex';
+          if (headerText) headerText.textContent = isEn() ? `${data.latestVersion} Available` : `${data.latestVersion} 利用可能`;
+        } else {
+          headerBtn.style.display = 'none';
+        }
+      }
+    } catch (err) {
+      console.warn('[UpdateService] ステータス取得エラー:', err);
+    }
+  }
+
+  function openUpdateModal() {
+    const modal = document.getElementById('modalUpdateDetails');
+    if (!modal) return;
+    const curEl = document.getElementById('modalUpdateVerCurrent');
+    const latEl = document.getElementById('modalUpdateVerLatest');
+    const notesEl = document.getElementById('modalUpdateNotes');
+    const dateEl = document.getElementById('modalUpdateDate');
+    const linkEl = document.getElementById('modalUpdateGithubLink');
+
+    if (curEl) curEl.textContent = updateState.currentVersion || state.serverInfo?.version || 'v1.0.11';
+    if (latEl) latEl.textContent = updateState.latestVersion || 'v--';
+    if (notesEl) notesEl.textContent = updateState.releaseNotes || (isEn() ? 'No release notes.' : 'リリースノートはありません。');
+    if (dateEl && updateState.publishedAt) {
+      try {
+        dateEl.textContent = new Date(updateState.publishedAt).toLocaleDateString();
+      } catch (_) {
+        dateEl.textContent = updateState.publishedAt;
+      }
+    }
+    if (linkEl && updateState.releaseUrl) linkEl.href = updateState.releaseUrl;
+
+    modal.style.display = 'flex';
+  }
+
+  function closeUpdateModal() {
+    const modal = document.getElementById('modalUpdateDetails');
+    if (modal) modal.style.display = 'none';
+  }
+
+  async function triggerSystemUpdate() {
+    const msg = isEn()
+      ? 'Do you want to update VoiceHub and cloudflared to the latest Docker images now?\n\n※Watchtower will pull the images and recreate the containers. Connection will be temporarily interrupted during restart.'
+      : 'VoiceHub および cloudflared コンテナを最新の Docker イメージに今すぐアップデートしますか？\n\n※Watchtower が最新イメージを pull してコンテナを再作成します。再起動に伴い数分間通信が切断されます。';
+    if (!confirm(msg)) return;
+
+    try {
+      showToast(isEn() ? 'Sending update command to Watchtower...' : 'Watchtower に更新指示を送信中...', 'info');
+      const res = await fetch('/api/system/update', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`);
+      showToast(data.message || (isEn() ? 'Update started! Containers are being recreated.' : 'アップデートを開始しました。コンテナが再作成されます。'), 'success', 8000);
+      closeUpdateModal();
+    } catch (err) {
+      showToast((isEn() ? 'Update failed: ' : 'アップデート開始失敗: ') + err.message, 'error', 6000);
+    }
+  }
+
+  async function saveUpdateSettings() {
+    const chkAuto = document.getElementById('chkAutoUpdate');
+    const txtTime = document.getElementById('txtAutoUpdateTime');
+    const txtUrl = document.getElementById('txtWatchtowerUrl');
+    const txtTok = document.getElementById('txtWatchtowerToken');
+
+    const payload = {
+      systemUpdate: {
+        autoUpdate: chkAuto ? chkAuto.checked : false,
+        autoUpdateTime: txtTime ? txtTime.value : '04:00',
+        watchtowerUrl: txtUrl ? txtUrl.value.trim() : 'http://127.0.0.1:8082',
+        watchtowerToken: (txtTok && txtTok.value && txtTok.value !== '********') ? txtTok.value.trim() : '********'
+      }
+    };
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      showToast(isEn() ? 'Update settings saved successfully.' : '更新設定を保存しました', 'success');
+      loadUpdateStatus();
+    } catch (err) {
+      showToast((isEn() ? 'Failed to save: ' : '設定保存失敗: ') + err.message, 'error');
+    }
+  }
+
+  function initUpdateSubtab() {
+    // ヘッダーチップクリック -> 設定タブのシステム更新サブタブを開く
+    const headerVerChip = document.getElementById('headerVersionChip');
+    headerVerChip?.addEventListener('click', () => {
+      document.getElementById('btnTabSettings')?.click();
+      setTimeout(() => {
+        document.getElementById('btnSubtabSettingsUpdate')?.click();
+      }, 50);
+    });
+
+    // ヘッダー更新バッジクリック -> 更新詳細モーダルを開く
+    const headerUpdateBtn = document.getElementById('headerUpdateBtn');
+    headerUpdateBtn?.addEventListener('click', () => {
+      openUpdateModal();
+    });
+
+    // モーダル閉じる
+    document.getElementById('btnCloseUpdateModal')?.addEventListener('click', closeUpdateModal);
+    document.getElementById('modalUpdateDetails')?.addEventListener('click', (e) => {
+      if (e.target.id === 'modalUpdateDetails') closeUpdateModal();
+    });
+
+    // モーダル「設定を開く」
+    document.getElementById('btnModalGoSettings')?.addEventListener('click', () => {
+      closeUpdateModal();
+      document.getElementById('btnTabSettings')?.click();
+      setTimeout(() => {
+        document.getElementById('btnSubtabSettingsUpdate')?.click();
+      }, 50);
+    });
+
+    // モーダル「今すぐアップデート」
+    document.getElementById('btnModalTriggerUpdate')?.addEventListener('click', triggerSystemUpdate);
+
+    // 設定画面内のアップデートボタン群
+    document.getElementById('btnTriggerUpdateFromNotice')?.addEventListener('click', triggerSystemUpdate);
+    document.getElementById('btnTriggerUpdateDirect')?.addEventListener('click', triggerSystemUpdate);
+
+    // 更新を確認ボタン
+    document.getElementById('btnCheckUpdateNow')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btnCheckUpdateNow');
+      const origText = btn.innerHTML;
+      btn.innerHTML = '<span>⏳</span> ' + (isEn() ? 'Checking...' : '確認中...');
+      btn.disabled = true;
+      try {
+        await loadUpdateStatus(true);
+        showToast(isEn() ? 'Update check complete.' : '最新バージョンの確認が完了しました', 'info');
+      } catch (err) {
+        showToast((isEn() ? 'Check failed: ' : '更新確認失敗: ') + err.message, 'error');
+      } finally {
+        btn.innerHTML = origText;
+        btn.disabled = false;
+      }
+    });
+
+    // 手動更新コマンドのコピーボタン
+    document.getElementById('btnCopyUpdateCmd')?.addEventListener('click', () => {
+      navigator.clipboard?.writeText('docker compose pull && docker compose up -d')
+        .then(() => showToast(isEn() ? 'Command copied to clipboard!' : '更新コマンドをクリップボードにコピーしました', 'success'))
+        .catch(() => showToast('コピーに失敗しました', 'error'));
+    });
+
+    // 設定保存ボタン
+    document.getElementById('btnSaveUpdateSettings')?.addEventListener('click', saveUpdateSettings);
+  }
+
   // 起動実行
   init();
+  initUpdateSubtab();
 });
 
   // 言語切替時の動的UI再描画リスナー

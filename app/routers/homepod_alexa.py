@@ -5,7 +5,9 @@ from pydantic import BaseModel
 from app.services.homepod_service import homepod_service
 from app.services.alexa_service import alexa_service
 from app.config import settings
+from app.core.logger import get_logger
 
+log = get_logger("HomepodAlexaRouter")
 router = APIRouter()
 
 class AlexaTokenRequest(BaseModel):
@@ -32,7 +34,8 @@ async def alexa_auth_start():
         result = await alexa_service.start_proxy_auth(host_ip, port=8081)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(f"Failed to start Alexa proxy auth: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to start Alexa authentication")
 
 @router.post("/api/alexa/auth/stop")
 async def alexa_auth_stop():

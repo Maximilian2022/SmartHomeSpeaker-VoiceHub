@@ -61,6 +61,15 @@
           <span>🔒</span>
           <span data-i18n="header.logout">ログアウト</span>
         </button>
+        <!-- バージョン表示 & 更新通知バッジ -->
+        <div class="status-chip-sub" id="headerVersionChip" style="cursor: pointer;" data-i18n-title="header.versionTitle" title="VoiceHub バージョン (クリックで更新設定へ)">
+          <span style="font-size: 0.85em;">🏷️</span>
+          <span id="headerVersionText">v1.0.11</span>
+        </div>
+        <button type="button" class="header-update-btn" id="headerUpdateBtn" style="display: none;" data-i18n-title="header.updateAvailableTitle" title="新バージョンが利用可能です (クリックで詳細)">
+          <span class="pulse-icon">✨</span>
+          <span id="headerUpdateText">v-- 利用可能</span>
+        </button>
         <div class="status-chip-sub lang-select-chip" title="Language / 言語切替" data-i18n-title="header.language">
           <span class="lang-icon">🌐</span>
           <select id="headerLanguageSelect" class="header-lang-select" aria-label="Language">
@@ -622,6 +631,10 @@
                 <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-mcp" id="btnSubtabSettingsMcp">
                   <span class="nav-icon">🤖</span>
                   <span class="nav-label" data-i18n="settings.navMcp">MCP ツール連携</span>
+                </button>
+                <button type="button" class="sub-tab-btn settings-nav-item" data-subtab="subtab-settings-update" id="btnSubtabSettingsUpdate">
+                  <span class="nav-icon">🔄</span>
+                  <span class="nav-label" data-i18n="settings.navUpdate">システム更新・自動更新</span>
                 </button>
               </div>
             </div>
@@ -2229,6 +2242,7 @@
                 <button type="button" id="btnSaveWebhookToken" class="btn btn-primary btn-sm" data-i18n="common.save">保存</button>
                 <button type="button" id="btnCopyWebhookToken" class="btn btn-secondary btn-sm" data-i18n="modals.homebridgeGuide.btnCopy">コピー</button>
               </div>
+              <div id="webhookTokenSourceNotice" style="margin-top: 8px; font-size: 0.82rem; color: #38bdf8; display: none;"></div>
             </div>
 
             <!-- 🛠️ 対話型 Webhook ビルダー -->
@@ -3386,6 +3400,153 @@ Body:
             </div>
           </div>
         </div>
+
+        <!-- 9. システム更新 & Watchtower 自動更新 サブペイン -->
+        <div id="subtab-settings-update" class="sub-tab-pane">
+          <div class="two-col-layout">
+            <!-- 左カラム: バージョン情報 & 手動更新トリガー -->
+            <div class="col">
+              <div class="card glass-card">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2 data-i18n="settingsUpdate.versionHeader">🏷️ システムバージョン情報</h2>
+                    <span class="card-sub" data-i18n="settingsUpdate.versionSub">現在のバージョンと最新リリースの確認</span>
+                  </div>
+                  <span class="badge" id="badgeUpdateStatus" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); padding: 4px 10px; font-weight: 500;">
+                    <span id="lblUpdateStatusText">最新バージョンです</span>
+                  </span>
+                </div>
+                <div class="card-body">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                      <div style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="settingsUpdate.currentVerLabel">現在のバージョン</div>
+                      <div id="lblCurrentVersion" style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-top: 4px;">v1.0.11</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                      <div style="font-size: 0.8rem; color: var(--text-muted);" data-i18n="settingsUpdate.latestVerLabel">最新リリース</div>
+                      <div id="lblLatestVersion" style="font-size: 1.25rem; font-weight: 700; color: #38bdf8; margin-top: 4px;">v1.0.11</div>
+                    </div>
+                  </div>
+
+                  <!-- 新バージョン案内カード (更新がある場合のみ表示) -->
+                  <div id="cardNewVersionNotice" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                      <div style="font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+                        <span>✨</span>
+                        <span id="lblNewReleaseTitle">新バージョンが利用可能です</span>
+                      </div>
+                      <span id="lblNewReleaseDate" style="font-size: 0.75rem; color: var(--text-muted);"></span>
+                    </div>
+                    <div id="lblNewReleaseNotes" style="font-size: 0.85rem; color: var(--text-secondary); max-height: 160px; overflow-y: auto; white-space: pre-wrap; background: rgba(0,0,0,0.2); padding: 8px 10px; border-radius: 6px; margin-bottom: 12px; line-height: 1.4;"></div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                      <button type="button" class="btn btn-primary" id="btnTriggerUpdateFromNotice" style="display: flex; align-items: center; gap: 6px;">
+                        <span>🚀</span>
+                        <span data-i18n="settingsUpdate.btnUpdateNow">今すぐアップデートを実行</span>
+                      </button>
+                      <a id="linkReleaseDetails" href="https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="display: flex; align-items: center; gap: 6px; text-decoration: none;">
+                        <span>📖</span>
+                        <span data-i18n="settingsUpdate.btnViewReleaseNotes">GitHub リリースノート</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  <!-- 更新チェック & 手動トリガーボタン -->
+                  <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px;">
+                    <button type="button" class="btn btn-secondary" id="btnCheckUpdateNow" style="display: flex; align-items: center; gap: 6px;">
+                      <span>🔄</span>
+                      <span data-i18n="settingsUpdate.btnCheckUpdate">更新を確認</span>
+                    </button>
+                    <button type="button" class="btn btn-primary" id="btnTriggerUpdateDirect" style="display: flex; align-items: center; gap: 6px;">
+                      <span>🚀</span>
+                      <span data-i18n="settingsUpdate.btnUpdateNowDirect">今すぐアップデート</span>
+                    </button>
+                    <span id="lblCheckUpdateResult" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+                  </div>
+
+                  <!-- 手動更新コマンド案内 -->
+                  <div style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                    <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;" data-i18n="settingsUpdate.cliCommandLabel">ターミナルからの手動更新コマンド</div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.4); border-radius: 6px; padding: 6px 10px; font-family: monospace; font-size: 0.85rem; color: #a5f3fc;">
+                      <code>docker compose pull &amp;&amp; docker compose up -d</code>
+                      <button type="button" class="btn btn-secondary btn-sm" id="btnCopyUpdateCmd" title="コマンドをコピー" style="margin-left: 8px; padding: 2px 8px; font-size: 0.75rem;">📋 コピー</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右カラム: Watchtower 連携 & 夜間自動更新設定 -->
+            <div class="col">
+              <div class="card glass-card">
+                <div class="card-header flex-between">
+                  <div>
+                    <h2 data-i18n="settingsUpdate.watchtowerHeader">🛡️ Watchtower &amp; 自動更新設定</h2>
+                    <span class="card-sub" data-i18n="settingsUpdate.watchtowerSub">コンテナ外からの安全な自動バージョンアップ管理</span>
+                  </div>
+                  <span class="badge" id="badgeWatchtowerStatus" style="background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border: 1px solid rgba(255, 255, 255, 0.1); padding: 4px 10px; font-weight: 500;">
+                    <span id="lblWatchtowerStatusText">接続確認中...</span>
+                  </span>
+                </div>
+                <div class="card-body">
+                  <!-- 自動更新トグルスイッチ -->
+                  <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; margin-bottom: 16px;">
+                    <div>
+                      <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                        <span>🌙</span>
+                        <span data-i18n="settingsUpdate.autoUpdateToggleTitle">深夜自動バージョンアップ</span>
+                      </div>
+                      <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; line-height: 1.4;" data-i18n="settingsUpdate.autoUpdateToggleDesc">
+                        新バージョン検知時、指定時刻に Watchtower を通じてコンテナを自動再作成します。<br>
+                        ※開発環境や検証中の意図せぬ上書き（暴発）を防ぐため、既定では<strong>OFF</strong>になっています。
+                      </div>
+                    </div>
+                    <label class="switch" style="flex-shrink: 0; margin-top: 4px;">
+                      <input type="checkbox" id="chkAutoUpdate">
+                      <span class="slider round"></span>
+                    </label>
+                  </div>
+
+                  <!-- 実行時刻設定 -->
+                  <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="txtAutoUpdateTime" class="form-label" style="display: flex; align-items: center; gap: 6px;">
+                      <span>⏰</span>
+                      <span data-i18n="settingsUpdate.autoUpdateTimeLabel">自動更新の実行時刻 (既定: 04:00)</span>
+                    </label>
+                    <input type="time" id="txtAutoUpdateTime" value="04:00" class="form-control" style="max-width: 160px;">
+                    <span class="form-text" data-i18n="settingsUpdate.autoUpdateTimeHelp">深夜の利用頻度が低い時刻（04:00等）を指定してください。</span>
+                  </div>
+
+                  <!-- Watchtower 接続パラメータ (上級者向け) -->
+                  <div style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                      <span>⚙️</span>
+                      <span data-i18n="settingsUpdate.watchtowerParamTitle">Watchtower 内部接続パラメータ</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                      <div>
+                        <label for="txtWatchtowerUrl" class="form-label" style="font-size: 0.75rem;">URL</label>
+                        <input type="text" id="txtWatchtowerUrl" value="http://127.0.0.1:8082" class="form-control" style="font-size: 0.8rem; font-family: monospace;">
+                      </div>
+                      <div>
+                        <label for="txtWatchtowerToken" class="form-label" style="font-size: 0.75rem;">API Token</label>
+                        <input type="password" id="txtWatchtowerToken" placeholder="voicehub-watchtower-token" class="form-control" style="font-size: 0.8rem; font-family: monospace;">
+                      </div>
+                    </div>
+                    <span class="form-text" style="font-size: 0.75rem; margin-top: 4px;"><code>docker-compose.yml</code> 内の Watchtower サービス設定と一致させてください。</span>
+                  </div>
+
+                  <!-- 設定保存ボタン -->
+                  <div style="display: flex; justify-content: flex-end;">
+                    <button type="button" class="btn btn-primary" id="btnSaveUpdateSettings" style="display: flex; align-items: center; gap: 6px;">
+                      <span>💾</span>
+                      <span data-i18n="settings.btnSave">更新設定を保存</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- 6. システムログパネル (ターミナル風ダークビューア) -->
@@ -3907,12 +4068,53 @@ Body:
       </div>
     </div>
 
+    <!-- 更新詳細モーダル -->
+    <div id="modalUpdateDetails" class="modal-overlay" style="display: none;">
+      <div class="modal-card glass-card" style="max-width: 550px;">
+        <div class="modal-header flex-between">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.5rem;">✨</span>
+            <h2 id="modalUpdateTitle">新バージョンが利用可能です</h2>
+          </div>
+          <button type="button" id="btnCloseUpdateModal" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 10px 14px;">
+            <div>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">バージョン:</span>
+              <strong id="modalUpdateVerCurrent" style="margin-left: 4px;">v1.0.11</strong>
+              <span style="margin: 0 6px; color: var(--text-muted);">→</span>
+              <strong id="modalUpdateVerLatest" style="color: #38bdf8; font-size: 1.1rem;">v1.0.12</strong>
+            </div>
+            <div style="margin-left: auto; font-size: 0.75rem; color: var(--text-muted);" id="modalUpdateDate"></div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">📝 更新・修正内容 (リリースノート)</div>
+            <div id="modalUpdateNotes" style="max-height: 220px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; color: var(--text-primary); border: 1px solid rgba(255,255,255,0.06);"></div>
+          </div>
+        </div>
+        <div class="modal-footer flex-between">
+          <a id="modalUpdateGithubLink" href="https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="text-decoration: none;">
+            <span>GitHub で見る</span>
+          </a>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" id="btnModalGoSettings" class="btn btn-secondary">設定を開く</button>
+            <button type="button" id="btnModalTriggerUpdate" class="btn btn-primary" style="display: flex; align-items: center; gap: 6px;">
+              <span>🚀</span>
+              <span>今すぐアップデート</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- トースト通知 -->
     <div id="toastContainer" class="toast-container"></div>
   </div>
 
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="i18n.js?v=1.0.4"></script>
-  <script src="app.js?v=1.0.14"></script>
+  <script src="app.js?v=1.0.16"></script>
 </body>
 </html>

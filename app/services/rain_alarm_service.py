@@ -33,6 +33,7 @@ class RainAlarmService:
             "lastAlert": None
         }
         self._jma_cache: Dict[str, Any] = {"times": [], "fetched_at": 0}
+        self._forecast_cache: Dict[str, Dict[str, Any]] = {}
         self._rain_active: bool = False
         self._rain_expires_at: float = 0.0
         self._rain_alert_info: Optional[Dict[str, Any]] = None
@@ -150,20 +151,35 @@ class RainAlarmService:
         if chosen_provider == "auto":
             chosen_provider = "yahoo" if yahoo_app_id.strip() else "openmeteo"
 
+        cache_key = f"{round(lat, 3)}_{round(lon, 3)}_{chosen_provider}"
+        now_ts = time.time()
+        cached = self._forecast_cache.get(cache_key)
+        if cached and (now_ts - cached["cached_at"] < 60.0):
+            return cached["curr"], cached["timeline"], cached["provider_used"]
+
         if chosen_provider == "yahoo":
             try:
                 curr, timeline = await self._fetch_yahoo(lat, lon, yahoo_app_id)
-                return curr, timeline, "Yahoo! 気象情報API"
+                provider_used = "Yahoo! 気象情報API"
             except Exception as e:
                 log.warning(f"[RainAlarm] Yahoo! API失敗、Open-Meteoにフォールバックします: {e}")
                 if provider == "auto":
                     curr, timeline = await self._fetch_openmeteo(lat, lon)
-                    return curr, timeline, "Open-Meteo (フォールバック)"
-                raise e
+                    provider_used = "Open-Meteo (フォールバック)"
+                else:
+                    raise e
+        else:
+            # Open-Meteo
+            curr, timeline = await self._fetch_openmeteo(lat, lon)
+            provider_used = "Open-Meteo"
 
-        # Open-Meteo
-        curr, timeline = await self._fetch_openmeteo(lat, lon)
-        return curr, timeline, "Open-Meteo"
+        self._forecast_cache[cache_key] = {
+            "curr": curr,
+            "timeline": timeline,
+            "provider_used": provider_used,
+            "cached_at": now_ts
+        }
+        return curr, timeline, provider_used
 
     async def _fetch_yahoo(
         self,
@@ -326,13 +342,13 @@ class RainAlarmService:
                 lat, lon, provider, yahoo_app_id
             )
         except Exception as e:
-            log.error(f"[RainAlarm] 天気データ取得失敗: {e}")
+            log.error(f"[RainAlarm] 天気データ取得失敗: {e}", exc_info=True)
             self._last_status.update({
                 "status": "error",
                 "lastChecked": datetime.now().isoformat(),
-                "error": str(e)
+                "error": "Failed to fetch weather forecast"
             })
-            return {"status": "error", "error": str(e)}
+            return {"status": "error", "error": "Failed to fetch weather forecast"}
 
         self._last_status.update({
             "status": "active",

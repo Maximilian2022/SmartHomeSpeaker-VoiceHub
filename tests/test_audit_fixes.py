@@ -289,7 +289,7 @@ class TestAuditFixes(unittest.TestCase):
                 settings_manager.set_admin_password("")
 
     def test_rain_alarm_forecast_graceful_error_handling(self):
-        """外部気象 API 障害時でも GET /api/rain-alarm/forecast が 500 にならず 200 フォールバックを返すこと"""
+        """外部気象 API 障害時でも GET /api/rain-alarm/forecast が 500 にならず 200 フォールバックを返し、内部例外が露出しないこと"""
         from unittest.mock import AsyncMock
         with patch("app.services.rain_alarm_service.rain_alarm_service.fetch_forecast", side_effect=RuntimeError("JMA Timeout")):
             res = self.client.get("/api/rain-alarm/forecast?lat=35.6&lon=139.7")
@@ -298,7 +298,123 @@ class TestAuditFixes(unittest.TestCase):
             self.assertEqual(data.get("currentRainfall"), 0.0)
             self.assertEqual(data.get("timeline"), [])
             self.assertEqual(data.get("providerUsed"), "error")
-            self.assertIn("JMA Timeout", data.get("error", ""))
+            self.assertEqual(data.get("error"), "Failed to fetch weather forecast")
+            self.assertNotIn("JMA Timeout", data.get("error", ""))
+
+    def test_dnd_script_privilege_escalation_prevention(self):
+        """DND スクリプト生成において、管理者パスワードの平文漏洩が防止され、Webhook トークンのみが安全に埋め込まれること"""
+        settings_manager.set_admin_password("super-admin-secret-999")
+        try:
+            with patch.object(settings_manager, "get_webhook_token", return_value="webhook-safe-token-123"):
+                # 1. 未認証 (または Webhook トークン連携) でのプレビュー要求: 管理者パスワードは絶対に漏洩せず、Webhook トークンのみ埋め込まれること
+                res = self.client.get("/api/dnd/script/preview?format=vbs&action=toggle&token=webhook-safe-token-123")
+                self.assertEqual(res.status_code, 200)
+                content = res.json().get("content", "")
+                self.assertNotIn("super-admin-secret-999", content)
+                self.assertIn("webhook-safe-token-123", content)
+                self.assertIn("token=", content)
+
+                # PowerShell 形式でも検証
+                res_ps = self.client.get("/api/dnd/script/preview?format=ps1&action=toggle&token=webhook-safe-token-123")
+                self.assertEqual(res_ps.status_code, 200)
+                ps_content = res_ps.json().get("content", "")
+                self.assertNotIn("super-admin-secret-999", ps_content)
+                self.assertIn("webhook-safe-token-123", ps_content)
+                self.assertIn("&token=", ps_content)
+
+                # 2. 認証済み管理者セッション Cookie の場合: 管理者パスワードの埋め込みが許可されること
+                ACTIVE_SESSIONS.add("admin-session-ok")
+                try:
+                    res_admin = self.client.get(
+                        "/api/dnd/script/preview?format=vbs&action=toggle",
+                        cookies={"auth_token": "admin-session-ok"}
+                    )
+                    self.assertEqual(res_admin.status_code, 200)
+                    admin_content = res_admin.json().get("content", "")
+                    self.assertIn("super-admin-secret-999", admin_content)
+                finally:
+                    ACTIVE_SESSIONS.discard("admin-session-ok")
+        finally:
+            settings_manager.set_admin_password("")
+
+    def test_tunnel_well_known_access_without_admin_password(self):
+        """管理者パスワード未設定時でも、Cloudflare Tunnel 経由で RFC 8414 プローブ (/.well-known/) が 403 にならず 200 OK を返すこと"""
+        tunnel_headers = {"cf-ray": "999888777-NRT"}
+        res = self.client.get("/.well-known/oauth-protected-resource", headers=tunnel_headers)
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("resource", res.json())
+
+    def test_mcp_x_webhook_token_header_auth(self):
+        """管理者パスワード設定下で、MCP クライアントが x-webhook-token ヘッダーで正常に認証通過すること"""
+        settings_manager.set_admin_password("admin-pass-mcp")
+        try:
+            with patch.object(settings_manager, "get_webhook_token", return_value="mcp-valid-token-777"):
+                # ヘッダーなし: 401
+                res_no_auth = self.client.get("/mcp")
+                self.assertEqual(res_no_auth.status_code, 401)
+
+                # x-webhook-token ヘッダーあり: 200 OK
+                res_header = self.client.get("/mcp", headers={"x-webhook-token": "mcp-valid-token-777"})
+                self.assertEqual(res_header.status_code, 200)
+                self.assertTrue(res_header.json().get("enabled"))
+        finally:
+            settings_manager.set_admin_password("")
+
+    def test_integration_groups_and_history_auth(self):
+        """管理者パスワード設定下で、連携トークンにより GET /api/groups および GET /api/history が許可され、DELETE /api/history は拒否されること"""
+        settings_manager.set_admin_password("admin-pass-protect")
+        try:
+            with patch.object(settings_manager, "get_webhook_token", return_value="integration-token-888"):
+                headers = {"x-webhook-token": "integration-token-888"}
+
+                # GET /api/groups: トークンありで 200 OK
+                res_groups = self.client.get("/api/groups", headers=headers)
+                self.assertEqual(res_groups.status_code, 200)
+
+                # GET /api/history: トークンありで 200 OK
+                res_hist = self.client.get("/api/history", headers=headers)
+                self.assertEqual(res_hist.status_code, 200)
+                self.assertIn("history", res_hist.json())
+
+                # DELETE /api/history: トークンのみでは 401 Unauthorized (管理者必須)
+                res_del = self.client.delete("/api/history", headers=headers)
+                self.assertEqual(res_del.status_code, 401)
+        finally:
+            settings_manager.set_admin_password("")
+
+    def test_rain_alarm_forecast_cache(self):
+        """降雨予測 API が 60 秒インメモリキャッシュにより同一座標への重複リクエストをキャッシュ返却すること"""
+        from app.services.rain_alarm_service import rain_alarm_service
+        import asyncio
+
+        call_count = 0
+        async def mock_fetch(lat, lon):
+            nonlocal call_count
+            call_count += 1
+            return 1.5, [{"time": "12:00", "rainfall": 1.5}]
+
+        rain_alarm_service._forecast_cache.clear()
+        with patch.object(rain_alarm_service, "_fetch_openmeteo", side_effect=mock_fetch):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                # 1回目: mock_fetch が呼ばれる
+                curr1, timeline1, prov1 = loop.run_until_complete(
+                    rain_alarm_service.fetch_forecast(35.681, 139.767, provider="openmeteo")
+                )
+                self.assertEqual(call_count, 1)
+                self.assertEqual(curr1, 1.5)
+
+                # 2回目 (同一座標): キャッシュから返り call_count は増えない
+                curr2, timeline2, prov2 = loop.run_until_complete(
+                    rain_alarm_service.fetch_forecast(35.681, 139.767, provider="openmeteo")
+                )
+                self.assertEqual(call_count, 1)
+                self.assertEqual(curr2, 1.5)
+            finally:
+                loop.close()
+                rain_alarm_service._forecast_cache.clear()
 
 if __name__ == "__main__":
     unittest.main()
+

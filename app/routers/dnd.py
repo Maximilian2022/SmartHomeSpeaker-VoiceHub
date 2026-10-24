@@ -11,8 +11,9 @@ from app.services.speech_service import speech_service
 from app.services.ai_service import ai_service
 from app.services.mqtt_service import mqtt_service
 from app.services.event_service import event_service
+import hmac
 from app.core.logger import get_logger
-from app.core.security import get_effective_admin_password
+from app.core.security import get_effective_admin_password, ACTIVE_SESSIONS
 
 log = get_logger("DndRouter")
 router = APIRouter()
@@ -86,7 +87,14 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             f"Option Explicit\r\n"
             f"Dim url, http, token\r\n\r\n"
             f'url = "{clean_host}{endpoint}"\r\n'
-            f'token = "{vbs_pwd}"\r\n\r\n'
+            f'token = "{vbs_pwd}"\r\n'
+            f'If token <> "" Then\r\n'
+            f'    If InStr(url, "?") > 0 Then\r\n'
+            f'        url = url & "&token=" & token\r\n'
+            f'    Else\r\n'
+            f'        url = url & "?token=" & token\r\n'
+            f'    End If\r\n'
+            f'End If\r\n\r\n'
             f"On Error Resume Next\r\n"
             f'Set http = CreateObject("MSXML2.XMLHTTP")\r\n'
             f"If Err.Number <> 0 Or http Is Nothing Then\r\n"
@@ -127,6 +135,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             f'$token = "{ps_pwd}"\r\n'
             f"$headers = @{{}}\r\n"
             f'if ($token) {{\r\n'
+            f'    if ($url -like "*?*") {{ $url = "$url&token=$token" }} else {{ $url = "$url?token=$token" }}\r\n'
             f'    $headers["x-admin-password"] = $token\r\n'
             f'    $headers["x-webhook-token"] = $token\r\n'
             f'    $headers["Authorization"] = "Bearer $token"\r\n'
@@ -147,7 +156,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             data_arg = ""
 
         cmd_no_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}" {data_arg}'.strip() + " >nul"
-        cmd_with_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}" -H "x-admin-password: %ADMIN_PASSWORD%" -H "x-webhook-token: %ADMIN_PASSWORD%" -H "Authorization: Bearer %ADMIN_PASSWORD%" {data_arg}'.strip() + " >nul"
+        cmd_with_pwd = f'curl -s -X POST "%VOICEHUB_HOST%{endpoint}?token=%TOKEN%" -H "x-admin-password: %TOKEN%" -H "x-webhook-token: %TOKEN%" -H "Authorization: Bearer %TOKEN%" {data_arg}'.strip() + " >nul"
         bat_pwd = clean_pwd.replace('"', '').replace('%', '%%')
 
         content = (
@@ -156,8 +165,8 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             f":: VoiceHub DND - {title}\r\n"
             f":: Suitable for Logitech G HUB, Elgato Stream Deck, Command Line\r\n\r\n"
             f'set "VOICEHUB_HOST={clean_host}"\r\n'
-            f'set "ADMIN_PASSWORD={bat_pwd}"\r\n\r\n'
-            f'if "%ADMIN_PASSWORD%"=="" (\r\n'
+            f'set "TOKEN={bat_pwd}"\r\n\r\n'
+            f'if "%TOKEN%"=="" (\r\n'
             f"    {cmd_no_pwd}\r\n"
             f") else (\r\n"
             f"    {cmd_with_pwd}\r\n"
@@ -168,7 +177,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
         mime_type = "text/x-shellscript; charset=utf-8"
         data_arg = f"-H 'Content-Type: application/json' -d '{body_json}'" if body_json else ""
         cmd_no_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}" {data_arg}'.strip() + " >/dev/null"
-        cmd_with_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}" -H "x-admin-password: $ADMIN_PASSWORD" -H "x-webhook-token: $ADMIN_PASSWORD" -H "Authorization: Bearer $ADMIN_PASSWORD" {data_arg}'.strip() + " >/dev/null"
+        cmd_with_pwd = f'curl -s -X POST "$VOICEHUB_HOST{endpoint}?token=$TOKEN" -H "x-admin-password: $TOKEN" -H "x-webhook-token: $TOKEN" -H "Authorization: Bearer $TOKEN" {data_arg}'.strip() + " >/dev/null"
         sh_pwd = clean_pwd.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
 
         content = (
@@ -176,8 +185,8 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             f"# VoiceHub DND - {title}\n"
             f"# Suitable for Stream Deck (macOS/Linux), Shortcuts, Terminal\n\n"
             f'VOICEHUB_HOST="{clean_host}"\n'
-            f'ADMIN_PASSWORD="{sh_pwd}"\n\n'
-            f'if [ -z "$ADMIN_PASSWORD" ]; then\n'
+            f'TOKEN="{sh_pwd}"\n\n'
+            f'if [ -z "$TOKEN" ]; then\n'
             f"    {cmd_no_pwd}\n"
             f"else\n"
             f"    {cmd_with_pwd}\n"
@@ -304,6 +313,27 @@ async def release_dnd_queue():
     released = await dnd_service.check_and_flush_queue()
     return {"success": True, "released": released or 0}
 
+def _resolve_script_password(request: Request, custom_password: Optional[str] = None) -> str:
+    """
+    スクリプト生成用トークン/パスワードの安全な導出:
+    - 管理者セッション認証済み (Cookie auth_token) の場合のみ管理者パスワード埋め込みを許可
+    - 外部連携 (Webhook トークン経由) や未認証アクセスの場合は、管理者パスワードの平文露出を完全に遮断し Webhook トークンのみを使用
+    """
+    admin_pass = get_effective_admin_password()
+    cookie_token = request.cookies.get("auth_token")
+    is_admin_session = bool(cookie_token and cookie_token in ACTIVE_SESSIONS)
+    x_admin_pass = request.headers.get("x-admin-password")
+    is_direct_admin = bool(admin_pass and x_admin_pass and hmac.compare_digest(x_admin_pass, admin_pass))
+    is_authorized_admin = is_admin_session or is_direct_admin
+
+    if is_authorized_admin:
+        if custom_password is not None and custom_password.strip():
+            return custom_password.strip()
+        return admin_pass or settings_manager.get_webhook_token() or ""
+
+    # 未認証または Webhook トークン連携時: 管理者パスワードは隠蔽し、Webhook トークンのみ採用
+    return settings_manager.get_webhook_token() or ""
+
 @router.get("/api/dnd/script/preview")
 async def preview_dnd_script(
     request: Request,
@@ -313,7 +343,7 @@ async def preview_dnd_script(
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get_webhook_token() or "")
+    pwd = _resolve_script_password(request, password)
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return {
         "filename": filename,
@@ -332,7 +362,7 @@ async def download_dnd_script(
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
     req_host = host or f"{request.url.scheme}://{request.url.netloc}"
-    pwd = password if password is not None else (get_effective_admin_password() or settings_manager.get_webhook_token() or "")
+    pwd = _resolve_script_password(request, password)
     filename, content, mime_type = build_dnd_script(action, format, req_host, pwd)
     return Response(
         content=content.encode("utf-8"),

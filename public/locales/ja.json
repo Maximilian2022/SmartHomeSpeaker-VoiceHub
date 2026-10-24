@@ -20,7 +20,9 @@
     "unmute": "ミュート解除",
     "muteBtnTitle": "ワンタップでミュート / アンミュートを切り替え",
     "logout": "ログアウト",
-    "language": "言語切替"
+    "language": "言語切替",
+    "versionTitle": "VoiceHub バージョン (クリックで更新設定へ)",
+    "updateAvailableTitle": "新バージョンが利用可能です (クリックで詳細)"
   },
   "tabs": {
     "say": "即時発言",
@@ -1556,5 +1558,23 @@
   "systemLogs": {
     "lineCountPrefix": "行数:",
     "archivePrefix": "アーカイブ:"
+  },
+  "settingsUpdate": {
+    "versionHeader": "🏷️ システムバージョン情報",
+    "versionSub": "現在のバージョンと最新リリースの確認",
+    "currentVerLabel": "現在のバージョン",
+    "latestVerLabel": "最新リリース",
+    "btnUpdateNow": "今すぐアップデートを実行",
+    "btnViewReleaseNotes": "GitHub リリースノート",
+    "btnCheckUpdate": "更新を確認",
+    "btnUpdateNowDirect": "今すぐアップデート",
+    "cliCommandLabel": "ターミナルからの手動更新コマンド",
+    "watchtowerHeader": "🛡️ Watchtower & 自動更新設定",
+    "watchtowerSub": "コンテナ外からの安全な自動バージョンアップ管理",
+    "autoUpdateToggleTitle": "深夜自動バージョンアップ",
+    "autoUpdateToggleDesc": "新バージョン検知時、指定時刻に Watchtower を通じてコンテナを自動再作成します。<br>※開発環境や検証中の意図せぬ上書き（暴発）を防ぐため、既定ではOFFになっています。",
+    "autoUpdateTimeLabel": "自動更新の実行時刻 (既定: 04:00)",
+    "autoUpdateTimeHelp": "深夜の利用頻度が低い時刻（04:00等）を指定してください。",
+    "watchtowerParamTitle": "Watchtower 内部接続パラメータ"
   }
 }

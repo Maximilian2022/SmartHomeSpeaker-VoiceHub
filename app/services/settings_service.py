@@ -243,6 +243,13 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
                 "preload": True
             }
         ]
+    },
+    "systemUpdate": {
+        "autoUpdate": False,
+        "autoUpdateTime": "04:00",
+        "watchtowerUrl": settings.watchtower_url,
+        "watchtowerToken": settings.watchtower_token,
+        "checkIntervalHours": 24
     }
 }
 

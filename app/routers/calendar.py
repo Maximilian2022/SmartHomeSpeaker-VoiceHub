@@ -24,4 +24,4 @@ async def calendar_daily_summary():
         return res
     except Exception as e:
         log.error(f"Calendar daily summary error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to execute daily summary")

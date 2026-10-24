@@ -308,7 +308,7 @@ class SpeechService:
                 )
                 audio_url = f"{self.server_base_url}/voice/{speech['filename']}"
             except Exception as e:
-                err_msg = f"音声合成に失敗しました ({e})"
+                err_msg = "音声合成に失敗しました"
                 log.error(f"[Speech] TTS合成エラー: {e}", exc_info=True)
                 self.record_history({
                     "text": text,
@@ -322,7 +322,7 @@ class SpeechService:
                     "statusMessage": err_msg,
                     "urgent": urgent,
                     "wasQueued": False,
-                    "results": [{"target": d.get("name") or d.get("ip"), "status": "error", "error": str(e)} for d in unique_targets]
+                    "results": [{"target": d.get("name") or d.get("ip"), "status": "error", "error": "音声合成エラー"} for d in unique_targets]
                 })
                 return {"status": "error", "message": err_msg}
 
@@ -424,10 +424,13 @@ class SpeechService:
                     fb_tasks.append(_run_delayed(google_delay, coro))
                 if fb_tasks:
                     fb_results = await asyncio.gather(*fb_tasks, return_exceptions=True)
+                    all_fb_ok = True
                     for j, fb_dev in enumerate(fallback_members):
                         fb_name = fb_dev.get("name") or fb_dev.get("ip")
                         fb_val = fb_results[j] if j < len(fb_results) else False
                         fb_ok = (fb_val is True or (isinstance(fb_val, dict) and fb_val.get("status") != "error"))
+                        if not fb_ok:
+                            all_fb_ok = False
                         fb_err = None
                         if isinstance(fb_val, Exception):
                             fb_err = f"{type(fb_val).__name__}: {fb_val}"
@@ -442,13 +445,21 @@ class SpeechService:
                             "status": "success" if fb_ok else "error",
                             "error": fb_err
                         })
+                    # 個別フォールバックが全員成功した場合、元グループのエラーを救済済み (fallback_recovered) に更新
+                    if all_fb_ok:
+                        dev_name = dev.get("name") or dev.get("ip")
+                        for dr in detailed_results:
+                            if dr["target"] == dev_name:
+                                dr["status"] = "fallback_recovered"
+                                dr["error"] = "グループ送信失敗後、個別スピーカー群へ自動再送成功"
 
+        active_results = [r for r in detailed_results if r["status"] != "fallback_recovered"]
         has_success = any(r["status"] == "success" for r in detailed_results)
-        all_success = len(detailed_results) > 0 and all(r["status"] == "success" for r in detailed_results)
+        all_success = len(active_results) > 0 and all(r["status"] == "success" for r in active_results)
 
         history_status = "success" if all_success else ("partial" if has_success else "error")
-        history_msg = f"{len(detailed_results)} 台のスピーカーへ送信成功" if all_success else (
-            f"一部端末のみ成功 ({sum(1 for r in detailed_results if r['status'] == 'success')}/{len(detailed_results)} 台)" if has_success else "全デバイスへの送信に失敗しました"
+        history_msg = f"{len(active_results)} 台のスピーカーへ送信成功" if all_success else (
+            f"一部端末のみ成功 ({sum(1 for r in detailed_results if r['status'] == 'success')}/{len(active_results)} 台)" if has_success else "全デバイスへの送信に失敗しました"
         )
 
         if speech.get("fallback"):

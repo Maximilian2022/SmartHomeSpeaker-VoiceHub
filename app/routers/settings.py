@@ -1,6 +1,7 @@
 import asyncio
 from typing import Dict, Any
 from fastapi import APIRouter
+from app.config import settings
 from app.services.settings_service import settings_manager
 from app.services.speech_service import speech_service
 from app.services.event_service import event_service
@@ -128,8 +129,11 @@ def mask_sensitive_settings(data: Dict[str, Any]) -> Dict[str, Any]:
     
     # 2. Webhook トークン
     effective_token = settings_manager.get_webhook_token()
+    gui_token = settings_manager.get().get("webhookToken")
+    env_token = (settings.webhook_token or "").strip()
     res["hasWebhookToken"] = bool(effective_token)
-    if res.get("webhookToken"):
+    res["webhookTokenSource"] = "settings" if gui_token else ("env" if env_token else "none")
+    if effective_token:
         res["webhookToken"] = MASK_STR
 
     # 3. AI サービス API キー
@@ -162,6 +166,12 @@ def mask_sensitive_settings(data: Dict[str, Any]) -> Dict[str, Any]:
         for p_name, p_conf in res["ttsProviders"].items():
             if isinstance(p_conf, dict) and p_conf.get("apiKey"):
                 p_conf["apiKey"] = MASK_STR
+
+    # 7. システム更新 Watchtower トークン
+    if "systemUpdate" in res and isinstance(res["systemUpdate"], dict):
+        if res["systemUpdate"].get("watchtowerToken"):
+            res["systemUpdate"]["hasWatchtowerToken"] = True
+            res["systemUpdate"]["watchtowerToken"] = MASK_STR
 
     return res
 
@@ -202,6 +212,12 @@ def unmask_sensitive_payload(payload: Dict[str, Any], current_settings: Dict[str
         for p_name, p_conf in cleaned["ttsProviders"].items():
             if isinstance(p_conf, dict) and p_conf.get("apiKey") == MASK_STR:
                 p_conf["apiKey"] = cur_providers.get(p_name, {}).get("apiKey")
+
+    # システム更新 Watchtower トークン
+    if "systemUpdate" in cleaned and isinstance(cleaned["systemUpdate"], dict):
+        cur_sys = current_settings.get("systemUpdate", {})
+        if cleaned["systemUpdate"].get("watchtowerToken") == MASK_STR:
+            cleaned["systemUpdate"]["watchtowerToken"] = cur_sys.get("watchtowerToken", settings.watchtower_token)
 
     return cleaned
 

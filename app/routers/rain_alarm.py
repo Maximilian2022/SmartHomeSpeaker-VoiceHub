@@ -57,12 +57,12 @@ async def get_live_forecast(
             "providerUsed": provider_used
         }
     except Exception as e:
-        log.warning(f"Failed to fetch rain forecast (lat={lat}, lon={lon}): {e}")
+        log.warning(f"Failed to fetch rain forecast (lat={lat}, lon={lon}): {e}", exc_info=True)
         return {
             "currentRainfall": 0.0,
             "timeline": [],
             "providerUsed": "error",
-            "error": str(e)
+            "error": "Failed to fetch weather forecast"
         }
 
 
@@ -78,18 +78,21 @@ async def get_approx_ip_location():
     """HTTP環境等でGPSが使用できない場合のIPアドレスベースの大まかな位置情報（フォールバック用）"""
     import httpx
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
-            res = await client.get("http://ip-api.com/json/?lang=ja")
+        async with httpx.AsyncClient(timeout=3.5, headers={"User-Agent": "VoiceHub/1.0"}) as client:
+            res = await client.get("https://ipapi.co/json/")
             if res.status_code == 200:
                 data = res.json()
-                if data.get("status") == "success":
+                lat = data.get("latitude")
+                lon = data.get("longitude")
+                if lat is not None and lon is not None:
+                    loc_name = f"{data.get('region', '')}{data.get('city', '')}".strip() or "現在地付近"
                     return {
                         "status": "success",
-                        "latitude": data.get("lat", 35.6812),
-                        "longitude": data.get("lon", 139.7671),
-                        "locationName": f"{data.get('regionName', '')}{data.get('city', '')}"
+                        "latitude": float(lat),
+                        "longitude": float(lon),
+                        "locationName": loc_name
                     }
-    except Exception as e:
+    except Exception:
         pass
     return {
         "status": "fallback",

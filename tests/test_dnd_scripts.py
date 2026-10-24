@@ -34,7 +34,7 @@ class TestDndScripts(unittest.TestCase):
         self.assertEqual(filename, "voicehub_dnd_toggle.bat")
         self.assertIn("application/x-bat", mime)
         self.assertIn('set "VOICEHUB_HOST=http://192.168.1.50:8080"', content)
-        self.assertIn('curl -s -X POST "%VOICEHUB_HOST%/api/dnd/toggle" -H "x-admin-password: %ADMIN_PASSWORD%"', content)
+        self.assertIn('curl -s -X POST "%VOICEHUB_HOST%/api/dnd/toggle?token=%TOKEN%" -H "x-admin-password: %TOKEN%"', content)
 
     def test_build_dnd_script_bat_no_pwd(self):
         filename, content, mime = build_dnd_script("60m", "bat", "http://192.168.1.50:8080", "")
@@ -61,7 +61,7 @@ class TestDndScripts(unittest.TestCase):
         self.assertIn("text/x-shellscript", mime)
         self.assertIn('#!/usr/bin/env bash', content)
         self.assertIn('VOICEHUB_HOST="http://192.168.1.50:8080"', content)
-        self.assertIn('curl -s -X POST "$VOICEHUB_HOST/api/dnd/unmute" -H "x-admin-password: $ADMIN_PASSWORD"', content)
+        self.assertIn('curl -s -X POST "$VOICEHUB_HOST/api/dnd/unmute?token=$TOKEN" -H "x-admin-password: $TOKEN"', content)
 
     def test_dnd_i18n_keys_symmetry(self):
         import json
