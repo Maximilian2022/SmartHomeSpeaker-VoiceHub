@@ -1056,10 +1056,16 @@
                     <button type="button" id="btnPreviewChime" class="btn btn-secondary" style="white-space: nowrap;">
                       <span data-i18n="settingsFeatures.chimePreviewBtn">▶ 試聴</span>
                     </button>
+                    <button type="button" id="btnSaveChimeOnly" class="btn btn-primary" style="white-space: nowrap;">
+                      <span data-i18n="settingsFeatures.btnSaveChime">💾 保存</span>
+                    </button>
                   </div>
                 </div>
 
-                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 12px;" data-i18n="settingsFeatures.chimeOverrideFull" data-i18n-html="true">※ APIやWebhookから個別に <code>chime=chime_hotel</code> などを指定した場合は、そちらが優先されます。</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 0.8rem; color: var(--text-muted); flex-wrap: wrap; gap: 6px;">
+                  <span data-i18n="settingsFeatures.chimeOverrideFull" data-i18n-html="true">※ APIやWebhookから個別に <code>chime=chime_hotel</code> などを指定した場合は、そちらが優先されます。</span>
+                  <span style="color: #818cf8; font-weight: 500;" data-i18n="settingsFeatures.chimeAutoSaveNotice">⚡ 選択と同時に自動保存されます</span>
+                </div>
               </div>
             </div>
 

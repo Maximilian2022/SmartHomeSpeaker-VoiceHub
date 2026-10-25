@@ -5313,10 +5313,42 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // 標準チャイム音の個別即時保存
+  async function saveChimeSetting(showNotification = true) {
+    const chimeSelect = document.getElementById('settingDefaultChime');
+    const newChime = chimeSelect?.value || state.settings?.chime || 'dingdong';
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chime: newChime })
+      });
+      if (res.status === 401) {
+        showToast(isEn() ? 'Admin authentication required. Please log in.' : '管理者認証が必要です。ログインしてください。', 'error');
+        return false;
+      }
+      if (!res.ok) throw new Error('保存失敗');
+      const updated = await res.json();
+      if (state.settings) {
+        state.settings.chime = updated.chime || newChime;
+      }
+      if (showNotification) {
+        const chimeName = chimeSelect?.options[chimeSelect.selectedIndex]?.text?.split(' - ')[0] || newChime;
+        showToast(isEn() ? `Default chime set to "${chimeName}"` : `標準チャイム音を「${chimeName}」に保存しました`, 'success');
+      }
+      return true;
+    } catch (e) {
+      if (showNotification) {
+        showToast((isEn() ? 'Failed to save chime setting: ' : 'チャイム設定保存エラー: ') + e.message, 'error');
+      }
+      return false;
+    }
+  }
+
   // 全システム設定の保存
   async function saveAllSettings(options = {}) {
     try {
-      const chime = document.getElementById('settingDefaultChime')?.value || 'dingdong';
+      const chime = document.getElementById('settingDefaultChime')?.value || state.settings?.chime || 'dingdong';
       const dedupeEnabled = document.getElementById('settingDedupeEnabled')?.checked !== false;
       const dedupeCooldown = parseInt(document.getElementById('settingDedupeCooldown')?.value || '30', 10);
 
@@ -5532,9 +5564,18 @@ document.addEventListener('DOMContentLoaded', () => {
       playChimePreview(chime);
     });
 
-    // チャイムセレクトボックス変更時 (再生中なら停止)
-    document.getElementById('settingDefaultChime')?.addEventListener('change', () => {
+    // チャイムセレクトボックス変更時 (再生中なら停止 & 即時自動保存)
+    document.getElementById('settingDefaultChime')?.addEventListener('change', async () => {
       stopChimePreview();
+      await saveChimeSetting(true);
+    });
+
+    // チャイム個別保存ボタン
+    document.getElementById('btnSaveChimeOnly')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const done = setButtonSaving(btn, '保存中...');
+      const ok = await saveChimeSetting(true);
+      done(ok, '✓ 保存完了');
     });
 
     // 2. 自動音量スライダー値のリアルタイム表示
@@ -6160,14 +6201,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const user = inputUser?.value.trim() || 'admin';
       const pass = inputPass?.value || '';
 
-      const updated = {
-        ...state.settings,
-        onvif: {
-          ...(state.settings?.onvif || {}),
-          enabled: true,
-          defaultUsername: user,
-          defaultPassword: pass
-        }
+      const onvifPayload = {
+        enabled: true,
+        defaultUsername: user,
+        defaultPassword: pass
       };
 
       const done = setButtonSaving(btnSaveAuth, '認証保存中...');
@@ -6175,10 +6212,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updated)
+          body: JSON.stringify({ onvif: onvifPayload })
         });
         if (!res.ok) throw new Error('保存に失敗しました');
-        state.settings = updated;
+        const resData = await res.json();
+        if (state.settings) {
+          state.settings.onvif = resData.onvif || { ...(state.settings.onvif || {}), ...onvifPayload };
+        }
         if (authSavedMsg) {
           authSavedMsg.style.display = 'inline';
           setTimeout(() => { authSavedMsg.style.display = 'none'; }, 3000);

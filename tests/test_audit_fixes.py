@@ -446,6 +446,40 @@ class TestAuditFixes(unittest.TestCase):
                 loop.close()
                 rain_alarm_service._forecast_cache.clear()
 
+    def test_settings_chime_persistence_and_i18n(self):
+        """チャイム設定の保存・他設定保存時の維持、およびi18n navUpdateキーの存在検証"""
+        orig_chime = settings_manager.get().get("chime", "dingdong")
+        try:
+            # 1. チャイム設定を chime_hotel に変更
+            put_res = self.client.put("/api/settings", json={"chime": "chime_hotel"})
+            self.assertEqual(put_res.status_code, 200)
+            self.assertEqual(put_res.json().get("chime"), "chime_hotel")
+
+            # GET で確認
+            get_res = self.client.get("/api/settings")
+            self.assertEqual(get_res.status_code, 200)
+            self.assertEqual(get_res.json().get("chime"), "chime_hotel")
+
+            # 2. ONVIF 設定の差分更新時にも chime が初期化・巻き戻しされないこと
+            onvif_res = self.client.put("/api/settings", json={"onvif": {"enabled": True, "defaultUsername": "testuser"}})
+            self.assertEqual(onvif_res.status_code, 200)
+            self.assertEqual(settings_manager.get().get("chime"), "chime_hotel")
+
+            # 3. /locales/ja.json と /locales/en.json に settings.navUpdate が存在すること
+            ja_res = self.client.get("/locales/ja.json")
+            self.assertEqual(ja_res.status_code, 200)
+            ja_data = ja_res.json()
+            self.assertIn("navUpdate", ja_data.get("settings", {}))
+            self.assertEqual(ja_data["settings"]["navUpdate"], "システム更新・自動更新")
+
+            en_res = self.client.get("/locales/en.json")
+            self.assertEqual(en_res.status_code, 200)
+            en_data = en_res.json()
+            self.assertIn("navUpdate", en_data.get("settings", {}))
+            self.assertEqual(en_data["settings"]["navUpdate"], "System Update & Auto-Update")
+        finally:
+            settings_manager.update({"chime": orig_chime})
+
 if __name__ == "__main__":
     unittest.main()
 
