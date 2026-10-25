@@ -383,9 +383,17 @@ class TtsService:
         conf = settings_manager.get().get("tts_providers", {})
         stats = tts_usage_tracker.get_stats()
 
+        from copy import deepcopy
         providers_info = {}
         for pid, p in self.providers.items():
-            sub_conf = conf.get(pid, {})
+            sub_conf = deepcopy(conf.get(pid, {}))
+            if isinstance(sub_conf, dict):
+                if sub_conf.get("apiKey"):
+                    sub_conf["hasApiKey"] = True
+                    sub_conf["apiKey"] = "********"
+                else:
+                    sub_conf["hasApiKey"] = False
+
             providers_info[pid] = {
                 "id": pid,
                 "name": p.display_name,
@@ -441,6 +449,20 @@ class TtsService:
         cache_key = str(filepath)
         if cache_key in self._duration_cache:
             return self._duration_cache[cache_key]
+
+        # WAV ファイルの場合は標準ライブラリ wave でプロセス生成ゼロで高速計測
+        if filepath.suffix.lower() == ".wav":
+            try:
+                import wave
+                with wave.open(str(filepath), "rb") as wf:
+                    frames = wf.getnframes()
+                    rate = wf.getframerate()
+                    if rate > 0:
+                        dur = float(frames) / float(rate)
+                        self._duration_cache[cache_key] = dur
+                        return dur
+            except Exception:
+                pass
 
         try:
             cmd = [
@@ -636,6 +658,12 @@ class TtsService:
             f.write(raw_bytes)
 
         # 2. チャイムの結合 (ホワイトリスト照合により Path Injection を構造的に遮断)
+        if was_fallback:
+            # フォールバック音声で元エンジンのキャッシュキーを汚染しないよう actual_voice でキーを再計算
+            actual_key = self._generate_cache_key(text, actual_voice, rate, pitch, chime)
+            filename = f"speech_{actual_key}.mp3"
+            final_path = self.voice_dir / filename
+
         chime_key = str(chime or "").strip().lower()
         chime_filename = ALLOWED_CHIMES.get(chime_key)
         chime_file = (self.sound_dir / chime_filename) if chime_filename else None
@@ -714,12 +742,14 @@ class TtsService:
         self._last_cleanup_time = now
         try:
             file_stats = []
-            for f in self.voice_dir.glob("*.mp3"):
-                try:
-                    st = f.stat()
-                    file_stats.append((f, st.st_size, st.st_atime))
-                except OSError:
-                    continue
+            with os.scandir(self.voice_dir) as it:
+                for entry in it:
+                    if entry.is_file() and entry.name.endswith(".mp3"):
+                        try:
+                            st = entry.stat()
+                            file_stats.append((Path(entry.path), st.st_size, st.st_atime))
+                        except OSError:
+                            continue
 
             total_size = sum(s[1] for s in file_stats)
             if total_size > self.max_cache_bytes:

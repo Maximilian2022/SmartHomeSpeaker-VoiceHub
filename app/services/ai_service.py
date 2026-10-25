@@ -468,7 +468,7 @@ class AiService:
                 "messages": [{"role": "user", "content": prompt}]
             }
             if is_reasoning_model:
-                payload["max_completion_tokens"] = 150
+                payload["max_completion_tokens"] = 2000
             else:
                 payload["max_tokens"] = 150
 

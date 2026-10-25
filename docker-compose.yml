@@ -45,7 +45,8 @@ services:
     image: containrrr/watchtower
     container_name: watchtower-VoiceHub
     restart: unless-stopped
-    network_mode: "host"
+    ports:
+      - "127.0.0.1:8082:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
@@ -54,7 +55,6 @@ services:
       - WATCHTOWER_HTTP_API_PERIODIC_POLLS=false
       - WATCHTOWER_LABEL_ENABLE=true
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_HTTP_API_PORT=8082
 
 volumes:
   voice_data:

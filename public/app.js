@@ -1064,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `
         <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
-          <input type="checkbox" name="${nameAttr}" value="${dev.ip}" data-type="${devType}" ${isChecked}>
+          <input type="checkbox" name="${nameAttr}" value="${escapeHtml(dev.ip)}" data-type="${escapeHtml(devType)}" ${isChecked}>
           <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
           <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
@@ -1299,11 +1299,12 @@ document.addEventListener('DOMContentLoaded', () => {
         ? `<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#34d399; border-color:rgba(52,211,153,0.3); margin-left:6px;" title="Volume: ${Math.round(parseFloat(sched.volumeLevel) * 100)}%">🔉 ${Math.round(parseFloat(sched.volumeLevel) * 100)}%</span>` 
         : '';
 
+      const escapedSchedId = escapeHtml(sched.id || '');
       rowsHtml += `
         <tr>
           <td>
             <label class="switch">
-              <input type="checkbox" class="schedule-toggle" data-id="${sched.id}" ${checked}>
+              <input type="checkbox" class="schedule-toggle" data-id="${escapedSchedId}" ${checked}>
               <span class="slider"></span>
             </label>
           </td>
@@ -1318,13 +1319,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${escapeHtml(sched.text)}</td>
           <td>
             <div class="table-actions">
-              <button type="button" class="btn-icon btn-edit-sched" data-id="${sched.id}" title="${escapeHtml(titleEdit)}">
+              <button type="button" class="btn-icon btn-edit-sched" data-id="${escapedSchedId}" title="${escapeHtml(titleEdit)}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
-              <button type="button" class="btn-icon btn-run-sched" data-id="${sched.id}" title="${escapeHtml(titleRun)}">
+              <button type="button" class="btn-icon btn-run-sched" data-id="${escapedSchedId}" title="${escapeHtml(titleRun)}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               </button>
-              <button type="button" class="btn-icon danger btn-delete-sched" data-id="${sched.id}" title="${escapeHtml(titleDelete)}">
+              <button type="button" class="btn-icon danger btn-delete-sched" data-id="${escapedSchedId}" title="${escapeHtml(titleDelete)}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
@@ -1390,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span><strong>${window.i18n && window.i18n.getLanguage() === 'en' ? 'Model:' : 'モデル:'}</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
           </div>
           <div class="device-card-actions" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
-            <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" style="width:100%;justify-content:center;">
+            <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" style="width:100%;justify-content:center;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               ${window.t ? window.t('devices.testSpeak') : 'テスト発声'}
             </button>
@@ -1399,7 +1400,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${window.i18n && window.i18n.getLanguage() === 'en' ? '★ Default Speaker' : '★ デフォルト (標準) 端末'}
               </div>
             ` : `
-              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${dev.ip}" data-name="${escapeHtml(displayName)}" title="${window.i18n && window.i18n.getLanguage() === 'en' ? 'Set as default speaker' : 'このスピーカーをデフォルト端末に設定します'}" style="width:100%;justify-content:center;">
+              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" title="${window.i18n && window.i18n.getLanguage() === 'en' ? 'Set as default speaker' : 'このスピーカーをデフォルト端末に設定します'}" style="width:100%;justify-content:center;">
                 ${window.i18n && window.i18n.getLanguage() === 'en' ? '★ Set as Default' : '★ デフォルトに設定'}
               </button>
             `}
@@ -1536,7 +1537,8 @@ document.addEventListener('DOMContentLoaded', () => {
       else relativeTime = isEn ? `${Math.floor(diffSec / 86400)}d ago` : `${Math.floor(diffSec / 86400)}日前`;
 
       // 送信元バッジ (通信経路)
-      const sourceClass = `source-${item.source || 'api'}`;
+      const safeSource = (item.source || 'api').replace(/[^a-zA-Z0-9_-]/g, '');
+      const sourceClass = `source-${safeSource}`;
       const defaultUnknown = isEn ? 'Unknown' : '不明';
       const sourceText = escapeHtml(item.sourceLabel || item.source || defaultUnknown);
 
@@ -3599,7 +3601,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (c.voice) {
-        const shortVoice = c.voice.replace('ja-JP-', '').replace('Neural', '');
+        const shortVoice = escapeHtml(c.voice.replace('ja-JP-', '').replace('Neural', ''));
         badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px;">🗣️ ${shortVoice}</span>`);
       }
 
@@ -3607,6 +3609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         badges.push(`<span class="badge-tech" style="font-size:0.68rem; padding:1px 6px; color:#34d399; border-color:rgba(52,211,153,0.3);">🔉 ${Math.round(parseFloat(c.volumeLevel) * 100)}%</span>`);
       }
 
+      const escapedCid = escapeHtml(c.id || '');
       html += `
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--card-border); border-radius: var(--radius-sm); transition: all 0.2s ease;">
           <div style="min-width: 0; flex: 1;">
@@ -3622,14 +3625,14 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           </div>
           <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-            <button type="button" class="btn btn-secondary btn-sm btn-edit-cal" data-id="${c.id}" style="font-size: 0.8rem; padding: 5px 10px;" title="このカレンダーの通知先・ボイス・リマインドを個別設定">
+            <button type="button" class="btn btn-secondary btn-sm btn-edit-cal" data-id="${escapedCid}" style="font-size: 0.8rem; padding: 5px 10px;" title="このカレンダーの通知先・ボイス・リマインドを個別設定">
               ⚙️ 個別設定
             </button>
             <label class="switch" style="width: 36px; height: 20px;">
-              <input type="checkbox" class="cal-toggle-item" data-id="${c.id}" ${isChecked}>
+              <input type="checkbox" class="cal-toggle-item" data-id="${escapedCid}" ${isChecked}>
               <span class="slider round"></span>
             </label>
-            <button type="button" class="btn-icon danger btn-delete-cal" data-id="${c.id}" title="このカレンダーを削除" style="width: 28px; height: 28px;">
+            <button type="button" class="btn-icon danger btn-delete-cal" data-id="${escapedCid}" title="このカレンダーを削除" style="width: 28px; height: 28px;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
           </div>
@@ -9823,20 +9826,21 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnSaveUpdateSettings')?.addEventListener('click', saveUpdateSettings);
   }
 
-  // 起動実行
-  init();
-  initUpdateSubtab();
-});
+    // 言語切替時の動的UI再描画リスナー
+    window.addEventListener('voicehub:language-changed', () => {
+      try {
+        if (typeof renderDevicesGrid === 'function') renderDevicesGrid();
+        if (typeof renderHistoryList === 'function') renderHistoryList();
+        if (typeof renderScheduleTable === 'function') renderScheduleTable();
+        if (typeof renderDndStatus === 'function') renderDndStatus();
+        if (typeof renderDndSchedules === 'function') renderDndSchedules();
+        if (typeof renderCalendarList === 'function') renderCalendarList();
+      } catch (err) {
+        console.warn('[i18n] Error during re-render on language change:', err);
+      }
+    });
 
-  // 言語切替時の動的UI再描画リスナー
-  window.addEventListener('voicehub:language-changed', () => {
-    try {
-      if (typeof renderDevicesGrid === 'function' && state.devices) renderDevicesGrid(state.devices);
-      if (typeof renderHistory === 'function' && state.history) renderHistory(state.history);
-      if (typeof renderScheduleList === 'function' && state.schedules) renderScheduleList(state.schedules);
-      if (typeof updateDndStatusUI === 'function' && state.dnd) updateDndStatusUI(state.dnd);
-      if (typeof updateHeaderStatus === 'function') updateHeaderStatus();
-    } catch (err) {
-      console.warn('[i18n] Error during re-render on language change:', err);
-    }
+    // 起動実行
+    init();
+    initUpdateSubtab();
   });

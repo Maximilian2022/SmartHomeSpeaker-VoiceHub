@@ -56,7 +56,7 @@ async def set_alexa_token(req: AlexaTokenRequest):
         pass
     # 手動登録後も直ちに Echo デバイスをスキャン・ログイン同期
     try:
-        await alexa_service.scan_devices(force_login=True)
+        await alexa_service.list_devices(force_refresh=True)
     except Exception:
         pass
     return {"success": True}

@@ -4,13 +4,26 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
+import sys
+import tempfile
+
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+
+# テスト実行環境の自動検出とデータ分離保護
+if "VOICEHUB_DATA_DIR" not in os.environ:
+    if "unittest" in sys.modules or "pytest" in sys.modules or any("unittest" in a or "pytest" in a for a in sys.argv):
+        _test_tmp = Path(tempfile.gettempdir()) / "voicehub_test_env"
+        os.environ["VOICEHUB_DATA_DIR"] = str(_test_tmp / "data")
+        os.environ["VOICEHUB_LOG_DIR"] = str(_test_tmp / "logs")
+
+DATA_DIR = Path(os.environ.get("VOICEHUB_DATA_DIR", BASE_DIR / "data"))
+LOG_DIR = Path(os.environ.get("VOICEHUB_LOG_DIR", "/logs" if Path("/logs").exists() else BASE_DIR / "logs"))
 PUBLIC_DIR = BASE_DIR / "public"
 VOICE_DIR = PUBLIC_DIR / "voice"
 SOUND_DIR = PUBLIC_DIR / "sound"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 VOICE_DIR.mkdir(parents=True, exist_ok=True)
 SOUND_DIR.mkdir(parents=True, exist_ok=True)
 

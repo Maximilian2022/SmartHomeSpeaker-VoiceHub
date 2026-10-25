@@ -149,29 +149,52 @@ def mask_sensitive_settings(data: Dict[str, Any]) -> Dict[str, Any]:
         else:
             res["ai"]["hasOpenaiKey"] = False
 
-    # 4. MQTT パスワード
+    # 4. MQTT パスワード (トップレベル & ブローカー配列)
     if "mqtt" in res and isinstance(res["mqtt"], dict):
         if res["mqtt"].get("password"):
             res["mqtt"]["hasPassword"] = True
             res["mqtt"]["password"] = MASK_STR
+        if "brokers" in res["mqtt"] and isinstance(res["mqtt"]["brokers"], list):
+            for b in res["mqtt"]["brokers"]:
+                if isinstance(b, dict) and b.get("password"):
+                    b["hasPassword"] = True
+                    b["password"] = MASK_STR
 
-    # 5. ONVIF パスワード
+    # 5. ONVIF / Tapo カメラ認証情報
     if "onvif" in res and isinstance(res["onvif"], dict):
         if res["onvif"].get("defaultPassword"):
             res["onvif"]["hasPassword"] = True
             res["onvif"]["defaultPassword"] = MASK_STR
+        if res["onvif"].get("tapoPassword"):
+            res["onvif"]["tapoPassword"] = MASK_STR
+        if res["onvif"].get("tapoPasswordHash"):
+            res["onvif"]["tapoPasswordHash"] = MASK_STR
+        if "registeredDevices" in res["onvif"] and isinstance(res["onvif"]["registeredDevices"], list):
+            for dev in res["onvif"]["registeredDevices"]:
+                if isinstance(dev, dict):
+                    if dev.get("password"):
+                        dev["password"] = MASK_STR
+                    if dev.get("passwordHash"):
+                        dev["passwordHash"] = MASK_STR
 
-    # 6. TTS プロバイダー API キー
-    if "ttsProviders" in res and isinstance(res["ttsProviders"], dict):
-        for p_name, p_conf in res["ttsProviders"].items():
-            if isinstance(p_conf, dict) and p_conf.get("apiKey"):
-                p_conf["apiKey"] = MASK_STR
+    # 6. TTS プロバイダー API キー (スネークケース & キャメルケース両対応)
+    for tts_key in ("tts_providers", "ttsProviders"):
+        if tts_key in res and isinstance(res[tts_key], dict):
+            for p_name, p_conf in res[tts_key].items():
+                if isinstance(p_conf, dict) and p_conf.get("apiKey"):
+                    p_conf["apiKey"] = MASK_STR
 
     # 7. システム更新 Watchtower トークン
     if "systemUpdate" in res and isinstance(res["systemUpdate"], dict):
         if res["systemUpdate"].get("watchtowerToken"):
             res["systemUpdate"]["hasWatchtowerToken"] = True
             res["systemUpdate"]["watchtowerToken"] = MASK_STR
+
+    # 8. 雨降りアラーム Yahoo Client ID / App ID
+    if "rainAlarm" in res and isinstance(res["rainAlarm"], dict):
+        if res["rainAlarm"].get("yahooAppId"):
+            res["rainAlarm"]["hasYahooAppId"] = True
+            res["rainAlarm"]["yahooAppId"] = MASK_STR
 
     return res
 
@@ -194,30 +217,63 @@ def unmask_sensitive_payload(payload: Dict[str, Any], current_settings: Dict[str
         if cleaned["ai"].get("openaiApiKey") == MASK_STR:
             cleaned["ai"]["openaiApiKey"] = cur_ai.get("openaiApiKey")
 
-    # MQTT パスワード
+    # MQTT パスワード (トップレベル & ブローカー配列)
     if "mqtt" in cleaned and isinstance(cleaned["mqtt"], dict):
         cur_mqtt = current_settings.get("mqtt", {})
         if cleaned["mqtt"].get("password") == MASK_STR:
             cleaned["mqtt"]["password"] = cur_mqtt.get("password")
+        if "brokers" in cleaned["mqtt"] and isinstance(cleaned["mqtt"]["brokers"], list):
+            cur_brokers = cur_mqtt.get("brokers", [])
+            cur_broker_map = {b.get("id"): b.get("password", "") for b in cur_brokers if isinstance(b, dict) and b.get("id")}
+            for idx, b in enumerate(cleaned["mqtt"]["brokers"]):
+                if isinstance(b, dict) and b.get("password") == MASK_STR:
+                    b_id = b.get("id")
+                    if b_id and b_id in cur_broker_map:
+                        b["password"] = cur_broker_map[b_id]
+                    elif idx < len(cur_brokers) and isinstance(cur_brokers[idx], dict):
+                        b["password"] = cur_brokers[idx].get("password", "")
+                    else:
+                        b["password"] = cur_mqtt.get("password", "")
 
-    # ONVIF パスワード
+    # ONVIF / Tapo カメラ認証情報
     if "onvif" in cleaned and isinstance(cleaned["onvif"], dict):
         cur_onvif = current_settings.get("onvif", {})
         if cleaned["onvif"].get("defaultPassword") == MASK_STR:
             cleaned["onvif"]["defaultPassword"] = cur_onvif.get("defaultPassword")
+        if cleaned["onvif"].get("tapoPassword") == MASK_STR:
+            cleaned["onvif"]["tapoPassword"] = cur_onvif.get("tapoPassword")
+        if cleaned["onvif"].get("tapoPasswordHash") == MASK_STR:
+            cleaned["onvif"]["tapoPasswordHash"] = cur_onvif.get("tapoPasswordHash")
+        if "registeredDevices" in cleaned["onvif"] and isinstance(cleaned["onvif"]["registeredDevices"], list):
+            cur_devs = cur_onvif.get("registeredDevices", [])
+            cur_dev_map = {d.get("ip"): d for d in cur_devs if isinstance(d, dict) and d.get("ip")}
+            for idx, dev in enumerate(cleaned["onvif"]["registeredDevices"]):
+                if isinstance(dev, dict):
+                    orig_dev = cur_dev_map.get(dev.get("ip")) or (cur_devs[idx] if idx < len(cur_devs) and isinstance(cur_devs[idx], dict) else {})
+                    if dev.get("password") == MASK_STR:
+                        dev["password"] = orig_dev.get("password", "")
+                    if dev.get("passwordHash") == MASK_STR:
+                        dev["passwordHash"] = orig_dev.get("passwordHash", "")
 
-    # TTS プロバイダー API キー
-    if "ttsProviders" in cleaned and isinstance(cleaned["ttsProviders"], dict):
-        cur_providers = current_settings.get("ttsProviders", {})
-        for p_name, p_conf in cleaned["ttsProviders"].items():
-            if isinstance(p_conf, dict) and p_conf.get("apiKey") == MASK_STR:
-                p_conf["apiKey"] = cur_providers.get(p_name, {}).get("apiKey")
+    # TTS プロバイダー API キー (スネークケース & キャメルケース両対応)
+    for tts_key in ("tts_providers", "ttsProviders"):
+        if tts_key in cleaned and isinstance(cleaned[tts_key], dict):
+            cur_providers = current_settings.get(tts_key, {})
+            for p_name, p_conf in cleaned[tts_key].items():
+                if isinstance(p_conf, dict) and p_conf.get("apiKey") == MASK_STR:
+                    p_conf["apiKey"] = cur_providers.get(p_name, {}).get("apiKey")
 
     # システム更新 Watchtower トークン
     if "systemUpdate" in cleaned and isinstance(cleaned["systemUpdate"], dict):
         cur_sys = current_settings.get("systemUpdate", {})
         if cleaned["systemUpdate"].get("watchtowerToken") == MASK_STR:
             cleaned["systemUpdate"]["watchtowerToken"] = cur_sys.get("watchtowerToken", settings.watchtower_token)
+
+    # 雨降りアラーム Yahoo Client ID / App ID
+    if "rainAlarm" in cleaned and isinstance(cleaned["rainAlarm"], dict):
+        cur_rain = current_settings.get("rainAlarm", {})
+        if cleaned["rainAlarm"].get("yahooAppId") == MASK_STR:
+            cleaned["rainAlarm"]["yahooAppId"] = cur_rain.get("yahooAppId")
 
     return cleaned
 

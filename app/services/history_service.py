@@ -171,6 +171,10 @@ class HistoryManager:
     def clear(self):
         self.history = []
         self.save_history()
-        log.info("History cleared.")
+        try:
+            self.rotator.clear()
+        except Exception as e:
+            log.warning(f"Failed to clear speak.log: {e}")
+        log.info("History and speak.log cleared.")
 
 history_manager = HistoryManager()

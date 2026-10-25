@@ -115,8 +115,22 @@ class LoginRateLimiter:
         self.attempts: Dict[str, List[float]] = {}
         self.lockouts: Dict[str, float] = {}
 
+    def _cleanup_expired(self, now: float):
+        """期限切れエントリをパージしてメモリリークを防止"""
+        expired_ips = [ip for ip, until in self.lockouts.items() if now >= until]
+        for ip in expired_ips:
+            del self.lockouts[ip]
+
+        expired_attempts = [
+            ip for ip, records in self.attempts.items()
+            if not records or (now - max(records) > self.window_seconds * 2)
+        ]
+        for ip in expired_attempts:
+            del self.attempts[ip]
+
     def is_locked(self, ip: str) -> Tuple[bool, int]:
         now = time.time()
+        self._cleanup_expired(now)
         until = self.lockouts.get(ip, 0.0)
         if now < until:
             remaining = int(until - now) + 1
@@ -127,6 +141,7 @@ class LoginRateLimiter:
 
     def record_failure(self, ip: str) -> Tuple[bool, int]:
         now = time.time()
+        self._cleanup_expired(now)
         is_locked, remaining = self.is_locked(ip)
         if is_locked:
             return True, remaining
@@ -153,6 +168,12 @@ def get_effective_admin_password() -> str:
     val = settings_manager.get_admin_password()
     return val if isinstance(val, str) else ""
 
+def is_loopback_or_local(host: str) -> bool:
+    """ホストがローカルループバック (127.0.0.1, ::1) またはテストクライアントか判定"""
+    if not host:
+        return False
+    return host in ("127.0.0.1", "::1", "localhost", "testclient") or host.startswith("127.")
+
 def is_private_ip(ip_str: str) -> bool:
     try:
         ip = ipaddress.ip_address(ip_str)
@@ -161,6 +182,15 @@ def is_private_ip(ip_str: str) -> bool:
         return False
 
 def is_tunnel_request(request: Request) -> bool:
+    """
+    Cloudflare Tunnel 経由のリクエストかを安全に判定。
+    同一ホスト上で稼働する cloudflared プロキシからの転送 (127.0.0.1 / ::1) のみ Tunnel ヘッダーを信頼。
+    直接接続クライアントからのヘッダー偽装 (IP Spoofing) を遮断。
+    """
+    client_host = request.client.host if request.client else ""
+    if not is_loopback_or_local(client_host):
+        return False
+
     headers = request.headers
     if "cf-ray" in headers or "cf-connecting-ip" in headers or "cf-ipcountry" in headers:
         return True
@@ -201,8 +231,9 @@ def check_tunnel_access(request: Request):
 def extract_client_ip(request: Request) -> str:
     """
     クライアントIPの安全な取得。
-    - Cloudflare Tunnel 経由のリクエスト (is_tunnel_request) のみ cf-connecting-ip または x-forwarded-for を信用。
-    - 直接接続 (LAN / ローカル) の場合は、ヘッダー偽装 (IP Spoofing) を防ぐため request.client.host のみを信用。
+    - 直結ソケットがローカル (127.0.0.1/::1) で、かつ Cloudflare Tunnel 経由のリクエスト (is_tunnel_request) のみ
+      cf-connecting-ip または x-forwarded-for を信用。
+    - 直接接続 (LAN / 外部直接) の場合は、ヘッダー偽装 (IP Spoofing) を防ぐため request.client.host のみを信用。
     """
     if is_tunnel_request(request):
         cf_ip = request.headers.get("cf-connecting-ip")
@@ -294,6 +325,23 @@ def is_admin_session(token: Optional[str]) -> bool:
     return bool(token and token in ACTIVE_SESSIONS)
 
 def check_admin_auth(request: Request):
+    path = request.url.path
+    # 0. ヘルスチェック専用エンドポイント & RFC 8414 MCP認可メタデータ (無認証・常時通過)
+    if path in ("/health", "/api/health") or path.startswith("/.well-known/"):
+        return True
+
+    # 公開 Webhook およびログイン画面等はレート制限・管理者認証を個別に制御
+    if path in ("/api/auth/login", "/api/auth/status") or path in ("/api/say", "/api/webhook") or (path == "/api/system/version" and request.method == "GET"):
+        return True
+
+    client_ip = extract_client_ip(request)
+    is_locked, remaining = login_rate_limiter.is_locked(client_ip)
+    if is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"認証試行回数が上限を超えました。{remaining}秒後に再試行してください。"
+        )
+
     admin_password = get_effective_admin_password()
     if not admin_password:
         return True
@@ -305,22 +353,21 @@ def check_admin_auth(request: Request):
 
     # 2. Direct Header auth (X-Admin-Password / Bearer) (タイミング攻撃対策のため hmac.compare_digest を使用)
     x_admin_pass = request.headers.get("x-admin-password")
-    if x_admin_pass and hmac.compare_digest(x_admin_pass, admin_password):
-        return True
+    if x_admin_pass:
+        if hmac.compare_digest(x_admin_pass, admin_password):
+            login_rate_limiter.record_success(client_ip)
+            return True
+        else:
+            login_rate_limiter.record_failure(client_ip)
+
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
         if token in ACTIVE_SESSIONS or hmac.compare_digest(token, admin_password):
+            login_rate_limiter.record_success(client_ip)
             return True
-
-    path = request.url.path
-    # 3. ヘルスチェック専用エンドポイント & RFC 8414 MCP認可メタデータ (無認証・常時通過)
-    if path in ("/health", "/api/health") or path.startswith("/.well-known/"):
-        return True
-
-    # 4. ログイン関連、公開Webhook、およびシステムバージョン表示 (GET) は除外
-    if path in ("/api/auth/login", "/api/auth/status") or path in ("/api/say", "/api/webhook") or (path == "/api/system/version" and request.method == "GET"):
-        return True
+        else:
+            login_rate_limiter.record_failure(client_ip)
 
     # 5. MCP エンドポイントは Webhook トークン または 管理者パスワードで保護
     if path == "/mcp" or path.startswith("/mcp/"):

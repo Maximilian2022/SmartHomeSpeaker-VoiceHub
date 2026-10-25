@@ -511,7 +511,26 @@ class TtsProvidersSettingsUpdateRequest(BaseModel):
 @router.put("/api/tts/providers/settings")
 async def api_tts_providers_settings_update(req: TtsProvidersSettingsUpdateRequest, request: Request):
     from app.services.settings_service import settings_manager
-    updated = settings_manager.update({"tts_providers": req.tts_providers})
+    from copy import deepcopy
+
+    cur_settings = settings_manager.get()
+    cur_tts = cur_settings.get("tts_providers", {})
+    new_tts = deepcopy(req.tts_providers)
+
+    # 送信された ******** を既存の apiKey に復元
+    for p_name, p_conf in new_tts.items():
+        if isinstance(p_conf, dict) and p_conf.get("apiKey") == "********":
+            p_conf["apiKey"] = cur_tts.get(p_name, {}).get("apiKey", "")
+
+    updated = settings_manager.update({"tts_providers": new_tts})
     tts_service.sync_settings()
-    return {"success": True, "settings": updated.get("tts_providers", {})}
+
+    # レスポンスでは apiKey をマスク
+    res_tts = deepcopy(updated.get("tts_providers", {}))
+    for p_name, p_conf in res_tts.items():
+        if isinstance(p_conf, dict) and p_conf.get("apiKey"):
+            p_conf["hasApiKey"] = True
+            p_conf["apiKey"] = "********"
+
+    return {"success": True, "settings": res_tts}
 

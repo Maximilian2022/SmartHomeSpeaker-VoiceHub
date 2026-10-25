@@ -120,7 +120,7 @@ class VoicevoxFamilyProvider(BaseTtsProvider):
                     style_id = style.get("id")
                     style_name = style.get("name", "ノーマル")
                     voice_label = f"{name} ({style_name})"
-                    eng_type = getattr(self, "engine_type", "voicevox")
+                    eng_type = self.provider_id
                     generic_label = getattr(self, "generic_name", eng_type.upper())
                     voices.append({
                         "id": f"{eng_type}:{style_id}",
@@ -380,12 +380,22 @@ class CoeiroinkProvider(VoicevoxFamilyProvider):
         except Exception:
             speed_scale = 1.0
 
-        # 3. POST /v1/predict 呼び出し (WAVを直接返却)
+        # 3. 音高スケールの計算
+        pitch_scale = 0.0
+        try:
+            if pitch.endswith("Hz"):
+                pitch_num = float(pitch.rstrip("Hz"))
+                pitch_scale = max(-0.15, min(0.15, pitch_num / 300.0))
+        except Exception:
+            pitch_scale = 0.0
+
+        # 4. POST /v1/predict 呼び出し (WAVを直接返却)
         req_payload = {
             "speakerUuid": speaker_uuid,
             "styleId": style_id,
             "text": text,
-            "speedScale": speed_scale
+            "speedScale": speed_scale,
+            "pitchScale": pitch_scale
         }
 
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:

@@ -107,13 +107,15 @@ async def register_device(raw_req: Dict[str, Any]):
             username = existing.get("username")
 
         password = dev_data.get("password")
-        if (password is None or str(password).strip() == "") and existing:
+        if (password is None or str(password).strip() == "" or password == "********") and existing:
             password = existing.get("password")
 
         # Tapo カメラの場合はプロトコル規格に準拠した認証トークンに変換
-        password_hash = dev_data.get("passwordHash") or (existing.get("passwordHash") if existing else "")
+        password_hash = dev_data.get("passwordHash")
+        if (password_hash is None or str(password_hash).strip() == "" or password_hash == "********") and existing:
+            password_hash = existing.get("passwordHash")
         if dtype == "tapo":
-            if password:
+            if password and password != "********":
                 password_hash = derive_tapo_auth_token(password)
                 password = None  # 平文は破棄
             username = username or "admin"
@@ -139,7 +141,19 @@ async def register_device(raw_req: Dict[str, Any]):
             reg_list.append(entry)
 
     settings_manager.update({"onvif": {**onvif_conf, "registeredDevices": reg_list}})
-    return {"success": True, "registeredDevices": reg_list}
+
+    safe_reg_list = []
+    for d in reg_list:
+        sd = dict(d)
+        if sd.get("password"):
+            sd["hasPassword"] = True
+            sd["password"] = "********"
+        if sd.get("passwordHash"):
+            sd["hasPassword"] = True
+            sd["passwordHash"] = "********"
+        safe_reg_list.append(sd)
+
+    return {"success": True, "registeredDevices": safe_reg_list}
 
 @router.post("/api/dlna/test")
 @router.post("/api/onvif/test")

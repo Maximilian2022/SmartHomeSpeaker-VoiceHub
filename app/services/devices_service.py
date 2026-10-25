@@ -173,7 +173,6 @@ class DeviceManager:
                         "type": dtype,
                         "username": dev.get("username"),
                         "hasPassword": bool(dev.get("password") or dev.get("passwordHash")),
-                        "passwordHash": dev.get("passwordHash"),
                         "controlUrl": dev.get("controlUrl"),
                         "renderingControlUrl": dev.get("renderingControlUrl"),
                         "isDefault": (prefix == default_ip),

@@ -26,8 +26,12 @@ class TestDndScripts(unittest.TestCase):
         self.assertEqual(filename, "voicehub_dnd_toggle.ps1")
         self.assertIn("text/plain", mime)
         self.assertIn('$url = "http://192.168.1.50:8080/api/dnd/toggle"', content)
-        self.assertIn('$token = "secret123"', content)
+        self.assertIn("$token = 'secret123'", content)
         self.assertIn("Invoke-RestMethod", content)
+
+        # シングルクォートが含まれるパスワードのエスケープ検証
+        _, content_esc, _ = build_dnd_script("toggle", "ps1", "http://192.168.1.50:8080", "sec'ret")
+        self.assertIn("$token = 'sec''ret'", content_esc)
 
     def test_build_dnd_script_bat(self):
         filename, content, mime = build_dnd_script("toggle", "bat", "http://192.168.1.50:8080", "secret123")

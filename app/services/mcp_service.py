@@ -11,6 +11,7 @@ from app.services.dnd_service import dnd_service
 from app.services.calendar_service import calendar_service
 from app.services.settings_service import settings_manager
 from app.core.security import is_private_ip
+from app.version import __version__
 from app.core.logger import get_logger
 
 log = get_logger("MCP")
@@ -141,7 +142,16 @@ class MCPService:
         self.call_count = 0
         self.last_call_at: Optional[str] = None
 
+    def clean_expired_sessions(self, max_idle_seconds: float = 1800.0):
+        """アイドル状態が一定時間を超えたセッションをパージしてメモリリークを防止"""
+        now = time.time()
+        expired = [sid for sid, s in self.sessions.items() if now - s.last_active > max_idle_seconds]
+        for sid in expired:
+            del self.sessions[sid]
+            log.info(f"[MCP] Idle session expired & cleaned: {sid}")
+
     def create_session(self, client_ip: str, user_agent: str) -> MCPSession:
+        self.clean_expired_sessions()
         session_id = uuid.uuid4().hex
         session = MCPSession(session_id, client_ip, user_agent)
         self.sessions[session_id] = session
@@ -149,6 +159,7 @@ class MCPService:
         return session
 
     def get_session(self, session_id: str) -> Optional[MCPSession]:
+        self.clean_expired_sessions()
         session = self.sessions.get(session_id)
         if session:
             session.last_active = time.time()
@@ -424,7 +435,7 @@ class MCPService:
                     },
                     "serverInfo": {
                         "name": "smart-speaker-voice-hub",
-                        "version": "2.0.0"
+                        "version": __version__
                     }
                 }
             }

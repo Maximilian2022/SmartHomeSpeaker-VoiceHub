@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 # ログディレクトリとファイル定義
-LOG_DIR = Path("/logs")
+from app.config import LOG_DIR
 ACTIVE_LOG_FILE = LOG_DIR / "container.log"
 ARCHIVE_LOG_FILE = LOG_DIR / "container-archive.log"
 ACTIVE_SPEAK_LOG_FILE = LOG_DIR / "speak.log"
@@ -495,6 +495,26 @@ class SpeakLogRotator:
     def update_entry(self, entry_id: str, updates: Dict[str, Any]) -> bool:
         """単一エントリの更新"""
         return self.update_entries({entry_id: updates}) > 0
+
+    def clear(self):
+        """speak.log を空にトランケートし、内部行数カウントをリセット"""
+        with self.lock:
+            try:
+                if self._file_stream and not self._file_stream.closed:
+                    self._file_stream.flush()
+                    self._file_stream.close()
+                    self._file_stream = None
+
+                if self.active_file.exists():
+                    with open(self.active_file, "wb") as f_trunc:
+                        f_trunc.truncate(0)
+
+                self._current_line_count = 0
+                self._current_date = date.today()
+                self._open_active_file()
+            except Exception as e:
+                sys.__stderr__.write(f"[SpeakLogRotator] Clear error: {e}\n")
+                self._open_active_file()
 
     def manual_flush_archive(self):
         with self.lock:

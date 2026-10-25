@@ -9,6 +9,7 @@ from app.services.scheduled_speech_service import scheduled_speech_service
 from app.services.dnd_service import dnd_service
 from app.core.logger import get_logger
 from app.core.resolver import resolve_host
+from app.version import __version__
 
 log = get_logger("MQTT")
 
@@ -114,7 +115,7 @@ class MQTTBrokerWorker:
             "name": "SmartSpeaker Voice Hub",
             "model": "Unified Audio & TTS Engine",
             "manufacturer": "VoiceHub",
-            "sw_version": "2.0.0",
+            "sw_version": __version__,
             "configuration_url": server_url
         }
 

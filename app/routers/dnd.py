@@ -132,7 +132,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             f"# Suitable for Logitech G HUB, Elgato Stream Deck, PowerShell\r\n"
             f"$ErrorActionPreference = 'SilentlyContinue'\r\n"
             f'$url = "{clean_host}{endpoint}"\r\n'
-            f'$token = "{ps_pwd}"\r\n'
+            f"$token = '{ps_pwd}'\r\n"
             f"$headers = @{{}}\r\n"
             f'if ($token) {{\r\n'
             f'    if ($url -like "*?*") {{ $url = "$url&token=$token" }} else {{ $url = "$url?token=$token" }}\r\n'
@@ -331,8 +331,22 @@ def _resolve_script_password(request: Request, custom_password: Optional[str] = 
             return custom_password.strip()
         return admin_pass or settings_manager.get_webhook_token() or ""
 
-    # 未認証または Webhook トークン連携時: 管理者パスワードは隠蔽し、Webhook トークンのみ採用
-    return settings_manager.get_webhook_token() or ""
+    # 宅内ブラウザGUIからの利用、または既に有効なWebhookトークンを提示している場合のみ埋め込みを許可
+    from app.core.security import is_tunnel_request, is_private_ip
+    client_host = request.client.host if request.client else ""
+    sec_fetch_site = request.headers.get("sec-fetch-site", "")
+    is_browser_origin = sec_fetch_site in ("same-origin", "same-site")
+    wh_token = settings_manager.get_webhook_token() or ""
+
+    if is_private_ip(client_host) and is_browser_origin and not is_tunnel_request(request):
+        return wh_token
+
+    # クエリやヘッダーで有効なトークンを提示済みの場合のみ許可
+    given_token = request.headers.get("x-webhook-token") or request.query_params.get("token") or ""
+    if wh_token and given_token and hmac.compare_digest(given_token, wh_token):
+        return wh_token
+
+    return ""
 
 @router.get("/api/dnd/script/preview")
 async def preview_dnd_script(

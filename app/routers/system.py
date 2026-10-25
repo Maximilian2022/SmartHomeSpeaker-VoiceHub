@@ -43,14 +43,24 @@ async def trigger_system_update(request: Request) -> Dict[str, Any]:
     
     # 管理者パスワード設定時は管理者ログインまたはトークン認証を要求
     if admin_pw:
-        authed = is_admin_session(cookie_token)
-        if not authed:
-            # ヘッダーまたはクエリトークンでの検証
+        import hmac
+        from app.core.security import ACTIVE_SESSIONS
+        cookie_token = request.cookies.get("auth_token")
+        x_admin_pass = request.headers.get("x-admin-password")
+        auth_header = request.headers.get("authorization", "")
+        bearer_token = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
+
+        is_admin = is_admin_session(cookie_token) or \
+                   (x_admin_pass and hmac.compare_digest(x_admin_pass, admin_pw)) or \
+                   (bearer_token and (bearer_token in ACTIVE_SESSIONS or hmac.compare_digest(bearer_token, admin_pw)))
+
+        if not is_admin:
+            # Webhook トークンでの認証も許容
             header_token = request.headers.get("x-webhook-token") or request.headers.get("x-api-key")
             query_token = request.query_params.get("token")
             effective_wh = settings_manager.get_webhook_token()
             token_candidate = header_token or query_token
-            if not (effective_wh and token_candidate == effective_wh):
+            if not (effective_wh and token_candidate and hmac.compare_digest(token_candidate, effective_wh)):
                 raise HTTPException(status_code=401, detail="管理者ログインまたは有効な認証トークンが必要です")
 
     result = await update_service.trigger_update()
