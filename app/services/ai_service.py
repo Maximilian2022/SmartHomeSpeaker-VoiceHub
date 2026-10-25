@@ -217,7 +217,7 @@ class AiService:
         if not force_refresh and self._gemini_models_cache.get("api_key") == api_key and (now - self._gemini_models_cache.get("fetched_at", 0)) < 3600:
             return self._gemini_models_cache.get("models", DEFAULT_GEMINI_MODELS)
 
-        if not api_key:
+        if not api_key or api_key.strip() == "********":
             return DEFAULT_GEMINI_MODELS
 
         try:
@@ -299,7 +299,7 @@ class AiService:
         if not force_refresh and self._openai_models_cache.get("api_key") == api_key and (now - self._openai_models_cache.get("fetched_at", 0)) < 3600:
             return self._openai_models_cache.get("models", DEFAULT_OPENAI_MODELS)
 
-        if not api_key:
+        if not api_key or api_key.strip() == "********":
             return DEFAULT_OPENAI_MODELS
 
         try:
@@ -397,6 +397,9 @@ class AiService:
         return text
 
     async def _call_gemini_with_err(self, api_key: str, model: str, prompt: str) -> tuple[str, Optional[str]]:
+        if not api_key or api_key.strip() == "********":
+            return "", "Gemini API キーが未設定か無効なマスク値です"
+
         # 動的に利用可能モデル一覧を取得して検証
         available_models = await self.get_gemini_models(api_key)
         available_ids = [m["id"] for m in available_models]
@@ -448,6 +451,9 @@ class AiService:
         return text
 
     async def _call_openai_with_err(self, api_key: str, model: str, prompt: str) -> tuple[str, Optional[str]]:
+        if not api_key or api_key.strip() == "********":
+            return "", "OpenAI API キーが未設定か無効なマスク値です"
+
         available_models = await self.get_openai_models(api_key)
         available_ids = [m["id"] for m in available_models]
         valid_model = model.strip() if model else ""

@@ -7199,9 +7199,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const apiKey = keyOverride || (provider === 'gemini'
+      const rawKey = keyOverride || (provider === 'gemini'
         ? document.getElementById('inputGeminiApiKey')?.value?.trim()
         : document.getElementById('inputOpenAiApiKey')?.value?.trim());
+      const apiKey = (rawKey && rawKey !== '********') ? rawKey : '';
 
       const params = new URLSearchParams({ provider });
       if (forceRefresh) params.set('forceRefresh', 'true');
@@ -7557,9 +7558,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnTestAiConnection')?.addEventListener('click', async () => {
       const resultBox = document.getElementById('aiTestResultBox');
       const provider = document.querySelector('input[name="aiProvider"]:checked')?.value || 'gemini';
-      const typedKey = (provider === 'gemini')
+      const typedKeyRaw = (provider === 'gemini')
         ? document.getElementById('inputGeminiApiKey')?.value?.trim()
         : document.getElementById('inputOpenAiApiKey')?.value?.trim();
+      const typedKey = (typedKeyRaw && typedKeyRaw !== '********') ? typedKeyRaw : '';
       const model = (provider === 'gemini')
         ? document.getElementById('selectGeminiModel')?.value
         : document.getElementById('selectOpenAiModel')?.value;

@@ -18,6 +18,14 @@ class AiTestRequest(BaseModel):
 GEMINI_MODELS = DEFAULT_GEMINI_MODELS
 OPENAI_MODELS = DEFAULT_OPENAI_MODELS
 
+MASK_STR = "********"
+
+def _resolve_key(given_key: Optional[str], saved_key: str) -> str:
+    cleaned = (given_key or "").strip()
+    if not cleaned or cleaned == MASK_STR:
+        return (saved_key or "").strip()
+    return cleaned
+
 @router.get("/api/ai/status")
 async def get_ai_status():
     return ai_service.get_status()
@@ -27,15 +35,17 @@ async def get_ai_models(provider: str = "gemini", forceRefresh: bool = False, ap
     ai_conf = settings_manager.get().get("ai", {})
     from app.config import settings
     if provider == "openai":
-        openai_key = (apiKey and apiKey.strip()) or ai_conf.get("openaiApiKey") or settings.openai_api_key
-        models = await ai_service.get_openai_models(openai_key or "", force_refresh=forceRefresh)
+        saved_key = ai_conf.get("openaiApiKey") or settings.openai_api_key or ""
+        openai_key = _resolve_key(apiKey, saved_key)
+        models = await ai_service.get_openai_models(openai_key, force_refresh=forceRefresh)
         cur = ai_conf.get("openaiModel", "gpt-4o-mini")
         valid_ids = [m["id"] for m in models]
         if cur not in valid_ids:
             cur = valid_ids[0] if valid_ids else "gpt-4o-mini"
     else:
-        gemini_key = (apiKey and apiKey.strip()) or ai_conf.get("geminiApiKey") or settings.effective_gemini_key
-        models = await ai_service.get_gemini_models(gemini_key or "", force_refresh=forceRefresh)
+        saved_key = ai_conf.get("geminiApiKey") or settings.effective_gemini_key or ""
+        gemini_key = _resolve_key(apiKey, saved_key)
+        models = await ai_service.get_gemini_models(gemini_key, force_refresh=forceRefresh)
         cur = ai_conf.get("geminiModel", "gemini-2.5-flash")
         valid_ids = [m["id"] for m in models]
         if cur not in valid_ids or any(p in cur for p in ["1.5", "1.0", "2.0"]):
@@ -53,7 +63,15 @@ async def get_ai_models(provider: str = "gemini", forceRefresh: bool = False, ap
 
 @router.post("/api/ai/test")
 async def test_ai_connection(req: AiTestRequest):
-    return await ai_service.test_connection(req.provider or "gemini", req.apiKey or "", req.model or "")
+    ai_conf = settings_manager.get().get("ai", {})
+    from app.config import settings
+    provider = req.provider or "gemini"
+    if provider == "openai":
+        saved_key = ai_conf.get("openaiApiKey") or settings.openai_api_key or ""
+    else:
+        saved_key = ai_conf.get("geminiApiKey") or settings.effective_gemini_key or ""
+    resolved_key = _resolve_key(req.apiKey, saved_key)
+    return await ai_service.test_connection(provider, resolved_key, req.model or "")
 
 @router.post("/api/ai/summarize-test")
 async def test_summarize(req: SummarizeTestRequest = SummarizeTestRequest()):

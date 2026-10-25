@@ -104,6 +104,37 @@ class TestAuditFixes(unittest.TestCase):
         finally:
             loop.close()
 
+    @patch("httpx.AsyncClient.get")
+    def test_ai_models_mask_key_protection(self, mock_get):
+        """マスク文字列(********)がapiKeyとして渡されても外部APIに送信されず、保存済みキーが利用されること"""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "models": [
+                {"name": "models/gemini-2.5-flash", "supportedGenerationMethods": ["generateContent"]},
+            ]
+        }
+        mock_get.return_value = mock_resp
+
+        settings_manager.update({
+            "ai": {
+                "enabled": True,
+                "provider": "gemini",
+                "geminiApiKey": "AIzaSy-saved-real-key"
+            }
+        })
+
+        # クエリパラメータに "********" (マスク値) を渡す
+        ai_service._gemini_models_cache = {"api_key": "", "fetched_at": 0.0, "models": []}
+        res = self.client.get("/api/ai/models?provider=gemini&apiKey=********&forceRefresh=true")
+        self.assertEqual(res.status_code, 200)
+
+        # mock_get が呼ばれたURLを確認: "********" ではなく saved_key ("AIzaSy-saved-real-key") が使用されていること
+        mock_get.assert_called()
+        call_url = mock_get.call_args[0][0]
+        self.assertNotIn("key=********", call_url)
+        self.assertIn("key=AIzaSy-saved-real-key", call_url)
+
     def test_mcp_authentication_enforcement(self):
         """2-4: /mcp が管理者パスワード設定時に無認証アクセスを拒否し、認証時のみ許可すること"""
         settings_manager.set_admin_password("mcp-admin-pass")
