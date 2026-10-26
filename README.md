@@ -1,14 +1,14 @@
 # Smart Speaker Voice Hub 🎙️
 
-**日本語** | [English](README-en.md)
+**日本語** | [English](README-en.md) | [📖 取扱説明書・総合仕様書 (MANUAL.md)](MANUAL.md)
 
 Google Home / Nest、Amazon Alexa (Echo)、Apple HomePod、ONVIF ネットワークカメラ、DLNA ネットワークオーディオなど、規格の異なる家庭内のスピーカー機器をまとめて、WebhookやAI、外部APIから自然な日本語音声（Edge-TTS）でお知らせを放送できる音声ハブです。
 
 日常のちょっとしたお知らせやリマインダーを、手軽に心地よく届けることを目指して作成された主に自分用のツールです。
 
-> [!NOTE]
-> 本ソフトウェアは、個人の家庭内での利用を想定し、AIの支援を受けながら開発したオープンソースプロジェクトです。
-> 細かい技術仕様、全 REST API リファレンス、ネットワークセキュリティ設計、高度な外部連携設定等については、**[詳細仕様書 (MANUAL.md)](MANUAL.md)** にすべて記載しておりますので、あわせてご参照ください。
+> [!TIP]
+> 📖 **詳しい使い方・初期設定・接続手順をお探しですか？**  
+> スピーカー別の登録手順（Google Cast / Alexa / HomePod / ONVIFカメラ / DLNA）、各種AI連携、HomeKit/Siri設定、MCPサーバー設定、および全 REST API リファレンスについては、**[総合取扱説明書・技術仕様書 (MANUAL.md)](MANUAL.md)** にすべて体系的にまとめています！あわせてご活用ください。
 
 ---
 
@@ -75,6 +75,10 @@ http://<サーバーのIPアドレス>:8080
 ```
 *(サーバーを動かしている端末自身で開く場合は `http://localhost:8080`)*
 
+> 💡 **起動後の初期設定・スピーカー登録について**  
+> 初回アクセス後は、画面の案内に従ってスピーカーの自動検出や登録を行います。  
+> Google Home / Nest 以外の機器（Amazon Echo、Apple HomePod、Tapo等の防犯カメラ、DLNAスピーカー）の詳しい接続手順や設定例は、**[取扱説明書 (MANUAL.md) - 各種スマートスピーカーの接続仕様](MANUAL.md#8-各種スマートスピーカー音響機器の接続仕様)** をご覧ください。
+
 ---
 
 ## 💡 基本的な使い方
@@ -119,17 +123,27 @@ Homebridge をご利用のご家庭向けに、本システム専用のプラグ
 
 ---
 
-## 📖 より詳しい情報・技術仕様について
+## 📖 取扱説明書・総合技術仕様 (MANUAL.md)
 
-本システムは、ご家庭の環境に合わせて細かくカスタマイズできるよう、多様な設定項目や連携機能を備えています。
+本システムは、ご家庭のスマートホーム環境に合わせて細かくカスタマイズできるよう、多様な設定項目や連携機能を備えています。  
+より詳しい設定手順や仕様については、**[総合技術仕様書・取扱説明書 (MANUAL.md)](MANUAL.md)** をご覧ください。
 
-- **Amazon Echo / Apple HomePod / ネットワークカメラ / DLNA の詳しい連携設定**
-- **MCP (Model Context Protocol) サーバーとして AI アシスタントから操作する設定**
-- **マルチ MQTT ブローカー接続および Home Assistant MQTT Discovery 仕様**
-- **すべての REST API エンドポイント一覧とパラメータ詳細**
-- **内部アーキテクチャ、セキュリティ設計、およびデータ永続化仕様**
-
-これらすべての詳細については、**[詳細技術仕様書 (MANUAL.md)](MANUAL.md)** に体系的にまとめております。必要に応じてご参照ください。
+- **[各種スピーカーの接続仕様 (MANUAL.md 第8章)](MANUAL.md#8-各種スマートスピーカー音響機器の接続仕様)**:
+  Amazon Echo（Atnr/トークン取得手順）、Apple HomePod（AirPlay2/認証）、ONVIF防犯カメラ（Tapo等の双方向音声）、DLNAネットワークオーディオ
+- **[外部音声合成エンジンの自由追加 (MANUAL.md 第4.5節)](MANUAL.md#45-外部音声エンジン自由追加アーキテクチャ-tts-engine-extensibility)**:
+  Azure Speech Service、Google Cloud TTS、VOICEVOX、SHAREVOX、COEIROINK の追加・多段フォールバック設定
+- **[Apple HomeKit / Homebridge プラグイン (MANUAL.md 第9章)](MANUAL.md#9-apple-homekit--homebridge-プラグイン仕様-homebridge-voicehub)**:
+  Siri 音声アナウンス、ホームアプリスイッチ設定、音量スライダー、DND連動
+- **[スマート防災・気象連動トリガー (MANUAL.md 第6章)](MANUAL.md#6-緊急速報防災情報および天気予報連携仕様)**:
+  緊急地震速報 (EEW)・気象警報・雨雲接近の自動アナウンスおよび HomeKit / MQTT 自動化トリガー
+- **[MCP (Model Context Protocol) サーバー設定 (MANUAL.md 第10章)](MANUAL.md#10-mcp-model-context-protocol-サーバー仕様)**:
+  Claude Desktop、Cursor、Cline 等の AI アシスタントからの直接音声発話・スピーカー操作設定
+- **[マルチ MQTT ブローカー連携 (MANUAL.md 第11章)](MANUAL.md#11-マルチ-mqtt-ブローカー連携仕様)**:
+  複数ブローカー同時接続、Home Assistant MQTT Discovery 自動登録、トピック購読発話
+- **[全 REST API リファレンス (MANUAL.md 第12章)](MANUAL.md#12-全-rest-api-仕様リファレンス)**:
+  `/api/say`、`/api/devices`、`/api/dnd`、`/api/disaster` 等の全エンドポイント一覧とパラメータ詳細
+- **[セキュリティ・アクセス制御設計 (MANUAL.md 第2章)](MANUAL.md#2-ネットワークアクセス制御およびセキュリティ設計)**:
+  LAN内 vs Cloudflare Tunnel の境界防御、Webhook トークン認証、管理者パスワード保護
 
 ---
 

@@ -2,11 +2,13 @@
 .agents/
 
 # Logs & Debug history (作業ログ・履歴)
-logs/
+logs/*
+!logs/*.md
 *.log
 
 # Scratch directory & temporary testing files (一時テスト・短期記憶)
 scratch/
+release_notes.md
 *.bak
 *.patch
 *.tmp

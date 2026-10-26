@@ -39,10 +39,10 @@ class TestUpdateService(unittest.TestCase):
     def test_check_for_updates_cache_and_api(self):
         """GitHub Releases API の取得・キャッシュ (24時間)・更新判定の検証"""
         mock_gh_data = {
-            "tag_name": "v1.0.12",
-            "name": "v1.0.12 - 新機能リリース",
+            "tag_name": "v9.9.9",
+            "name": "v9.9.9 - 新機能リリース",
             "body": "・新機能追加\n・バグ修正",
-            "html_url": "https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/releases/tag/v1.0.12",
+            "html_url": "https://github.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/releases/tag/v9.9.9",
             "published_at": "2026-10-25T00:00:00Z"
         }
 
@@ -57,13 +57,13 @@ class TestUpdateService(unittest.TestCase):
                 # 1回目: API を叩いて取得
                 res1 = loop.run_until_complete(update_service.check_for_updates(force_refresh=False))
                 self.assertTrue(res1["hasUpdate"])
-                self.assertEqual(res1["latestVersion"], "v1.0.12")
+                self.assertEqual(res1["latestVersion"], "v9.9.9")
                 self.assertEqual(res1["status"], "update_available")
                 self.assertEqual(mock_get.call_count, 1)
 
                 # 2回目: 24時間キャッシュから返り、API は再呼び出しされない
                 res2 = loop.run_until_complete(update_service.check_for_updates(force_refresh=False))
-                self.assertEqual(res2["latestVersion"], "v1.0.12")
+                self.assertEqual(res2["latestVersion"], "v9.9.9")
                 self.assertEqual(mock_get.call_count, 1)
 
                 # 3回目: force_refresh=True で再取得

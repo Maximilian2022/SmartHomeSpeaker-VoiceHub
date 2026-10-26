@@ -1,14 +1,14 @@
 # Smart Speaker Voice Hub 🎙️
 
-[日本語 (Japanese)](README.md) | **English**
+[日本語 (Japanese)](README.md) | **English** | [📖 Manual & Technical Specifications (MANUAL-en.md)](MANUAL-en.md)
 
 A smart home voice announcement hub that unifies heterogeneous speakers across your home—including Google Home / Nest, Amazon Alexa (Echo), Apple HomePod, ONVIF network cameras, and DLNA network audio—enabling automated natural text-to-speech (Edge-TTS) broadcasts triggered via Webhooks, AI assistants, and external APIs.
 
 Originally created as a personal home automation utility to deliver daily notifications and reminders comfortably and effortlessly throughout the house.
 
-> [!NOTE]
-> This software is an open-source project developed with AI assistance for personal and home automation use.
-> For exhaustive technical details, complete REST API references, network security architecture, and advanced integrations, please refer to the **[Comprehensive Technical Manual (MANUAL-en.md)](MANUAL-en.md)**.
+> [!TIP]
+> 📖 **Looking for step-by-step setup guides or full technical details?**  
+> For speaker-by-speaker setup procedures (Google Cast, Alexa, HomePod, ONVIF cameras, DLNA), AI assistant configurations, HomeKit/Siri setup, and complete REST API references, please check out the **[Comprehensive Technical Manual (MANUAL-en.md)](MANUAL-en.md)**!
 
 ---
 
@@ -75,6 +75,10 @@ http://<SERVER_IP_ADDRESS>:8080
 ```
 *(If accessing from the host machine itself, use `http://localhost:8080`)*
 
+> 💡 **Initial Setup & Speaker Pairing**  
+> On your first visit, the Web UI will automatically discover compatible speakers on your local network.  
+> For devices requiring credentials or specialized authentication (Amazon Echo, Apple HomePod, Tapo ONVIF cameras, DLNA renderers), follow the detailed setup guides in **[Manual (MANUAL-en.md) - Speaker Connection Specifications](MANUAL-en.md#8-smart-speaker--audio-device-connection-specifications)**.
+
 ---
 
 ## 💡 Basic Usage
@@ -118,17 +122,27 @@ For comprehensive setup instructions, see the [Plugin Guide (plugins/homebridge-
 
 ---
 
-## 📖 In-Depth Documentation & Technical Specifications
+## 📖 Technical Manual & Specifications (MANUAL-en.md)
 
-This system offers extensive configuration options and integration capabilities tailored for flexible smart home environments:
+This system offers extensive configuration options and integration capabilities tailored for flexible smart home environments.  
+For complete technical details, setup walkthroughs, and architecture designs, refer to the **[Comprehensive Technical Manual (MANUAL-en.md)](MANUAL-en.md)**:
 
-- **Detailed setup for Amazon Echo, Apple HomePod, ONVIF Network Cameras, and DLNA speakers**
-- **Model Context Protocol (MCP) server configuration for AI assistants (Claude, Cursor, Cline)**
-- **Multi-MQTT broker connections & Home Assistant MQTT Discovery specifications**
-- **Full REST API endpoint catalog and parameter specifications**
-- **Internal architecture, network perimeter security, and data persistence design**
-
-All specifications are documented systematically in the **[Comprehensive Technical Manual (MANUAL-en.md)](MANUAL-en.md)**.
+- **[Speaker Connection Specifications (MANUAL-en.md Chapter 8)](MANUAL-en.md#8-smart-speaker--audio-device-connection-specifications)**:
+  Amazon Echo (Atnr token extraction), Apple HomePod (AirPlay 2 pairing), ONVIF cameras (Two-Way Audio), DLNA renderers
+- **[Extensible TTS Engine Architecture (MANUAL-en.md Section 4.5)](MANUAL-en.md#45-external-tts-engine-extensibility-tts-engine-extensibility)**:
+  Azure Speech Service, Google Cloud TTS, and offline engines (VOICEVOX, SHAREVOX, COEIROINK) with cascading fallback
+- **[Apple HomeKit / Homebridge Plugin (MANUAL-en.md Chapter 9)](MANUAL-en.md#9-apple-homekit--homebridge-plugin-specifications-homebridge-voicehub)**:
+  Siri voice announcements, Home app custom switches, volume sliders, and DND synchronization
+- **[Smart Disaster & Weather Triggers (MANUAL-en.md Chapter 6)](MANUAL-en.md#6-emergency-alerts-disaster-info-and-weather-forecast-integration-specifications)**:
+  Automated JMA Earthquake Early Warnings (EEW), weather alarms, approaching rain radar, and HomeKit / MQTT safety triggers
+- **[Model Context Protocol (MCP) Server (MANUAL-en.md Chapter 10)](MANUAL-en.md#10-mcp-model-context-protocol-server-specifications)**:
+  Operating speakers and checking status directly from AI assistants (Claude Desktop, Cursor, Cline)
+- **[Multi-MQTT Broker Connections (MANUAL-en.md Chapter 11)](MANUAL-en.md#11-multi-mqtt-broker-integration-specifications)**:
+  Simultaneous multi-broker connections, Home Assistant MQTT Discovery auto-registration, topic subscriptions
+- **[Complete REST API Reference (MANUAL-en.md Chapter 12)](MANUAL-en.md#12-complete-rest-api-specification-reference)**:
+  Detailed schemas and examples for `/api/say`, `/api/devices`, `/api/dnd`, `/api/disaster`, and more
+- **[Network Perimeter Security & Access Control (MANUAL-en.md Chapter 2)](MANUAL-en.md#2-network-access-control-and-security-architecture)**:
+  LAN vs Cloudflare Tunnel boundary defense, Webhook bearer tokens, and administrative password protection
 
 ---
 

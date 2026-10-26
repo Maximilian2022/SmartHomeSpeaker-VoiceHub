@@ -3,6 +3,32 @@
 すべての重要な変更はこのファイルに記録されます。
 フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいています。
 
+## [1.0.12] - 2026-10-26
+
+### 追加・新機能 (Added)
+- **送信失敗時の自動フォールバック先オプション選択 (`public/index.html`, `public/app.js`, `app/services/speech_service.py`)**:
+  - WebUI の防災・気象設定カード内に「🔄 送信失敗時の自動フォールバック先」セレクトボックスを新設。
+  - 「自動 (推奨: Group > 単体, GH > Alexa > HP > DLNA > ONVIF)」「標準スピーカーのみ」「フォールバックしない (無効)」「個別スピーカー/グループ」からユーザーが柔軟に選択可能に。
+  - 自動フォールバック時の厳格な優先順位階層（階層1: Group > 単体、階層2: GH > Alexa > HP > DLNA > ONVIF）を実装。屋外カメラ等の外部機器しかない環境でも確実に鳴らしつつ、屋内スピーカーがある環境では外部機器を巻き込まない安全設計。
+- **GitHub Actions による完全日本語自動リリースパイプライン (`.github/workflows/docker-publish.yml`, `scripts/extract_release_notes.py`)**:
+  - `main` ブランチ push 時に Docker イメージ作成と連動し、`logs/remediation_history.md` から詳細な変更履歴を自動抽出して完全日本語の GitHub Release を自動公開・更新するパイプラインを新設。
+  - Docker Hub 上にも `latest` と `v1.0.12` / `1.0.12` タグを自動付与。
+
+### 修正・堅牢化 (Fixed / Reliability)
+- **Google Cast グループ接続のフェイルファスト化と切断キャッシュ破棄 (`app/services/cast_service.py`)**:
+  - キャストグループ接続タイムアウトを 3.0 秒に短縮し、不通時の遅延を大幅軽減。
+  - 切断時・再生失敗時に `purge_cache(host, port)` で古いソケットキャッシュを確実に破棄し、次回の接続固着を解消。
+- **リトライ＆2段階フォールバックの強化 (`app/services/speech_service.py`)**:
+  - キャストグループ宛ては最大2回試行（mDNS再解決）。2回失敗時は紐付けられた個別 Google Cast スピーカー群（`_fallback_members`）へ自動フォールバック。
+  - 個別スピーカー宛ては DHCP や一時的な瞬断を考慮し最大3回試行。失敗毎に IP/ポートを再解決。3回失敗した場合は全体フォールバック先へ。
+  - 宛先重複排除（`resolve_targets`）で同一IPを持つ親端末とグループ（別ポート）が衝突して消えないようキーを改善。
+- **防災スピーカー選択消失バグの修正 (`public/app.js`)**:
+  - 画面再描画時に現在のチェック状態を引き継ぎ、空リストで初期化されて `targets: ["ALL"]` として保存される問題を完全防止。
+- **雨アラーム初期宛先の安全化 (`app/services/rain_alarm_service.py`)**:
+  - 未指定時のフォールバック先を外カメラを含む `ALL` から屋内 `GH:ALL` へ安全化。
+
+---
+
 ## [1.0.11] - 2026-10-24
 
 ### 追加・新機能 (Added)
