@@ -129,3 +129,159 @@ class TestSpeechDispatch(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history_manager.derive_source_label("mqtt"), "MQTT連携")
         self.assertEqual(history_manager.derive_source_label("scheduled_speech"), "発声予約 (日時指定)")
         self.assertEqual(history_manager.derive_source_label("unknown_source"), "外部 API / Webhook")
+
+    async def test_resolve_fallback_targets_hierarchy(self):
+        """フォールバック先の優先順位階層 (Group > 単体, GH > Alexa > HP > DLNA > ONVIF) の動作を検証"""
+        from app.services.settings_service import settings_manager
+
+        mock_devices = [
+            {"name": "リビング GH", "ip": "192.168.1.10", "type": "google", "isGroup": False},
+            {"name": "寝室 GH", "ip": "192.168.1.11", "type": "google", "isGroup": False},
+            {"name": "ALL", "ip": "192.168.1.10", "port": 32094, "type": "google", "isGroup": True},
+            {"name": "Echo Dot", "ip": "192.168.1.20", "type": "alexa", "isGroup": False},
+            {"name": "Echo Group", "ip": "192.168.1.20", "type": "alexa", "isGroup": True},
+            {"name": "HomePod mini", "ip": "192.168.1.30", "type": "homepod", "isGroup": False},
+            {"name": "DLNA スピーカー", "ip": "192.168.1.40", "type": "dlna"},
+            {"name": "玄関カメラ", "ip": "192.168.1.50", "type": "onvif"},
+        ]
+
+        # 1. auto: Google Cast Group (ALL) が最優先
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "auto"}):
+            fb = await speech_service.resolve_fallback_targets(mock_devices)
+            self.assertEqual(len(fb), 1)
+            self.assertEqual(fb[0]["name"], "ALL")
+            self.assertTrue(fb[0].get("isGroup"))
+            self.assertIn("_fallback_members", fb[0])
+            self.assertEqual(len(fb[0]["_fallback_members"]), 2)
+
+        # 2. auto: Cast Group が無ければ Alexa Group
+        no_cast_group = [d for d in mock_devices if not (d.get("type") == "google" and d.get("isGroup"))]
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "auto"}):
+            fb = await speech_service.resolve_fallback_targets(no_cast_group)
+            self.assertEqual(len(fb), 1)
+            self.assertEqual(fb[0]["name"], "Echo Group")
+
+        # 3. auto: グループが一切無ければ Google Cast 単体スピーカー群
+        singles_only = [d for d in mock_devices if not d.get("isGroup")]
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "auto"}):
+            fb = await speech_service.resolve_fallback_targets(singles_only)
+            self.assertEqual(len(fb), 2)
+            self.assertEqual([d["name"] for d in fb], ["リビング GH", "寝室 GH"])
+
+        # 4. auto: Google Cast 単体も無ければ Alexa 単体
+        no_google = [d for d in singles_only if d.get("type") != "google"]
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "auto"}):
+            fb = await speech_service.resolve_fallback_targets(no_google)
+            self.assertEqual(len(fb), 1)
+            self.assertEqual(fb[0]["name"], "Echo Dot")
+
+        # 5. auto: Alexa 単体も無ければ HomePod 単体
+        no_alexa = [d for d in no_google if d.get("type") != "alexa"]
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "auto"}):
+            fb = await speech_service.resolve_fallback_targets(no_alexa)
+            self.assertEqual(len(fb), 1)
+            self.assertEqual(fb[0]["name"], "HomePod mini")
+
+        # 6. auto: HomePod も無ければ DLNA
+        no_hp = [d for d in no_alexa if d.get("type") != "homepod"]
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "auto"}):
+            fb = await speech_service.resolve_fallback_targets(no_hp)
+            self.assertEqual(len(fb), 1)
+            self.assertEqual(fb[0]["name"], "DLNA スピーカー")
+
+        # 7. auto: ONVIF / Tapo のみがある環境なら ONVIF が返る
+        onvif_only = [d for d in no_hp if d.get("type") != "dlna"]
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "auto"}):
+            fb = await speech_service.resolve_fallback_targets(onvif_only)
+            self.assertEqual(len(fb), 1)
+            self.assertEqual(fb[0]["name"], "玄関カメラ")
+
+        # 8. fallbackSpeaker: "none" の場合は空リスト
+        with patch.dict(settings_manager.settings, {"fallbackSpeaker": "none"}):
+            fb = await speech_service.resolve_fallback_targets(mock_devices)
+            self.assertEqual(fb, [])
+
+    async def test_cast_group_retry_and_fallback(self):
+        """キャストグループ宛ての再生失敗時に2回リトライ後、個別スピーカーへフォールバックされることを検証"""
+        from app.services.history_service import history_manager
+
+        mock_group = {
+            "name": "ALL",
+            "ip": "192.168.1.10",
+            "port": 32094,
+            "type": "google",
+            "isGroup": True,
+            "_fallback_members": [
+                {"name": "リビング", "ip": "192.168.1.10", "port": 8009, "type": "google", "isGroup": False},
+                {"name": "キッチン", "ip": "192.168.1.11", "port": 8009, "type": "google", "isGroup": False}
+            ]
+        }
+
+        call_log = []
+
+        async def mock_play_audio(host, port, audio_url=None, volume_level=None, **kwargs):
+            call_log.append((host, port))
+            # ポートが32094 (グループ) は失敗し、8009 (個別) は成功するシミュレーション
+            if port == 32094:
+                return False
+            return True
+
+        mock_indiv1 = {"name": "リビング", "ip": "192.168.1.10", "port": 8009, "type": "google", "isGroup": False}
+        mock_indiv2 = {"name": "キッチン", "ip": "192.168.1.11", "port": 8009, "type": "google", "isGroup": False}
+        mock_devices = [mock_group, mock_indiv1, mock_indiv2]
+
+        with patch("app.services.speech_service.tts_service.synthesize", new_callable=AsyncMock) as mock_tts, \
+             patch("app.services.speech_service.cast_service.play_audio", side_effect=mock_play_audio), \
+             patch("app.services.speech_service.cast_service.purge_cache") as mock_purge, \
+             patch("app.services.devices_service.device_manager.get_devices", new_callable=AsyncMock) as mock_devs:
+
+            mock_tts.return_value = {"filename": "test.mp3", "filepath": "/tmp/test.mp3", "duration": 1.0, "voice": "nanami", "fallback": False}
+            mock_devs.return_value = mock_devices
+
+            res = await speech_service.speak(
+                text="グループフォールバックテスト",
+                targets=["ALL"],
+                urgent=False
+            )
+
+            # 最終結果は個別スピーカーへのフォールバックで成功
+            self.assertTrue(res.get("success"))
+            self.assertEqual(res.get("status"), "success")
+
+            # 試行ログ: グループ(32094)で2回試行された後、個別2台(8009)へ送信されたこと
+            group_calls = [c for c in call_log if c[1] == 32094]
+            indiv_calls = [c for c in call_log if c[1] == 8009]
+            self.assertEqual(len(group_calls), 2)
+            self.assertEqual(len(indiv_calls), 2)
+            self.assertTrue(mock_purge.called)
+
+    async def test_cast_individual_retry_success(self):
+        """個別スピーカー宛ての再生失敗時にDHCP再解決を含め最大3回リトライして成功することを検証"""
+        call_log = []
+
+        async def mock_play_audio(host, port, audio_url=None, volume_level=None, **kwargs):
+            call_log.append((host, port))
+            # 1回目・2回目は失敗、3回目に成功するシミュレーション
+            if len(call_log) < 3:
+                return False
+            return True
+
+        mock_spk = {"name": "寝室", "ip": "192.168.1.12", "port": 8009, "type": "google", "isGroup": False}
+
+        with patch("app.services.speech_service.tts_service.synthesize", new_callable=AsyncMock) as mock_tts, \
+             patch("app.services.speech_service.cast_service.play_audio", side_effect=mock_play_audio), \
+             patch("app.services.speech_service.cast_service.purge_cache") as mock_purge, \
+             patch("app.services.devices_service.device_manager.get_devices", new_callable=AsyncMock) as mock_devs:
+
+            mock_tts.return_value = {"filename": "test.mp3", "filepath": "/tmp/test.mp3", "duration": 1.0, "voice": "nanami", "fallback": False}
+            mock_devs.return_value = [mock_spk]
+
+            res = await speech_service.speak(
+                text="リトライ成功テスト",
+                targets=["192.168.1.12"],
+                urgent=False
+            )
+
+            self.assertTrue(res.get("success"))
+            self.assertEqual(len(call_log), 3)
+            self.assertTrue(mock_purge.called)

@@ -646,13 +646,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const curSched = getSelectedSpeakers(el.schedSpeakersContainer);
     renderSpeakersCheckboxes(el.schedSpeakersContainer, 'schedSpeaker', curSched.length ? curSched : ['default']);
 
-    renderCalendarSpeakers();
-    renderDndSpeakers();
-    renderDisasterSpeakers();
+    const calCont = document.getElementById('calSpeakersContainer');
+    const curCal = calCont ? getSelectedSpeakers(calCont) : [];
+    renderCalendarSpeakers(curCal.length ? curCal : (state.calendarConfig?.targets || ['default']));
+
+    const dndCont = document.getElementById('dndSpeakersContainer');
+    const curDnd = dndCont ? getSelectedSpeakers(dndCont) : [];
+    renderDndSpeakers(curDnd.length ? curDnd : (state.dndConfig?.targetDevices || []));
+
+    const disCont = document.getElementById('disasterSpeakersContainer');
+    const curDisaster = disCont ? getSelectedSpeakers(disCont) : [];
+    renderDisasterSpeakers(curDisaster.length ? curDisaster : (state.disasterSettings?.targetDevices || []));
+
     renderBuilderSpeakers();
     renderBuilderCustomGroupChips();
     if (typeof renderMqttSpeakerOptions === 'function') renderMqttSpeakerOptions();
     if (typeof window.renderMcpSpeakerOptions === 'function') window.renderMcpSpeakerOptions();
+    if (typeof renderFallbackSpeakerOptions === 'function') renderFallbackSpeakerOptions();
     updateBuilderCode();
   }
 
@@ -1121,10 +1131,50 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 防災・緊急速報用スピーカーチェックボックスの描画
-  function renderDisasterSpeakers(selectedList = []) {
+  function renderDisasterSpeakers(selectedList) {
     const container = document.getElementById('disasterSpeakersContainer');
     if (!container) return;
-    renderSpeakersCheckboxes(container, 'disasterSpeaker', selectedList);
+    const cur = getSelectedSpeakers(container);
+    const chosen = (selectedList !== undefined && selectedList !== null)
+      ? selectedList
+      : (cur.length ? cur : (state.disasterSettings?.targetDevices || []));
+    renderSpeakersCheckboxes(container, 'disasterSpeaker', chosen);
+  }
+
+  // 送信失敗時の自動フォールバック先スピーカーの選択肢描画
+  function renderFallbackSpeakerOptions(selectedVal) {
+    const sel = document.getElementById('settingDisasterFallbackSpeaker');
+    if (!sel) return;
+    const currentVal = selectedVal !== undefined ? selectedVal : (sel.value || state.disasterSettings?.fallbackSpeaker || 'auto');
+
+    let html = `
+      <option value="auto">${isEn() ? 'Auto (Recommended: Group > Single, GH > Alexa > HP > DLNA > ONVIF)' : '自動 (推奨: Group > 単体, GH > Alexa > HP > DLNA > ONVIF)'}</option>
+      <option value="default">${isEn() ? 'Default Speaker Only' : '標準スピーカーのみ'}</option>
+      <option value="none">${isEn() ? 'Disable Fallback' : 'フォールバックしない (無効)'}</option>
+    `;
+
+    if (state.devices && state.devices.length > 0) {
+      const groups = state.devices.filter(d => d.isGroup);
+      if (groups.length > 0) {
+        html += `<optgroup label="${isEn() ? 'Groups' : '👥 グループ'}">`;
+        groups.forEach(d => {
+          html += `<option value="${escapeHtml(d.ip)}">${escapeHtml(d.name)} (${escapeHtml(d.model || d.type)})</option>`;
+        });
+        html += `</optgroup>`;
+      }
+
+      const singles = state.devices.filter(d => !d.isGroup);
+      if (singles.length > 0) {
+        html += `<optgroup label="${isEn() ? 'Individual Speakers' : '🔊 個別スピーカー'}">`;
+        singles.forEach(d => {
+          html += `<option value="${escapeHtml(d.ip)}">${escapeHtml(d.name)} (${escapeHtml(d.ip)})</option>`;
+        });
+        html += `</optgroup>`;
+      }
+    }
+
+    sel.innerHTML = html;
+    sel.value = currentVal;
   }
 
   function getSelectedSpeakers(container) {
@@ -7955,6 +8005,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!settingsRes.ok) return;
       const data = await settingsRes.json();
+      state.disasterSettings = data;
       const status = statusRes.ok ? await statusRes.json() : {};
 
       // ステータスバッジ
@@ -7982,6 +8033,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const spkWrapper = document.getElementById('disasterSpeakersWrapper');
       if (spkWrapper) spkWrapper.style.display = targetScope === 'specific' ? 'block' : 'none';
       renderDisasterSpeakers(data.targetDevices || []);
+      renderFallbackSpeakerOptions(data.fallbackSpeaker || 'auto');
 
       // 都道府県・市区町村ドロップダウン読み込み
       await loadDisasterAreas(data.area?.prefCode, data.area?.cityCode);
@@ -8459,6 +8511,7 @@ document.addEventListener('DOMContentLoaded', () => {
           enabled: document.getElementById('settingDisasterEnabled')?.checked !== false,
           targetScope,
           targetDevices,
+          fallbackSpeaker: document.getElementById('settingDisasterFallbackSpeaker')?.value || 'auto',
           area: {
             prefCode,
             prefName,
@@ -8510,6 +8563,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (res.ok) {
+          state.disasterSettings = payload;
           showToast('防災・気象設定を保存しました', 'success');
           updateWeatherPreview();
         } else {

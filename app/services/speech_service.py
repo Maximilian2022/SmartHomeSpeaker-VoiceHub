@@ -96,11 +96,11 @@ class SpeechService:
                 if found:
                     expanded_devices.append(found)
 
-        # 重複排除 (同一IDまたは同一IP)
+        # 重複排除 (同一IDまたは同一IP:Port)
         unique_targets: List[Dict[str, Any]] = []
         seen_keys = set()
         for d in expanded_devices:
-            key = d.get("id") or d.get("ip")
+            key = d.get("id") or f"{d.get('ip')}:{d.get('port', 8009)}"
             if key not in seen_keys:
                 seen_keys.add(key)
                 unique_targets.append(d)
@@ -115,7 +115,83 @@ class SpeechService:
                 cast_group["_fallback_members"] = individual_devs
                 unique_targets = [d for d in unique_targets if d.get("type") != "google" or d == cast_group]
 
+        # 直接キャストグループが指定された場合でも個別スピーカー群を _fallback_members に必ず紐付ける
+        for d in unique_targets:
+            if d.get("type") == "google" and d.get("isGroup") and not d.get("_fallback_members"):
+                d["_fallback_members"] = [dev for dev in all_devices if dev.get("type") == "google" and not dev.get("isGroup")]
+
         return unique_targets
+
+    async def resolve_fallback_targets(self, all_devices: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+        """
+        送信失敗時のフォールバック先スピーカー一覧を決定
+        優先順位:
+          1. ユーザー設定 fallbackSpeaker が明示指定されている場合: それに従う
+          2. auto (デフォルト):
+             - 階層1: Group（グループ） > 単体スピーカー
+             - 階層2: GH (Google Home) > Alexa > HP (HomePod) > DLNA > ONVIF/Tapo
+        """
+        if all_devices is None:
+            all_devices = await device_manager.get_devices()
+
+        fb_pref = settings_manager.get().get("fallbackSpeaker", "auto")
+        if fb_pref == "none":
+            return []
+        elif fb_pref == "default":
+            def_ip = device_manager.get_default_device_ip()
+            found = device_manager.find_device(def_ip) if def_ip else None
+            return [found] if found else []
+        elif fb_pref != "auto":
+            found = device_manager.find_device(fb_pref)
+            if found:
+                return [found]
+
+        # auto: Group > 単体, GH > Alexa > HP > DLNA > ONVIF
+        # 1. Google Cast Group (ALL / 全部 / 全室 を優先、無ければ先頭グループ)
+        cast_groups = [d for d in all_devices if d.get("type") == "google" and d.get("isGroup")]
+        if cast_groups:
+            all_g = next((g for g in cast_groups if g.get("name", "").upper() == "ALL" or "全部" in g.get("name", "") or "全室" in g.get("name", "")), cast_groups[0])
+            g_copy = dict(all_g)
+            g_copy["_fallback_members"] = [d for d in all_devices if d.get("type") == "google" and not d.get("isGroup")]
+            return [g_copy]
+
+        # 2. Alexa Group
+        alexa_groups = [d for d in all_devices if d.get("type") == "alexa" and d.get("isGroup")]
+        if alexa_groups:
+            return [alexa_groups[0]]
+
+        # 3. HomePod Group
+        hp_groups = [d for d in all_devices if d.get("type") == "homepod" and d.get("isGroup")]
+        if hp_groups:
+            return [hp_groups[0]]
+
+        # 4. Google Cast 単体スピーカー群
+        google_indiv = [d for d in all_devices if d.get("type") == "google" and not d.get("isGroup")]
+        if google_indiv:
+            return google_indiv
+
+        # 5. Alexa 単体スピーカー群
+        alexa_indiv = [d for d in all_devices if d.get("type") == "alexa" and not d.get("isGroup")]
+        if alexa_indiv:
+            return alexa_indiv
+
+        # 6. HomePod 単体スピーカー群
+        hp_indiv = [d for d in all_devices if d.get("type") == "homepod" and not d.get("isGroup")]
+        if hp_indiv:
+            return hp_indiv
+
+        # 7. DLNA スピーカー群
+        dlna_indiv = [d for d in all_devices if d.get("type") == "dlna"]
+        if dlna_indiv:
+            return dlna_indiv
+
+        # 8. ONVIF / Tapo スピーカー群
+        onvif_indiv = [d for d in all_devices if d.get("type") in ("onvif", "tapo")]
+        if onvif_indiv:
+            return onvif_indiv
+
+        return all_devices[:1] if all_devices else []
+
 
     async def speak(
         self,
@@ -343,24 +419,76 @@ class SpeechService:
         target_names = [f"{d.get('name')} ({d.get('type')}:{d.get('ip')})" for d in unique_targets]
         log.info(f"Dispatching speech '{text[:40]}' to {len(unique_targets)} device(s): {', '.join(target_names)}")
 
+        async def _dispatch_google_with_retries(dev: Dict[str, Any]) -> bool:
+            """
+            Google Cast 送信処理:
+            - グループ: 最大2回試行 (失敗時、最新ポート/IPを再解決してリトライ)
+            - 個別: 最大3回試行 (失敗時、DHCP等によるIP変動を名前から再解決してリトライ)
+            """
+            is_group = bool(dev.get("isGroup") or dev.get("port", 8009) != 8009)
+            max_attempts = 2 if is_group else 3
+            dev_name = dev.get("name") or dev.get("ip")
+
+            current_host = dev.get("host")
+            current_port = int(dev.get("port", 8009))
+            if not current_host:
+                ip_val = str(dev.get("ip", ""))
+                if ":" in ip_val:
+                    parts = ip_val.split(":")
+                    current_host = parts[0]
+                    try:
+                        current_port = int(parts[1])
+                    except ValueError:
+                        current_port = 8009
+                else:
+                    current_host = ip_val
+
+            for attempt in range(1, max_attempts + 1):
+                if attempt > 1 and google_delay > 0:
+                    await asyncio.sleep(google_delay / 1000.0)
+
+                log.info(f"[Dispatch -> Google Cast] {dev_name} ({current_host}:{current_port}) URL: {audio_url} (試行 {attempt}/{max_attempts}, delay={google_delay}ms)")
+                success = await cast_service.play_audio(current_host, current_port, audio_url, effective_vol)
+                if success:
+                    if attempt > 1:
+                        log.info(f"[Speech] ✅ Google Cast '{dev_name}' はリトライ (試行 {attempt}/{max_attempts}) で再生成功しました")
+                    return True
+
+                cast_service.purge_cache(current_host, current_port)
+                if attempt < max_attempts:
+                    target_type_str = "キャストグループ" if is_group else "個別スピーカー"
+                    log.warning(f"[Speech] ⚠️ Google Cast {target_type_str} '{dev_name}' ({current_host}:{current_port}) への再生失敗。最新ポート/IPを再解決してリトライします (試行 {attempt + 1}/{max_attempts})...")
+                    try:
+                        latest_devs = await device_manager.get_devices()
+                        matched = None
+                        for ld in latest_devs:
+                            if ld.get("type") == "google":
+                                if is_group and ld.get("isGroup"):
+                                    if ld.get("name") == dev.get("name") or ld.get("id") == dev.get("id"):
+                                        matched = ld
+                                        break
+                                elif not is_group and not ld.get("isGroup"):
+                                    if ld.get("name") == dev.get("name") or ld.get("rawName") == dev.get("rawName"):
+                                        matched = ld
+                                        break
+                        if matched:
+                            new_host = matched.get("host") or str(matched.get("ip", "")).split(":")[0]
+                            new_port = int(matched.get("port", 8009))
+                            if new_host != current_host or new_port != current_port:
+                                log.info(f"[Speech] 🔄 最新接続先を検出しました: {dev_name} ({current_host}:{current_port} -> {new_host}:{new_port})")
+                                current_host = new_host
+                                current_port = new_port
+                    except Exception as ex:
+                        log.debug(f"[Speech] 再解決エラー (リトライ継続): {ex}")
+
+            log.warning(f"[Speech] ❌ Google Cast '{dev_name}' への再生が全 {max_attempts} 回の試行で失敗しました")
+            return False
+
         for dev in unique_targets:
             dtype = dev.get("type", "google")
             dev_name = dev.get("name") or dev.get("ip")
             if dtype == "google":
-                ip_val = str(dev.get("ip", ""))
-                if ":" in ip_val:
-                    parts = ip_val.split(":")
-                    host = parts[0]
-                    try:
-                        port = int(parts[1])
-                    except ValueError:
-                        port = 8009
-                else:
-                    host = dev.get("host") or ip_val
-                    port = int(dev.get("port", 8009))
-                log.info(f"[Dispatch -> Google Cast] {dev_name} ({host}:{port}) URL: {audio_url} (delay={google_delay}ms)")
-                coro = cast_service.play_audio(host, port, audio_url, effective_vol)
-                tasks.append(_run_delayed(google_delay, coro))
+                tasks.append(_run_delayed(google_delay, _dispatch_google_with_retries(dev)))
             elif dtype == "homepod":
                 log.info(f"[Dispatch -> HomePod] {dev_name} ({dev.get('ip')}) File: {speech['filepath']} (delay={homepod_delay}ms)")
                 coro = homepod_service.play_audio(dev.get("ip", ""), speech["filepath"], volume_level=effective_vol)
@@ -399,59 +527,78 @@ class SpeechService:
                 "error": err_msg
             })
 
-        # Google Cast ネイティブグループ失敗時の個別スピーカー群への自動フォールバック
+        # 1. Google Cast グループ失敗時の個別スピーカー群への自動フォールバック
         for i, dev in enumerate(unique_targets):
             fallback_members = dev.get("_fallback_members")
             res_val = results[i] if i < len(results) else False
             is_ok = (res_val is True or (isinstance(res_val, dict) and res_val.get("status") != "error"))
             if fallback_members and not is_ok:
-                log.warning(f"[Speech] ⚠️ Google Cast ネイティブグループ '{dev.get('name') or dev.get('ip')}' への再生が失敗したため、個別スピーカー {len(fallback_members)} 台へ自動フォールバックします")
+                log.warning(f"[Speech] ⚠️ Google Cast グループ '{dev.get('name') or dev.get('ip')}' (2回試行) 失敗のため、個別スピーカー {len(fallback_members)} 台へ自動フォールバックします")
                 fb_tasks = []
                 for fb_dev in fallback_members:
-                    fb_ip = str(fb_dev.get("ip", ""))
-                    if ":" in fb_ip:
-                        parts = fb_ip.split(":")
-                        fb_host = parts[0]
-                        try:
-                            fb_port = int(parts[1])
-                        except ValueError:
-                            fb_port = 8009
-                    else:
-                        fb_host = fb_dev.get("host") or fb_ip
-                        fb_port = int(fb_dev.get("port", 8009))
-                    log.info(f"[Dispatch -> Google Cast Fallback] {fb_dev.get('name') or fb_ip} ({fb_host}:{fb_port})")
-                    coro = cast_service.play_audio(fb_host, fb_port, audio_url, effective_vol)
-                    fb_tasks.append(_run_delayed(google_delay, coro))
+                    fb_tasks.append(_run_delayed(google_delay, _dispatch_google_with_retries(fb_dev)))
                 if fb_tasks:
                     fb_results = await asyncio.gather(*fb_tasks, return_exceptions=True)
-                    all_fb_ok = True
+                    has_any_fb_ok = False
                     for j, fb_dev in enumerate(fallback_members):
                         fb_name = fb_dev.get("name") or fb_dev.get("ip")
                         fb_val = fb_results[j] if j < len(fb_results) else False
                         fb_ok = (fb_val is True or (isinstance(fb_val, dict) and fb_val.get("status") != "error"))
-                        if not fb_ok:
-                            all_fb_ok = False
+                        if fb_ok:
+                            has_any_fb_ok = True
                         fb_err = None
                         if isinstance(fb_val, Exception):
                             fb_err = f"{type(fb_val).__name__}: {fb_val}"
-                            log.error(f"[Dispatch Result] ❌ {fb_name} (フォールバック) failed: {fb_err}")
+                            log.error(f"[Dispatch Result] ❌ {fb_name} (個別フォールバック) failed: {fb_err}")
                         elif not fb_ok:
                             fb_err = "Fallback playback failed"
-                            log.warning(f"[Dispatch Result] ❌ {fb_name} (フォールバック) failed")
+                            log.warning(f"[Dispatch Result] ❌ {fb_name} (個別フォールバック) failed")
                         else:
-                            log.info(f"[Dispatch Result] ✅ {fb_name} (フォールバック) success")
+                            log.info(f"[Dispatch Result] ✅ {fb_name} (個別フォールバック) success")
                         detailed_results.append({
                             "target": f"{fb_name} (個別フォールバック)",
                             "status": "success" if fb_ok else "error",
                             "error": fb_err
                         })
-                    # 個別フォールバックが全員成功した場合、元グループのエラーを救済済み (fallback_recovered) に更新
-                    if all_fb_ok:
+                    if has_any_fb_ok:
                         dev_name = dev.get("name") or dev.get("ip")
                         for dr in detailed_results:
                             if dr["target"] == dev_name:
                                 dr["status"] = "fallback_recovered"
                                 dr["error"] = "グループ送信失敗後、個別スピーカー群へ自動再送成功"
+
+        # 2. 全送信が失敗した場合の全体フォールバック (fallbackSpeaker 設定: auto / default / 個別指定)
+        has_any_success = any(r["status"] in ("success", "fallback_recovered") for r in detailed_results)
+        if not has_any_success:
+            fb_targets = await self.resolve_fallback_targets(all_devices)
+            orig_ips = {d.get("ip") for d in unique_targets}
+            needed_fb = [d for d in fb_targets if d.get("ip") not in orig_ips]
+            if needed_fb:
+                log.warning(f"[Speech] ⚠️ 全宛先への送信が失敗したため、設定されたフォールバック先 {[d.get('name') or d.get('ip') for d in needed_fb]} へ自動救済送信します...")
+                fb_gen_tasks = []
+                for d in needed_fb:
+                    dtype = d.get("type", "google")
+                    if dtype == "google":
+                        fb_gen_tasks.append(_dispatch_google_with_retries(d))
+                    elif dtype == "alexa":
+                        fb_gen_tasks.append(alexa_service.speak(d.get("name", ""), text, volume_level=effective_vol))
+                    elif dtype == "homepod":
+                        fb_gen_tasks.append(homepod_service.play_audio(d.get("ip", ""), speech["filepath"], volume_level=effective_vol))
+                    elif dtype == "dlna":
+                        fb_gen_tasks.append(dlna_service.play_audio(d, audio_url, effective_vol))
+                    elif dtype in ("onvif", "tapo"):
+                        fb_gen_tasks.append(onvif_service.play_audio(d, speech["filepath"], speech["duration"], effective_vol))
+
+                fb_gen_results = await asyncio.gather(*fb_gen_tasks, return_exceptions=True)
+                for k, fbd in enumerate(needed_fb):
+                    f_name = fbd.get("name") or fbd.get("ip")
+                    f_val = fb_gen_results[k] if k < len(fb_gen_results) else False
+                    f_ok = (f_val is True or (isinstance(f_val, dict) and f_val.get("status") != "error"))
+                    detailed_results.append({
+                        "target": f"{f_name} (全体フォールバック)",
+                        "status": "success" if f_ok else "error",
+                        "error": None if f_ok else f"General fallback failed ({f_val})"
+                    })
 
         active_results = [r for r in detailed_results if r["status"] != "fallback_recovered"]
         has_success = any(r["status"] == "success" for r in detailed_results)

@@ -445,16 +445,18 @@ class RainAlarmService:
 
         # 防災設定のスピーカー指定と連動（rainAlarmで個別設定されていない場合はdisaster設定にフォールバック）
         scope = conf.get("targetScope") or disaster_conf.get("targetScope", "all")
-        target_devices = conf.get("targetDevices") or disaster_conf.get("targetDevices", ["ALL"])
+        target_devices = conf.get("targetDevices") or disaster_conf.get("targetDevices", [])
         chime = conf.get("chime", "notice_info")
 
-        # ターゲット決定（SpeechService準拠: 'default' / list of devices / ['ALL']）
+        # ターゲット決定（SpeechService準拠: 'default' / list of devices / ['GH:ALL']）
         if scope == "default":
             targets = ["default"]
         elif scope == "specific" and target_devices:
             targets = target_devices
         else:
-            targets = ["ALL"]
+            # scope == "all" または specific で target_devices が空だった場合
+            # 外のカメラ (Tapo/ONVIF) を巻き込まないよう、Google Cast (GH:ALL) にフォールバック
+            targets = ["GH:ALL"]
 
         log.info(f"[RainAlarm] スピーカーへ雨アラームを発話します (scope={scope}, targets={targets}, chime={chime})")
         try:

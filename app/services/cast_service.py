@@ -24,18 +24,32 @@ class CastService:
                     pass
             except Exception:
                 pass
+            self._cast_cache.pop(key, None)
 
+        is_group = (port != 8009)
+        conn_timeout = 3.0 if is_group else 3.5
         try:
-            cast = pychromecast.get_chromecast_from_host((host, port, None, None, None), timeout=4.0)
+            cast = pychromecast.get_chromecast_from_host((host, port, None, None, None), timeout=conn_timeout)
             cast.start()
-            cast.wait(timeout=4.0)
+            cast.wait(timeout=conn_timeout)
             self._cast_cache[key] = cast
             return cast
         except Exception as e:
+            self._cast_cache.pop(key, None)
             log.warning(f"Connect failed to {host}:{port}: {e}")
             return None
 
+    def purge_cache(self, host: str, port: int = 8009):
+        key = f"{host}:{port}"
+        cast = self._cast_cache.pop(key, None)
+        if cast:
+            try:
+                cast.disconnect(timeout=1.0)
+            except Exception:
+                pass
+
     def _sync_play(self, host: str, port: int, media_url: str, volume_level: Optional[float] = None) -> bool:
+        key = f"{host}:{port}"
         cast = self._get_cast(host, port)
         if not cast:
             return False
@@ -54,6 +68,7 @@ class CastService:
             log.info(f"Playback started on {host}:{port}: {media_url}")
             return True
         except Exception as e:
+            self._cast_cache.pop(key, None)
             log.error(f"Play failed on {host}:{port}: {e}")
             return False
 
