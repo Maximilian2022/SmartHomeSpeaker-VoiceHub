@@ -358,7 +358,12 @@ def check_admin_auth(request: Request):
             login_rate_limiter.record_success(client_ip)
             return True
         else:
-            login_rate_limiter.record_failure(client_ip)
+            now_locked, lock_sec = login_rate_limiter.record_failure(client_ip)
+            if now_locked:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"認証試行回数が上限を超えました。{lock_sec}秒後に再試行してください。"
+                )
 
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
@@ -366,8 +371,8 @@ def check_admin_auth(request: Request):
         if token in ACTIVE_SESSIONS or hmac.compare_digest(token, admin_password):
             login_rate_limiter.record_success(client_ip)
             return True
-        else:
-            login_rate_limiter.record_failure(client_ip)
+        # ※ ここで即時 record_failure を呼んではいけない。後続の MCP やスマートホーム連携 (Homebridge等) で
+        # Webhook トークンとして許可される場合があるため、すべての認証チェック失敗時に記録する。
 
     # 5. MCP エンドポイントは Webhook トークン または 管理者パスワードで保護
     if path == "/mcp" or path.startswith("/mcp/"):
@@ -386,8 +391,15 @@ def check_admin_auth(request: Request):
             cand_token = request.query_params.get("token").strip()
 
         if cand_token and any(hmac.compare_digest(cand_token, t) for t in valid_tokens):
+            login_rate_limiter.record_success(client_ip)
             return True
 
+        now_locked, lock_sec = login_rate_limiter.record_failure(client_ip)
+        if now_locked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"認証試行回数が上限を超えました。{lock_sec}秒後に再試行してください。"
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Admin password or Webhook token required for MCP"
@@ -421,11 +433,29 @@ def check_admin_auth(request: Request):
             cand_token = request.query_params.get("token").strip()
 
         if cand_token and any(hmac.compare_digest(cand_token, t) for t in valid_tokens):
+            login_rate_limiter.record_success(client_ip)
             return True
 
     # 7. 静的アセット (WebUI) は除外
     if not path.startswith("/api/"):
         return True
+
+    # 8. 認証失敗: 不正な認証情報が送られていた場合 (Bearer/Header/Cookie/Query) に失敗を記録してブルートフォースを防止
+    has_credentials = bool(
+        auth_header
+        or x_admin_pass
+        or request.cookies.get("auth_token")
+        or request.headers.get("x-webhook-token")
+        or request.headers.get("x-api-key")
+        or request.query_params.get("token")
+    )
+    if has_credentials:
+        now_locked, lock_sec = login_rate_limiter.record_failure(client_ip)
+        if now_locked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"認証試行回数が上限を超えました。{lock_sec}秒後に再試行してください。"
+            )
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

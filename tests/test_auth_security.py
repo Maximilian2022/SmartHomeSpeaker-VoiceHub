@@ -118,5 +118,31 @@ class TestAuthSecurity(unittest.TestCase):
         self.assertIn("auth_token=", cookie_header_tunnel)
         self.assertIn("Secure", cookie_header_tunnel)
 
+    def test_bearer_webhook_token_integration_rate_limit(self):
+        """Homebridge等の Bearer Webhook トークンが管理者ログイン失敗と誤認されず、429ロックされないことを検証"""
+        settings_manager.set_admin_password("admin_pass_999")
+        wh_token = "valid_wh_token_xyz"
+        settings_manager.update({"webhookToken": wh_token})
+
+        # 1. 有効な Webhook トークンを Bearer ヘッダーで 10回連続送信しても 200 OK で通過し、ロックされない
+        headers = {"Authorization": f"Bearer {wh_token}"}
+        for i in range(10):
+            res_dnd = self.client.get("/api/dnd/status", headers=headers)
+            self.assertEqual(res_dnd.status_code, 200, f"Iteration {i} DND status failed")
+            res_disaster = self.client.get("/api/disaster/triggers", headers=headers)
+            self.assertEqual(res_disaster.status_code, 200, f"Iteration {i} Disaster triggers failed")
+
+        self.assertEqual(len(login_rate_limiter.attempts), 0)
+        self.assertEqual(len(login_rate_limiter.lockouts), 0)
+
+        # 2. 誤った Bearer トークンの場合は 401 となり、5回失敗で 429 ロックされる
+        bad_headers = {"Authorization": "Bearer wrong_token_abc"}
+        for i in range(4):
+            res_fail = self.client.get("/api/dnd/status", headers=bad_headers)
+            self.assertEqual(res_fail.status_code, 401)
+
+        res_lock = self.client.get("/api/dnd/status", headers=bad_headers)
+        self.assertEqual(res_lock.status_code, 429)
+
 if __name__ == "__main__":
     unittest.main()
