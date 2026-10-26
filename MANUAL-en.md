@@ -436,11 +436,10 @@ When multiple messages accumulate in the queue (default: 2 or more), Voice Hub i
 
 ### 5.5 External Device & Shortcut Integration (Logitech G HUB / Stream Deck)
 
-Enables one-touch DND control from mouse buttons, keyboard G keys, or dedicated macro pads during gaming, deep work, or sudden conference calls, without needing to open the Web UI.
+Enables one-touch DND control from mouse buttons, keyboard G keys, or dedicated macro pads during gaming, deep work, or sudden conference calls, without needing to open the Web UI. For Windows environments, scripts are unified into standard `.bat` files for maximum simplicity and reliability, eliminating the need for complex execution policies or wrapper commands.
 
 * **Supported Script Formats**:
-  - **`.vbs` (VBScript / Recommended)**: Built using Windows standard `MSXML2.ServerXMLHTTP`. Executes 100% silently in the background with zero command-prompt flickering.
-  - **`.bat` (Windows Batch)**: Uses Windows built-in `curl.exe` for quick testing.
+  - **`.bat` (Windows Batch / Recommended)**: Uses Windows built-in `curl.exe`. Directly selectable in Logitech G HUB and Stream Deck with zero extra arguments.
   - **`.sh` (Bash Shell Script)**: Ready for macOS and Linux desktops.
 * **One-Tap Action Types**:
   - **Toggle DND (`toggle`)**: Inverts state between Normal and Muted (ideal for mouse side buttons).
@@ -448,8 +447,8 @@ Enables one-touch DND control from mouse buttons, keyboard G keys, or dedicated 
   - **Unmute & Flush (`unmute`)**: Manually unblocks and summarizes all accumulated messages.
 * **One-Click Generation via Web UI**:
   - Download pre-configured scripts with embedded local host URLs and authentication directly from Web UI (Extended Settings > Do Not Disturb).
-  - **Logitech G HUB**: Assign via "System" -> "Launch Application" to any G key or mouse button.
-  - **Elgato Stream Deck**: Drag the "System" -> "Open" action to a key and select the downloaded script.
+  - **Logitech G HUB**: Assign via "Assignments" -> "System" -> "Launch Application" by selecting the downloaded `.bat` file directly.
+  - **Elgato Stream Deck**: Drag the "System" -> "Open" action to a key and select the downloaded `.bat` file directly.
 
 ---
 

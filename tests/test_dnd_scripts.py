@@ -46,6 +46,15 @@ class TestDndScripts(unittest.TestCase):
         self.assertIn('curl -s -X POST "%VOICEHUB_HOST%/api/dnd/quick"', content)
         self.assertIn('\\"minutes\\": 60', content)
 
+    def test_api_script_preview_default_bat(self):
+        res = self.client.get("/api/dnd/script/preview?action=toggle&host=http://192.168.11.10:8080")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["format"], "bat")
+        self.assertEqual(data["filename"], "voicehub_dnd_toggle.bat")
+        self.assertIn("VOICEHUB_HOST=http://192.168.11.10:8080", data["content"])
+        self.assertIn("Suitable for Logitech G HUB, Elgato Stream Deck, Windows", data["content"])
+
     def test_api_script_preview(self):
         res = self.client.get("/api/dnd/script/preview?action=toggle&format=vbs&host=http://192.168.11.10:8080")
         self.assertEqual(res.status_code, 200)
@@ -58,6 +67,11 @@ class TestDndScripts(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn("attachment; filename=\"voicehub_dnd_30m.bat\"", res.headers.get("content-disposition", ""))
         self.assertIn("VOICEHUB_HOST=http://192.168.11.10:8080", res.text)
+
+    def test_api_script_download_default_bat(self):
+        res = self.client.get("/api/dnd/script/download?action=toggle&host=http://192.168.11.10:8080")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("attachment; filename=\"voicehub_dnd_toggle.bat\"", res.headers.get("content-disposition", ""))
 
     def test_build_dnd_script_sh(self):
         filename, content, mime = build_dnd_script("unmute", "sh", "http://192.168.1.50:8080", "secret123")

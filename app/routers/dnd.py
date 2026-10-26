@@ -62,7 +62,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
 
     clean_fmt = fmt.lower().strip()
     if clean_fmt not in ("vbs", "ps1", "bat", "sh"):
-        clean_fmt = "vbs"
+        clean_fmt = "bat"
 
     title = cfg["title"]
     endpoint = cfg["endpoint"]
@@ -163,7 +163,7 @@ def build_dnd_script(action: str, fmt: str, host: str, password: str = "") -> tu
             f"@echo off\r\n"
             f"chcp 65001 >nul\r\n"
             f":: VoiceHub DND - {title}\r\n"
-            f":: Suitable for Logitech G HUB, Elgato Stream Deck, Command Line\r\n\r\n"
+            f":: Suitable for Logitech G HUB, Elgato Stream Deck, Windows\r\n\r\n"
             f'set "VOICEHUB_HOST={clean_host}"\r\n'
             f'set "TOKEN={bat_pwd}"\r\n\r\n'
             f'if "%TOKEN%"=="" (\r\n'
@@ -352,7 +352,7 @@ def _resolve_script_password(request: Request, custom_password: Optional[str] = 
 async def preview_dnd_script(
     request: Request,
     action: str = Query("toggle", description="Script action: toggle, 30m, 60m, unmute"),
-    format: str = Query("vbs", description="Script format: vbs, ps1, bat, sh"),
+    format: str = Query("bat", description="Script format: bat, sh (Windows: bat, macOS/Linux: sh)"),
     host: Optional[str] = Query(None, description="Custom VoiceHub host URL"),
     password: Optional[str] = Query(None, description="Custom admin password")
 ):
@@ -371,7 +371,7 @@ async def preview_dnd_script(
 async def download_dnd_script(
     request: Request,
     action: str = Query("toggle", description="Script action: toggle, 30m, 60m, unmute"),
-    format: str = Query("vbs", description="Script format: vbs, ps1, bat, sh"),
+    format: str = Query("bat", description="Script format: bat, sh (Windows: bat, macOS/Linux: sh)"),
     host: Optional[str] = Query(None, description="Custom VoiceHub host URL"),
     password: Optional[str] = Query(None, description="Custom admin password")
 ):

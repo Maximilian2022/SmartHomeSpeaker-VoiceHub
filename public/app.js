@@ -5025,7 +5025,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function getSelectedFormat() {
       const checked = document.querySelector('input[name="dndScriptFormat"]:checked');
-      return checked ? checked.value : 'vbs';
+      return checked ? checked.value : 'bat';
     }
 
     async function updateScriptPreview() {
