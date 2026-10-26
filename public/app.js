@@ -1006,7 +1006,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const isDefChecked = selectedValues.includes('default') ? 'checked' : '';
       html += `
         <label class="speaker-chip ${isDefChecked ? 'checked' : ''}">
-          <input type="checkbox" name="${nameAttr}" value="default" data-type="default" ${isDefChecked}>
+          <input type="checkbox" name="${nameAttr}" value="default" data-name="デフォルト" data-raw-name="default" data-id="default" data-type="default" ${isDefChecked}>
           <span class="speaker-chip-name">デフォルト (標準)</span>
           <span class="speaker-chip-badges">
             <span class="speaker-chip-badge default-badge">標準</span>
@@ -1064,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `
         <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
-          <input type="checkbox" name="${nameAttr}" value="${escapeHtml(dev.ip)}" data-type="${escapeHtml(devType)}" ${isChecked}>
+          <input type="checkbox" name="${nameAttr}" value="${escapeHtml(dev.ip)}" data-name="${escapeHtml(dev.name || '')}" data-raw-name="${escapeHtml(dev.rawName || dev.name || '')}" data-id="${escapeHtml(dev.id || '')}" data-type="${escapeHtml(devType)}" ${isChecked}>
           <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
           <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
@@ -2059,14 +2059,80 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast('【DND発動中】おやすみ・会議モード中のため発話を抑制しました', 'info');
           loadHistory();
         } else {
-          const successCount = data.results?.filter(r => r.status === 'success').length || 0;
+          if (!state.deviceFailureCounts) {
+            state.deviceFailureCounts = {};
+          }
+
+          const results = Array.isArray(data.results) ? data.results : [];
+          const successResults = results.filter(r => r.status === 'success' || r.status === 'fallback_recovered');
+          const errorResults = results.filter(r => r.status === 'error');
           const totalRequested = selectedSpeakers.length;
-          if (successCount === 0) {
-            showToast(`${totalRequested} 台のスピーカーへ送信しましたが、0台成功でした。システムログを確認してください`, 'error');
-          } else if (successCount < totalRequested) {
-            showToast(`一部のスピーカーへ送信完了 (${successCount} / ${totalRequested} 台成功)`, 'warning');
+
+          // 成功した端末は失敗カウントをリセット
+          successResults.forEach(r => {
+            const targetKey = r.target || '';
+            if (targetKey) {
+              state.deviceFailureCounts[targetKey] = 0;
+            }
+          });
+
+          // 失敗した端末の連続カウントを集計 & エラー種別を分類
+          const errorSummaries = [];
+          errorResults.forEach(r => {
+            const targetKey = r.target || (isEn() ? 'Unknown Speaker' : '不明なスピーカー');
+            const curCount = (state.deviceFailureCounts[targetKey] || 0) + 1;
+            state.deviceFailureCounts[targetKey] = curCount;
+
+            const rawErr = String(r.error || '');
+            let reasonText = '';
+            const isTimeout = rawErr.includes('timed out') || rawErr.includes('Timeout') || rawErr.includes('Connect failed');
+            const isUnreachable = rawErr.includes('No route') || rawErr.includes('unreachable') || rawErr.includes('Cannot connect');
+
+            if (isTimeout) {
+              reasonText = isEn() ? 'Connection timed out' : '接続タイムアウト (応答なし)';
+            } else if (isUnreachable) {
+              reasonText = isEn() ? 'Offline / Unreachable' : '通信不能 (オフライン)';
+            } else {
+              reasonText = isEn() ? 'Playback failed' : '再生エラー';
+            }
+
+            errorSummaries.push({
+              target: targetKey,
+              reason: reasonText,
+              count: curCount,
+              isTimeout
+            });
+          });
+
+          if (errorResults.length === 0) {
+            // 全端末成功
+            showToast(isEn() ? `Sent successfully to all ${totalRequested} speaker(s)!` : `${totalRequested} 台すべてのスピーカーへ送信完了 (${successResults.length} 台成功)！`, 'success');
+          } else if (successResults.length > 0) {
+            // 一部成功
+            const failedNames = errorSummaries.map(e => isEn() ? `${e.target}` : `「${e.target}」`).join('、');
+            showToast(isEn()
+              ? `Sent to ${successResults.length}/${totalRequested} speakers. (${failedNames} did not respond)`
+              : `一部のスピーカーへ送信完了 (${successResults.length}/${totalRequested} 台成功) ※${failedNames}は応答しませんでした`,
+              'warning', 5000);
           } else {
-            showToast(`${totalRequested} 台すべてのスピーカーへ送信完了 (${successCount} 台成功)！`, 'success');
+            // 全端末失敗 (0台成功)
+            // 2回以上連続して失敗している端末があるかをチェック (案3)
+            const severeErrors = errorSummaries.filter(e => e.count >= 2);
+            if (severeErrors.length > 0) {
+              // 連続失敗: 端末フリーズ・電源再投入アドバイス
+              const targetNames = severeErrors.map(e => isEn() ? `${e.target} (${e.count}x)` : `「${e.target}」(${e.count}回連続)`).join('、');
+              showToast(isEn()
+                ? `⚠️ ${targetNames} is not responding. The device may be frozen. Please try unplugging and replugging the device power.`
+                : `⚠️ ${targetNames} が応答していません。端末がフリーズしている可能性が高いため、電源プラグの抜き差し（再起動）をお試しください`,
+                'error', 8000);
+            } else {
+              // 1回目の失敗: 一時的通信遅延アドバイス
+              const targetNames = errorSummaries.map(e => isEn() ? `${e.target} (${e.reason})` : `「${e.target}」(${e.reason})`).join('、');
+              showToast(isEn()
+                ? `⚠️ Failed to send to ${targetNames}. It may be temporary Wi-Fi delay. Please try again in a few seconds.`
+                : `⚠️ ${targetNames} への送信に失敗しました。Wi-Fiの一時的な混雑・遅延の可能性があります。もう一度お試しください`,
+                'error', 6000);
+            }
           }
         }
 
@@ -2523,24 +2589,73 @@ document.addEventListener('DOMContentLoaded', () => {
         if (Array.isArray(targets) && targets.length && el.saySpeakersContainer) {
           const checkboxes = el.saySpeakersContainer.querySelectorAll('input[type="checkbox"]');
           let matchedAny = false;
-          checkboxes.forEach(cb => {
-            const devName = cb.getAttribute('data-name') || '';
-            const devIp = cb.value;
-            const isMatch = targets.some(t => t === devIp || t === devName || (t && devName && devName.includes(t)));
-            if (isMatch) {
-              cb.checked = true;
-              cb.closest('.speaker-chip')?.classList.add('checked');
-              matchedAny = true;
-            } else {
-              cb.checked = false;
-              cb.closest('.speaker-chip')?.classList.remove('checked');
-            }
+
+          // ALL や * の場合は全選択
+          const isAllTarget = targets.some(t => {
+            const ut = String(t || '').toUpperCase();
+            return ut === 'ALL' || ut === '*' || ut === '全デバイス' || ut === '全体';
           });
-          if (!matchedAny) {
+
+          if (isAllTarget) {
             checkboxes.forEach(cb => {
               cb.checked = true;
               cb.closest('.speaker-chip')?.classList.add('checked');
             });
+            matchedAny = true;
+          } else {
+            checkboxes.forEach(cb => {
+              const devName = (cb.getAttribute('data-name') || '').trim();
+              const devRawName = (cb.getAttribute('data-raw-name') || '').trim();
+              const devId = (cb.getAttribute('data-id') || '').trim();
+              const devIp = (cb.value || '').trim();
+
+              const isMatch = targets.some(t => {
+                if (!t) return false;
+                const targetStr = String(t).trim();
+                // 完全一致
+                if (targetStr === devIp || targetStr === devName || targetStr === devRawName || targetStr === devId) {
+                  return true;
+                }
+                // IPプレフィックスなし一致 (例: "alexa:部屋Echo Show" vs "部屋Echo Show")
+                if (devIp.includes(':')) {
+                  const pureIp = devIp.split(':')[1] || '';
+                  if (pureIp && targetStr === pureIp) return true;
+                }
+                // 表示名一致
+                const dispName = formatSpeakerDisplayName(devName);
+                if (targetStr === dispName) return true;
+                return false;
+              });
+
+              if (isMatch) {
+                cb.checked = true;
+                cb.closest('.speaker-chip')?.classList.add('checked');
+                matchedAny = true;
+              } else {
+                cb.checked = false;
+                cb.closest('.speaker-chip')?.classList.remove('checked');
+              }
+            });
+          }
+
+          // 万一1件もマッチしなかった場合は、勝手に全選択せずデフォルトスピーカーを選択
+          if (!matchedAny) {
+            const defIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || '';
+            let defMatched = false;
+            checkboxes.forEach(cb => {
+              if (cb.value === defIp || cb.value === 'default') {
+                cb.checked = true;
+                cb.closest('.speaker-chip')?.classList.add('checked');
+                defMatched = true;
+              } else {
+                cb.checked = false;
+                cb.closest('.speaker-chip')?.classList.remove('checked');
+              }
+            });
+            if (!defMatched && checkboxes.length > 0) {
+              checkboxes[0].checked = true;
+              checkboxes[0].closest('.speaker-chip')?.classList.add('checked');
+            }
           }
         }
 
@@ -5056,7 +5171,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function showToast(message, type = 'info') {
+  function showToast(message, type = 'info', durationMs = 3500) {
     const displayMsg = isEn() ? translateToast(message) : message;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
@@ -5068,7 +5183,7 @@ document.addEventListener('DOMContentLoaded', () => {
       toast.style.transform = 'translateY(10px)';
       toast.style.transition = 'all 0.3s ease';
       setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    }, durationMs);
   }
 
   function escapeHtml(str) {
