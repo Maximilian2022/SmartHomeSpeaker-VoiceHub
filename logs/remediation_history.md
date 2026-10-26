@@ -1,5 +1,23 @@
 # 修正履歴 (Remediation History)
 
+## 2026-10-26 23:45 - 震度速報(ScalePrompt)受信時の震源地脱字修正および空文字部分一致による他地域地震の誤発報防止
+- **背景と課題**:
+  - 発言履歴にて、2026/10/26 23:35:55 に「地震情報です。で最大震度3の地震が発生しました。」と、場所が脱字したアナウンスが実行され、ユーザーから「どこで？ｗ」と報告された。
+  - 調査の結果、2026/10/26 23:34発生の「熊本県天草・芦北」（最大震度3）の地震情報を受信した際、気象庁の第一報が震度速報（`ScalePrompt`）であったため、震源地名（`hypocenter.name`）が空文字 `""` だったことが原因。
+  - さらに、ユーザーは「東京都・対象地域のみ（`targetScope == 'local'`）」に設定していたにもかかわらず、熊本県の地震が誤って発報されていた。これは地域判定のフォールバック条件 `hypocenter in target_pref` が、`hypocenter == ""` のために `"" in "東京都"` と評価され、Pythonの仕様により常に `True` となっていたため。
+- **改修内容**:
+  1. **震度速報時の観測地点名抽出とフォールバック徹底 ([app/services/disaster_service.py](file:///root/google-home-voicetext-docker/app/services/disaster_service.py))**:
+     - `hypocenter.name` が空文字の震度速報（`ScalePrompt`）受信時、観測点配列 `points` から最大震度を観測した地域名（`addr` または `pref`）を自動抽出（例：「熊本県天草・芦北」）。
+     - 震度速報時は「地震情報です。{location}で最大{scale_text}の揺れを観測しました。」、震源確定時は「地震情報です。{location}で最大{scale_text}の地震が発生しました。」と適切な日本語を生成。
+     - 観測地点データが得られない場合でも確実に `"各地"` にフォールバックさせ、「。で最大」の脱字を完全防止。
+  2. **ローカル地域判定における空文字すり抜けバグの修正 ([app/services/disaster_service.py](file:///root/google-home-voicetext-docker/app/services/disaster_service.py))**:
+     - `hypocenter_raw` が非空の場合のみ震源地名による地域判定を実行するように修正し、空文字列による `"" in target_pref`（常にTrue）の誤判定を完全に排除。
+     - EEW地域判定（`_handle_eew`）側でも同様に `aname` の非空チェックを追加して堅牢化。
+  3. **同一地震の重複抑止キー改善 ([app/services/disaster_service.py](file:///root/google-home-voicetext-docker/app/services/disaster_service.py))**:
+     - `event_key` を `f"{event_time}_{display_scale}"` に改善し、震度速報の後に震源情報（Destination）等が届いた場合でも同一震度であれば多重アナウンスされないよう最適化。
+  4. **単体テストの追加と全件検証 ([tests/test_disaster_quake_report.py](file:///root/google-home-voicetext-docker/tests/test_disaster_quake_report.py))**:
+     - 震度速報時の他地域スキップ、自地域合致時の地点名発話、全国モードでの地点名抽出、フォールバック「各地」の動作を網羅するテスト5件を追加。全102件のテストが100% PASSすることを確認。
+
 ## 2026-10-26 17:35 - README への取扱説明書・詳細マニュアル (MANUAL.md) 総合案内とチャプターリンクの最適配置
 - **背景と課題**:
   - リポジトリを訪れたユーザーが、1,000行を超える充実した仕様・設定書である [MANUAL.md](file:///root/google-home-voicetext-docker/MANUAL.md) の存在に気づきやすく、迷わず目的の情報（各種スピーカー接続、初期設定、HomeKit、REST API 等）にアクセスできるよう、README 内に最適な案内を配置したいという要望。

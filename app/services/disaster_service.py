@@ -437,14 +437,14 @@ class DisasterService:
             return # 重複発報防止
 
         # 地域マッチング
-        target_pref = user_area.get("prefName", "")
+        target_pref = (user_area.get("prefName") or "").strip()
         eew_areas = data.get("areas", [])
         should_notify = (eq_config.get("targetScope") == "all" or len(eew_areas) == 0)
 
         if not should_notify and target_pref:
             for a in eew_areas:
-                aname = a.get("name") or a.get("pref") or ""
-                if target_pref in aname or aname in target_pref:
+                aname = (a.get("name") or a.get("pref") or "").strip()
+                if aname and (target_pref in aname or aname in target_pref):
                     should_notify = True
                     break
 
@@ -463,10 +463,6 @@ class DisasterService:
         eq = data.get("earthquake")
         if not eq:
             return
-        event_key = f"{eq.get('time')}_{eq.get('hypocenter', {}).get('name')}_{eq.get('maxScale')}"
-        if self._last_processed_earthquake_id == event_key:
-            return
-        self._last_processed_earthquake_id = event_key
 
         eq_config = settings.get("earthquake", {})
         min_scale = int(eq_config.get("minScale", 30))
@@ -475,14 +471,17 @@ class DisasterService:
         if max_scale < min_scale:
             return
 
-        hypocenter = eq.get("hypocenter", {}).get("name", "各地")
         user_area = settings.get("area", {})
         target_scope = eq_config.get("targetScope", "all")
-        target_pref = user_area.get("prefName", "")
+        target_pref = (user_area.get("prefName") or "").strip()
+        points = data.get("points", []) or []
+
+        hypocenter_raw = ((eq.get("hypocenter") or {}).get("name") or "").strip()
 
         display_scale = max_scale
+        matched_point_name = ""
+
         if target_scope == "local" and target_pref:
-            points = data.get("points", [])
             matched_point = False
             local_max = 0
             if points:
@@ -493,21 +492,61 @@ class DisasterService:
                         p_scale = int(p.get("scale", 0))
                         if p_scale > local_max:
                             local_max = p_scale
+                            matched_point_name = p_addr or p_pref
                 if local_max >= min_scale:
                     matched_point = True
                     display_scale = local_max
 
-            if not matched_point:
-                if (target_pref in hypocenter or hypocenter in target_pref) and max_scale >= min_scale:
+            # pointsでマッチしなかった場合、震源地名が明示されている場合のみ震源地判定を行う
+            # （空文字で "" in target_pref が True になるのを防ぐため、hypocenter_raw が非空であることを必須とする）
+            if not matched_point and hypocenter_raw:
+                if (target_pref in hypocenter_raw or hypocenter_raw in target_pref) and max_scale >= min_scale:
                     matched_point = True
                     display_scale = max_scale
 
             if not matched_point:
-                log.info(f"Quake report ignored: targetScope=local ({target_pref}) did not match points or hypocenter ({hypocenter}).")
+                log.info(f"Quake report ignored: targetScope=local ({target_pref}) did not match points or hypocenter ({hypocenter_raw}).")
                 return
 
+        event_time = eq.get("time") or str(time.time())
+        event_key = f"{event_time}_{display_scale}"
+        if self._last_processed_earthquake_id == event_key:
+            return
+        self._last_processed_earthquake_id = event_key
+
+        location = ""
+        is_shindo_prompt = False
+
+        if hypocenter_raw:
+            location = hypocenter_raw
+        else:
+            # 震度速報（ScalePrompt）などで震源地が未発表の場合、pointsから観測地域名を抽出
+            is_shindo_prompt = True
+            if matched_point_name:
+                location = matched_point_name
+            elif points:
+                max_points = [p for p in points if int(p.get("scale", 0)) == display_scale]
+                areas = []
+                for p in max_points:
+                    aname = p.get("addr") or p.get("pref") or ""
+                    if aname and aname not in areas:
+                        areas.append(aname)
+                if len(areas) == 1:
+                    location = areas[0]
+                elif 1 < len(areas) <= 2:
+                    location = "、".join(areas)
+                elif len(areas) > 2:
+                    location = f"{areas[0]}、{areas[1]}など"
+
+        if not location:
+            location = "各地"
+
         scale_text = SCALE_MAP.get(display_scale, f"震度{display_scale // 10}")
-        text = f"地震情報です。{hypocenter}で最大{scale_text}の地震が発生しました。"
+        if is_shindo_prompt:
+            text = f"地震情報です。{location}で最大{scale_text}の揺れを観測しました。"
+        else:
+            text = f"地震情報です。{location}で最大{scale_text}の地震が発生しました。"
+
         log.warning(f"Quake report alert: {text}")
         await self.speak(text=text, urgent=bool(eq_config.get("reportUrgent", False)))
 
