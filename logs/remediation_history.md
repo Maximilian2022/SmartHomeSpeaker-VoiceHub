@@ -1,5 +1,16 @@
 # 修正履歴 (Remediation History)
 
+## 2026-10-27 01:35 - GitHub Actions の Docker ビルド・リリースワークフローにおけるバージョン取得構文エラーの修正
+- **背景と課題**:
+  - GitHub Actions の自動化パイプライン（`Build, Push Docker Image & Release`）において、`Build and Push Docker Image` ジョブ内の `Get app version` ステップで `SyntaxError: closing parenthesis ']' does not match opening parenthesis '('` が発生し、DockerイメージのマルチアーキテクチャビルドおよびGitHub Release発行が失敗・停止していた。
+  - 原因はワークフロー定義内でインラインの `python3 -c` に正規表現パターンと多重エスケープを記述していたため、bashのクォート展開とPythonのraw文字列リテラルパーサーの間で不整合が生じていたこと。
+- **改修内容**:
+  1. **バージョン抽出処理のインポートベース化 ([.github/workflows/docker-publish.yml](file:///root/google-home-voicetext-docker/.github/workflows/docker-publish.yml))**:
+     - `app/version.py` は外部依存のない純粋なバージョン定義モジュールであるため、エスケープ事故のリスクがある正規表現文字列走査を廃止。
+     - `python3 -c "from app.version import __version__; print(__version__)"` に統一し、Dockerタグ生成およびGitHub Releaseタグ判定の両ステップでシンプルかつ確実にバージョンを取得できるよう改善。
+  2. **CI単体テストスイートの全件検証**:
+     - 全102件のユニットテストが 100% PASS することを確認。
+
 ## 2026-10-26 23:45 - 震度速報(ScalePrompt)受信時の震源地脱字修正および空文字部分一致による他地域地震の誤発報防止
 - **背景と課題**:
   - 発言履歴にて、2026/10/26 23:35:55 に「地震情報です。で最大震度3の地震が発生しました。」と、場所が脱字したアナウンスが実行され、ユーザーから「どこで？ｗ」と報告された。

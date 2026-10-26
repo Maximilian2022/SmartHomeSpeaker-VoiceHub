@@ -217,5 +217,13 @@
   2. 万が一観測地点データが存在しない場合でも、`hypocenter_raw or "各地"` のように確実にフォールバックを効かせ、助詞「で」の手前が空欄になる文法破綻を完全に防止する。
   3. 文字列の部分一致（`in` 演算子）を行う際は、被検索文字列が非空であることを必ずチェック（`if hypocenter_raw and (target_pref in hypocenter_raw or hypocenter_raw in target_pref):`）し、空文字列による意図しない条件通過を徹底防御する。
   4. 同一地震の重複抑止キー（`event_key`）を `event_time` と `display_scale` を軸にしたキーとし、震度速報の後に震源情報（Destination）等が届いた場合でも同一震度であれば多重アナウンスされないよう改善した。
-  5. 単体テスト `tests/test_disaster_quake_report.py` を追加し、震度速報時の他地域スキップ、自地域での地点名発話、全国モードでの地点名抽出、フォールバック「各地」の動作を永続保証した。
+## [2026-10-27 01] GitHub Actionsのbash内インラインPythonで正規表現のエスケープ過多によるSyntaxErrorとCIビルド失敗
+- **事象**: GitHub Actions ワークフロー（Build and Push Docker Image & Release）実行時、「Build and Push Docker Image」ジョブの `Get app version` ステップで `SyntaxError: closing parenthesis ']' does not match opening parenthesis '('` が発生し、Dockerイメージのビルド・プッシュおよびその後のGitHub Release作成ジョブが失敗・中断した。
+- **原因**: 
+  1. ワークフロー（`.github/workflows/docker-publish.yml`）内で `APP_VER=$(python3 -c "import re; m = re.search(r'__version__\s*=\s*[\"\\\']([^\"\\\']+)[\"\\\']', open('app/version.py').read()); print(m.group(1) if m else '')")` のように、bash のダブルクォート文字列の中でインライン Python コードに raw 文字列リテラル `r'...'` と多重エスケープ `\"\\\'` を埋め込んでいた。
+  2. bash によりエスケープが展開された結果、Python の raw 文字列 `r'...'` 内で `\'` がシングルクォートのエスケープと認識され、文字列リテラルが閉じられずにパーサーが括弧の不整合を検知して SyntaxError となった。
+  3. `app/version.py` は外部依存のない純粋な Python バージョン定義モジュール（`__version__ = "1.0.12"`）であるため、そもそも正規表現を文字列走査する必要がなく、`from app.version import __version__` で安全・直接に取得可能であった。
+- **防止策**: 
+  1. シェルスクリプトや CI ワークフロー定義内で Python のインライン実行（`python3 -c`）を行う際は、正規表現の複雑なエスケープを避け、Python の標準インポート構文 `python3 -c "from app.version import __version__; print(__version__)"` を使用する。
+  2. バージョン取得や設定値抽出などの定型処理は、エスケープの衝突リスクがあるワンライナーではなく、モジュールの直接ロードか独立した検証済みスクリプトに委ねる。
 

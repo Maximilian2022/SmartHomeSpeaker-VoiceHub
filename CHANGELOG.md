@@ -24,8 +24,11 @@
   - 宛先重複排除（`resolve_targets`）で同一IPを持つ親端末とグループ（別ポート）が衝突して消えないようキーを改善。
 - **防災スピーカー選択消失バグの修正 (`public/app.js`)**:
   - 画面再描画時に現在のチェック状態を引き継ぎ、空リストで初期化されて `targets: ["ALL"]` として保存される問題を完全防止。
-- **雨アラーム初期宛先の安全化 (`app/services/rain_alarm_service.py`)**:
-  - 未指定時のフォールバック先を外カメラを含む `ALL` から屋内 `GH:ALL` へ安全化。
+- **震度速報(ScalePrompt)受信時の震源地脱字修正および空文字部分一致による他地域地震の誤発報防止 (`app/services/disaster_service.py`)**:
+  - `hypocenter.name` が空文字の震度速報時、観測点配列 `points` から最大震度を観測した地域名を自動抽出し、フォールバック「各地」を徹底。
+  - ローカル地域判定で `"" in target_pref` が常に True になるバグを修正し、他地域地震の誤発報を完全防止。
+- **GitHub Actions ワークフローのバージョン取得構文エラー修正 (`.github/workflows/docker-publish.yml`)**:
+  - bash内インラインPythonでの正規表現エスケープによる SyntaxError を解消し、標準インポート構文で安全にバージョンを取得できるように改善。
 
 ---
 
