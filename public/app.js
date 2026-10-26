@@ -448,7 +448,10 @@ document.addEventListener('DOMContentLoaded', () => {
       state.serverInfo = data;
       state.serverStatus = data;
 
-      if (el.serverStatusText) el.serverStatusText.textContent = isEn() ? `Running (${data.serverIp}:${data.port})` : `稼働中 (${data.serverIp}:${data.port})`;
+      if (el.serverStatusText) {
+        const ipStr = (data.serverIp && data.port) ? ` <span class="server-ip-text">(${data.serverIp}:${data.port})</span>` : '';
+        el.serverStatusText.innerHTML = (isEn() ? 'Running' : '稼働中') + ipStr;
+      }
       updateDefaultDeviceDisplay();
       if (el.apiEndpointUrl) el.apiEndpointUrl.textContent = `http://${data.serverIp}:${data.port}/api/say`;
       const lanLabel = document.getElementById('builderLanUrlLabel');
@@ -4316,16 +4319,52 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. ヘッダー表示
     if (headerText) {
       if (s.isActive) {
-        let reasonShort = s.reason ? s.reason.replace('カレンダー予定中: ', '📅').replace('定時サイレント: ', '⏰').replace(/手動サイレント.*/, '🔇手動ミュート') : '🔇ミュート中';
-        if (reasonShort.length > 14) reasonShort = reasonShort.slice(0, 14) + '...';
-        headerText.textContent = `DND: ${reasonShort}`;
+        let badgeLabel = isEn() ? 'Muted' : '🔇ミュート';
+        const rawReason = s.reason || '';
+
+        if (rawReason.includes('30分')) {
+          badgeLabel = isEn() ? '⏱️30m' : '⏱️30分';
+        } else if (rawReason.includes('1時間') || rawReason.includes('60分')) {
+          badgeLabel = isEn() ? '⏱️1h' : '⏱️1時間';
+        } else if (rawReason.includes('2時間') || rawReason.includes('120分')) {
+          badgeLabel = isEn() ? '⏱️2h' : '⏱️2時間';
+        } else if (rawReason.includes('本日中') || rawReason.includes('本日終了')) {
+          badgeLabel = isEn() ? '🌙Today' : '🌙本日中';
+        } else if (rawReason.includes('手動解除まで') || rawReason.includes('手動ミュート') || rawReason.includes('手動サイレント')) {
+          badgeLabel = isEn() ? '🔇Manual' : '🔇手動';
+        } else if (rawReason.startsWith('カレンダー予定中:')) {
+          const calTitle = rawReason.replace('カレンダー予定中: ', '').trim();
+          badgeLabel = `📅${calTitle}`;
+        } else if (rawReason.startsWith('定時サイレント:')) {
+          const schedTitle = rawReason.replace('定時サイレント: ', '').trim();
+          badgeLabel = `⏰${schedTitle}`;
+        } else if (rawReason) {
+          badgeLabel = rawReason.replace(/^(手動|定時|カレンダー)[^:]*:\s*/, '');
+          if (!badgeLabel) badgeLabel = isEn() ? '🔇Muted' : '🔇ミュート';
+        }
+
+        headerText.textContent = `DND: ${badgeLabel}`;
+
+        let fullTitle = isEn() ? `DND Active: ${rawReason || 'Muted'}` : `DND発動中: ${rawReason || 'ミュート中'}`;
+        if (s.until) {
+          if (s.until === 'indefinite') {
+            fullTitle += isEn() ? ' (Until manually unmuted)' : ' (手動解除まで)';
+          } else {
+            const uDate = new Date(s.until);
+            fullTitle += isEn() ? ` (Until ${uDate.toLocaleTimeString()})` : ` (${uDate.toLocaleTimeString()}まで)`;
+          }
+        }
+        fullTitle += isEn() ? ' - Click to configure' : ' - クリックで設定へ';
+
         if (headerChip) {
+          headerChip.title = fullTitle;
           headerChip.style.borderColor = 'rgba(239, 68, 68, 0.5)';
           headerChip.style.color = '#f87171';
         }
       } else {
         headerText.textContent = s.enabled ? (isEn() ? 'DND: Monitoring' : 'DND: 監視中') : (isEn() ? 'DND: Disabled' : 'DND: 無効');
         if (headerChip) {
+          headerChip.title = s.enabled ? (isEn() ? 'DND Auto-monitoring active (Click to configure)' : 'DND自動監視中 (クリックでおやすみ・会議モード設定へ)') : (isEn() ? 'DND is globally disabled (Click to configure)' : 'DND機能は無効です (クリックでおやすみ・会議モード設定へ)');
           headerChip.style.borderColor = '';
           headerChip.style.color = '';
         }

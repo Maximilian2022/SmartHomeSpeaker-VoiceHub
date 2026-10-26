@@ -73,17 +73,27 @@ body {
 /* ================= Header ================= */
 .app-header {
   display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+/* 1段目: ブランド & 静的ユーティリティ */
+.header-main-row {
+  display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--card-border);
+  gap: 16px;
+  min-height: 48px;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex-shrink: 0;
 }
 
 .logo-icon {
@@ -96,6 +106,7 @@ body {
   justify-content: center;
   color: #fff;
   box-shadow: 0 0 20px var(--primary-glow);
+  flex-shrink: 0;
 }
 
 .brand-text h1 {
@@ -106,6 +117,7 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  white-space: nowrap;
 }
 
 .badge-tech {
@@ -120,25 +132,62 @@ body {
   border: 1px solid rgba(6, 182, 212, 0.3);
   border-radius: 999px;
   margin-top: 2px;
+  white-space: nowrap;
 }
 
-.header-status {
+.header-utilities {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+/* 2段目: 動的ステータス & DND操作バー (幅が変動する要素専用バー) */
+.header-sub-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.sub-row-left, .sub-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.sub-row-left {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.sub-row-right {
+  flex-shrink: 0;
 }
 
 .status-chip, .status-chip-sub {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
+  gap: 6px;
+  padding: 5px 12px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--card-border);
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
 }
 
 .status-dot {
@@ -147,6 +196,7 @@ body {
   border-radius: 50%;
   background: var(--success);
   box-shadow: 0 0 8px var(--success);
+  flex-shrink: 0;
 }
 
 .status-chip-sub {
@@ -155,11 +205,29 @@ body {
   background: rgba(6, 182, 212, 0.06);
 }
 
+/* DNDステータスチップ */
+#headerDndChip {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+#headerDndText {
+  display: inline-block;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* DNDトグルボタン: ミュート時・解除時で幅が変わらないよう固定 min-width で安定化 */
 .header-dnd-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 5px 13px;
+  min-width: 98px;
+  padding: 5px 14px;
   border-radius: 999px;
   font-size: 0.82rem;
   font-weight: 600;
@@ -169,6 +237,8 @@ body {
   color: var(--text-main);
   transition: all 0.2s ease;
   user-select: none;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .header-dnd-btn:hover {
@@ -183,6 +253,43 @@ body {
   color: #fca5a5;
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
   animation: pulse-muted 2.5s infinite;
+}
+
+/* デフォルトスピーカー表示の省略 */
+#defaultDeviceText {
+  display: inline-block;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* サーバーIP部分 */
+.server-ip-text {
+  opacity: 0.85;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 960px) {
+  .server-ip-text {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-main-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .header-sub-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .header-sub-row::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .lang-select-chip {
@@ -1698,12 +1805,35 @@ input:checked + .slider:before {
 /* ================= DND (おやすみ・会議モード) Styles ================= */
 .dnd-status-banner {
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  min-width: 0;
+}
+
+.dnd-status-banner-content {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#dndStatusTitle {
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+#dndStatusSubtitle {
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+#dndQueueBadge {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .btn-quick-dnd {
   font-size: 0.86rem;
   padding: 8px 14px;
   border-radius: 8px;
+  min-width: 105px;
+  justify-content: center;
   transition: all 0.2s ease;
 }
 
@@ -2418,16 +2548,20 @@ input:checked + .slider:before {
   background: rgba(239, 68, 68, 0.12);
   border: 1px solid rgba(239, 68, 68, 0.3);
   color: #fca5a5;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  border-radius: 999px;
   font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .header-logout-btn:hover {
   background: rgba(239, 68, 68, 0.25);
   color: #fff;
+  transform: translateY(-1px);
 }
 
 /* ================= マルチ MQTT ブローカー UI ================= */

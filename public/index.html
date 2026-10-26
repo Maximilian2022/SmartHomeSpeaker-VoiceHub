@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3.3">
+  <link rel="stylesheet" href="style.css?v=3.5">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 </head>
 <body>
@@ -17,64 +17,76 @@
   <div class="app-container">
     <!-- ヘッダー -->
     <header class="app-header">
-      <div class="brand">
-        <div class="logo-icon">
-          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" x2="12" y1="19" y2="22"/>
-          </svg>
+      <!-- 1段目: ブランド & 静的ユーティリティ (タイトルと固定アクション) -->
+      <div class="header-main-row">
+        <div class="brand">
+          <div class="logo-icon">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" x2="12" y1="19" y2="22"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1 data-i18n="app.title">Smart Speaker Voice Hub</h1>
+            <span class="badge-tech" data-i18n="app.subtitle">Google • Alexa • HomePod</span>
+          </div>
         </div>
-        <div class="brand-text">
-          <h1 data-i18n="app.title">Smart Speaker Voice Hub</h1>
-          <span class="badge-tech" data-i18n="app.subtitle">Google • Alexa • HomePod</span>
+
+        <div class="header-utilities">
+          <div class="status-chip" id="serverStatusChip">
+            <span class="status-dot"></span>
+            <span id="serverStatusText" data-i18n="header.connecting"><span data-i18n="header.connected">接続中</span>...</span>
+          </div>
+          <button type="button" class="header-logout-btn" id="headerLogoutBtn" style="display: none;" data-i18n-title="header.logout" title="ログアウト">
+            <span>🔒</span>
+            <span data-i18n="header.logout">ログアウト</span>
+          </button>
+          <!-- バージョン表示 & 更新通知バッジ -->
+          <div class="status-chip-sub" id="headerVersionChip" style="cursor: pointer;" data-i18n-title="header.versionTitle" title="VoiceHub バージョン (クリックで更新設定へ)">
+            <span style="font-size: 0.85em;">🏷️</span>
+            <span id="headerVersionText">v1.0.11</span>
+          </div>
+          <button type="button" class="header-update-btn" id="headerUpdateBtn" style="display: none;" data-i18n-title="header.updateAvailableTitle" title="新バージョンが利用可能です (クリックで詳細)">
+            <span class="pulse-icon">✨</span>
+            <span id="headerUpdateText">v-- 利用可能</span>
+          </button>
+          <div class="status-chip-sub lang-select-chip" title="Language / 言語切替" data-i18n-title="header.language">
+            <span class="lang-icon">🌐</span>
+            <select id="headerLanguageSelect" class="header-lang-select" aria-label="Language">
+              <!-- JSで動的生成 -->
+            </select>
+          </div>
         </div>
       </div>
 
-      <div class="header-status">
-        <div class="status-chip" id="serverStatusChip">
-          <span class="status-dot"></span>
-          <span id="serverStatusText" data-i18n="header.connecting"><span data-i18n="header.connected">接続中</span>...</span>
+      <!-- 2段目: 動的ステータス & DND操作バー (幅が変動する要素専用バー) -->
+      <div class="header-sub-row">
+        <div class="sub-row-left">
+          <div class="status-chip-sub" id="defaultDeviceChip" title="標準スピーカー">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <rect width="18" height="18" x="3" y="3" rx="2"/>
+              <path d="M9 9h6v6H9z"/>
+            </svg>
+            <span id="defaultDeviceText">--</span>
+          </div>
+          <div class="status-chip-sub" id="cacheStatusChip" data-i18n-title="header.cacheTitle" title="音声キャッシュ容量 (1GB上限)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            <span id="cacheStatusText">Cache: -- MB / 1GB</span>
+          </div>
         </div>
-        <div class="status-chip-sub" id="cacheStatusChip" data-i18n-title="header.cacheTitle" title="音声キャッシュ容量 (1GB上限)" data-i18n-title="header.cacheTitle">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-          <span id="cacheStatusText">Cache: -- MB / 1GB</span>
-        </div>
-        <div class="status-chip-sub" id="defaultDeviceChip">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <rect width="18" height="18" x="3" y="3" rx="2"/>
-            <path d="M9 9h6v6H9z"/>
-          </svg>
-          <span id="defaultDeviceText">--</span>
-        </div>
-        <div class="status-chip-sub" id="headerDndChip" style="cursor: pointer;" data-i18n-title="header.dndTitle" title="クリックでおやすみ・会議モード設定へ" data-i18n-title="header.dndTitle">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><line x1="2" y1="2" x2="22" y2="22"/>
-          </svg>
-          <span id="headerDndText" data-i18n="header.dndNormal">DND: 通常</span>
-        </div>
-        <button type="button" class="header-dnd-btn" id="headerDndToggleBtn" data-i18n-title="header.muteBtnTitle" title="ワンタップでミュート / アンミュートを切り替え" data-i18n-title="header.muteBtnTitle">
-          <span id="headerDndToggleIcon">🔇</span>
-          <span id="headerDndToggleText" data-i18n="header.mute">ミュート</span>
-        </button>
-        <button type="button" class="header-logout-btn" id="headerLogoutBtn" style="display: none;" data-i18n-title="header.logout" title="ログアウト" data-i18n-title="header.logout">
-          <span>🔒</span>
-          <span data-i18n="header.logout">ログアウト</span>
-        </button>
-        <!-- バージョン表示 & 更新通知バッジ -->
-        <div class="status-chip-sub" id="headerVersionChip" style="cursor: pointer;" data-i18n-title="header.versionTitle" title="VoiceHub バージョン (クリックで更新設定へ)">
-          <span style="font-size: 0.85em;">🏷️</span>
-          <span id="headerVersionText">v1.0.11</span>
-        </div>
-        <button type="button" class="header-update-btn" id="headerUpdateBtn" style="display: none;" data-i18n-title="header.updateAvailableTitle" title="新バージョンが利用可能です (クリックで詳細)">
-          <span class="pulse-icon">✨</span>
-          <span id="headerUpdateText">v-- 利用可能</span>
-        </button>
-        <div class="status-chip-sub lang-select-chip" title="Language / 言語切替" data-i18n-title="header.language">
-          <span class="lang-icon">🌐</span>
-          <select id="headerLanguageSelect" class="header-lang-select" aria-label="Language">
-            <!-- JSで動的生成 -->
-          </select>
+
+        <div class="sub-row-right">
+          <div class="status-chip-sub" id="headerDndChip" style="cursor: pointer;" data-i18n-title="header.dndTitle" title="クリックでおやすみ・会議モード設定へ">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><line x1="2" y1="2" x2="22" y2="22"/>
+            </svg>
+            <span id="headerDndText" data-i18n="header.dndNormal">DND: 通常</span>
+          </div>
+          <button type="button" class="header-dnd-btn" id="headerDndToggleBtn" data-i18n-title="header.muteBtnTitle" title="ワンタップでミュート / アンミュートを切り替え">
+            <span id="headerDndToggleIcon">🔇</span>
+            <span id="headerDndToggleText" data-i18n="header.mute">ミュート</span>
+          </button>
         </div>
       </div>
     </header>
@@ -1208,9 +1220,9 @@
             <div class="card-body">
               <!-- ステータスバナー -->
               <div id="dndStatusBanner" class="dnd-status-banner" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                  <span id="dndStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #10b981; display: inline-block; box-shadow: 0 0 10px #10b981;"></span>
-                  <div>
+                <div class="dnd-status-banner-content" style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+                  <span id="dndStatusDot" style="width: 12px; height: 12px; border-radius: 50%; background: #10b981; display: inline-block; box-shadow: 0 0 10px #10b981; flex-shrink: 0;"></span>
+                  <div style="min-width: 0;">
                     <strong id="dndStatusTitle" style="font-size: 1rem; color: var(--text-color);" data-i18n="settingsDnd.statusNormalNow">現在は通常モードです</strong>
                     <div id="dndStatusSubtitle" style="font-size: 0.82rem; color: var(--text-muted); margin-top: 2px;" data-i18n="settingsDnd.statusNormalHelp">通知やアナウンスは通常音量でスピーカーから再生されます</div>
                   </div>
@@ -4111,6 +4123,6 @@ Body:
 
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="i18n.js?v=1.0.5"></script>
-  <script src="app.js?v=1.0.19"></script>
+  <script src="app.js?v=1.0.21"></script>
 </body>
 </html>
