@@ -3,6 +3,24 @@
 すべての重要な変更はこのファイルに記録されます。
 フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいています。
 
+## [1.0.13] - 2026-10-28
+
+### 追加・新機能 (Added)
+- **PC スピーカークライアント連携 (Windows / Mac / Linux) (`clients/speaker/`, `app/services/client_speaker_service.py`, `app/routers/client_speakers.py`)**:
+  - Windows / macOS / Linux PC を VoiceHub のアナウンス受話スピーカーとして利用できる常駐型超軽量クライアントを新設。
+  - 常駐待機時メモリ約 15MB・CPU 0% の省フットプリント設計。OS ネイティブの最適再生エンジン（macOS は標準 `afplay`、Windows は `miniaudio` / PowerShell、Linux は `paplay` / `mpv` / `aplay` / `miniaudio`）を自動選択。
+  - **Zero-Setup (Python 手動インストール不要)**: Astral `uv` の自動ブートストラップ機構を内蔵し、Python 未導入のクリーンな PC でも `run.bat` や `run.sh`、または Web GUI のワンライナーコマンドを実行するだけで自動セットアップ＆即時起動。
+  - **完全画面非表示スタートアップ常駐**: Windows では黒いコマンドプロンプト画面を出さないバックグラウンド常駐用 VBScript を自動生成。macOS（LaunchAgents）や Linux（systemd --user）の自動起動にも対応。
+  - **マクロ・ターゲット指定対応**: 全台発話マクロ `ALL` / `*` に自動統合されたほか、`PC:ALL` / `CLIENT:ALL` / `WIN:ALL` / `MAC:ALL` マクロおよび `client:<ID>` ターゲット指定に対応。
+- **Web GUI スマートホーム連携タブへの PC スピーカー設定カード新設 (`public/index.html`, `public/app.js`, `public/locales/ja.json`, `public/locales/en.json`)**:
+  - 「拡張・システム設定」>「スマートホーム連携」に「💻 PC スピーカー連携 (Windows / Mac / Linux)」セクションを新設。
+  - 閲覧中の VoiceHub サーバー URL（`window.location.origin`）を動的に埋め込んだワンライナー実行コマンドを Windows (PowerShell) / Mac / Linux それぞれに自動生成し、ワンクリックでコピー可能。
+  - 接続中の PC 台数リアルタイムステータスバッジ、スピーカー選択チップおよびデバイス一覧への PC アイコン（💻/🍎/🪟/🐧）表示。
+- **PC スピーカー機能の単体テスト追加 (`tests/test_client_speaker.py`)**:
+  - SSE ストリーム接続、クライアント登録・自動切断、キュー配信、宛先マクロ解決の検証を含む単体テストスイートを追加（全107件 PASS）。
+- **仕様書・取扱説明書の最新化 (`MANUAL.md`, `MANUAL-en.md`)**:
+  - PC スピーカークライアントの通信仕様（SSE）、常駐仕様、宛先マクロ、REST API（`GET /api/client-speakers/stream`, `GET /api/client-speakers`）を完全網羅。
+
 ## [1.0.12] - 2026-10-26
 
 ### 追加・新機能 (Added)

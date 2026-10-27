@@ -1,5 +1,35 @@
 # 修正履歴 (Remediation History)
 
+## 2026-10-28 01:25 - PC スピーカー連携機能（Win/Mac/Linux）のWebUI動的ワンライナー統合・マニュアル最新化・v1.0.13リリース
+- **背景と課題**:
+  - 作業中やテレワーク中、ヘッドホン装着時などに、リビングのスマートスピーカーと同じアナウンスを Windows / Mac / Linux PC 本体から直接受話・再生したいという要望。
+  - 常駐できて軽快に動作し、メモリ消費が少なく（15〜20MB以内）、かつ GitHub 公開にあたり「Python が最初から入っていない一般 PC 環境」でもワンクリックで動く構成が求められた。
+  - 当初 README にインストール方法を記載したが、ユーザー環境ごとに接続先 URL が異なり、また手順が煩雑化するため、README への記載を取りやめ、Web GUI の「スマートホーム連携」タブ内に Windows / Mac / Linux 専用セクションを新設して、接続先 URL（`window.location.origin`）が動的に埋め込まれたワンライナーコマンドを案内する方針に最適化した。
+- **改修内容**:
+  1. **Web GUI「スマートホーム連携」への PC スピーカー設定セクション新設 ([public/index.html](file:///root/google-home-voicetext-docker/public/index.html), [public/app.js](file:///root/google-home-voicetext-docker/public/app.js))**:
+     - ナビゲーションラベルを「AI / Alexa / HomePod / PC」に拡充し、多言語化（日英）。
+     - 「💻 PC スピーカー連携 (Windows / Mac / Linux)」設定カードを新設。
+     - OS タブ切り替え（Windows PowerShell / macOS / Linux）を配置し、現在ブラウザで開いている VoiceHub サーバーのオリジン URL を自動取得・動的展開した「ワンライナー実行コマンド」をワンクリックコピーできるように実装。
+     - オンライン接続中の PC 台数リアルタイムステータスバッジ（`#pcSpeakerStatusBadge`）、スピーカー選択チップおよびデバイス一覧への PC スピーカーアイコン表示を追加。
+  2. **VoiceHub サーバー側連携基盤の実装 ([app/services/client_speaker_service.py](file:///root/google-home-voicetext-docker/app/services/client_speaker_service.py), [app/routers/client_speakers.py](file:///root/google-home-voicetext-docker/app/routers/client_speakers.py))**:
+     - 接続中 PC クライアントの動的登録・切断・SSE キュー管理・再生イベントディスパッチサービスを新設。
+     - `GET /api/client-speakers/stream` (SSEストリーム) および `GET /api/client-speakers` (一覧) API を新設。
+     - `app/core/security.py`: `INTEGRATION_PREFIXES` に `/api/client-speakers` を追加し、Webhook トークン認証およびレート制限境界を統合。
+     - `app/services/devices_service.py`: `DeviceManager.get_devices()` および `find_device()` に `type: "client"` (PC スピーカー) をシームレス統合。
+     - `app/services/speech_service.py`: `resolve_targets` に `PC:ALL` / `CLIENT:ALL` / `WIN:ALL` / `MAC:ALL` マクロを追加し、家中一斉（`ALL`）および個別 PC 指定での非同期音声配信を実装。
+  3. **クロスプラットフォーム軽量常駐クライアントの実装 ([clients/speaker/](file:///root/google-home-voicetext-docker/clients/speaker/))**:
+     - `voicehub_speaker.py`: PEP 723 インラインメタデータ付きの単一共通スクリプト。macOS (`afplay`)、Windows (`miniaudio` / PowerShell)、Linux (`paplay` / `mpv` / `aplay` / `miniaudio`) を自動判別して超低遅延再生。
+     - `--autostart enable/disable/status`: Windows (完全画面非表示 VBScript スタートアップ)、macOS (LaunchAgents plist)、Linux (systemd --user) の自動起動を自己セットアップする機能を実装。
+     - `run.bat` / `run.sh`: Python / uv 未導入の PC でも Astral 公式インストーラーから uv を自動セットアップして即起動するセルフブートストラップ機構を内蔵。
+     - `enable_autostart.bat`, `disable_autostart.bat`, `enable_autostart.sh`, `disable_autostart.sh`: ワンクリック自動起動登録・解除用スクリプトを同梱。
+     - `clients/speaker/README.md`: 詳細な使い方・引数リファレンス・Webhook 呼び出し例を体系化。
+  4. **単体テストスイートの拡充と全件検証 ([tests/test_client_speaker.py](file:///root/google-home-voicetext-docker/tests/test_client_speaker.py))**:
+     - クライアント登録・切断、再生イベントキュー投入、`device_manager` 統合、`speech_service` マクロ解決、REST API 疎通を網羅するテスト5件を追加。全107件のユニットテストが 100% PASS することを確認。
+  5. **ドキュメント・仕様書の最新化と v1.0.13 バージョンアップ**:
+     - [MANUAL.md](file:///root/google-home-voicetext-docker/MANUAL.md) / [MANUAL-en.md](file:///root/google-home-voicetext-docker/MANUAL-en.md) の仕様最新化（宛先解決マクロ、クライアント接続仕様、REST API 一覧）。
+     - [app/version.py](file:///root/google-home-voicetext-docker/app/version.py) および [CHANGELOG.md](file:///root/google-home-voicetext-docker/CHANGELOG.md) を v1.0.13 に更新。
+     - README は元の状態を維持。
+
 ## 2026-10-27 01:35 - GitHub Actions の Docker ビルド・リリースワークフローにおけるバージョン取得構文エラーの修正
 - **背景と課題**:
   - GitHub Actions の自動化パイプライン（`Build, Push Docker Image & Release`）において、`Build and Push Docker Image` ジョブ内の `Get app version` ステップで `SyntaxError: closing parenthesis ']' does not match opening parenthesis '('` が発生し、DockerイメージのマルチアーキテクチャビルドおよびGitHub Release発行が失敗・停止していた。

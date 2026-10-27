@@ -212,7 +212,7 @@
     "navTts": "External TTS Engines",
     "navDnd": "Do Not Disturb (DND)",
     "navDisaster": "Disaster & Weather (Japan Only)",
-    "navIntegrations": "AI / Alexa / HomePod",
+    "navIntegrations": "AI / Alexa / HomePod / PC",
     "navOnvif": "ONVIF / DLNA",
     "navMqtt": "MQTT Brokers",
     "navWebhook": "Webhook & Tunnel",

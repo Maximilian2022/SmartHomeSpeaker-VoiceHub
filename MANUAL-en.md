@@ -49,6 +49,7 @@ This document serves as the comprehensive technical manual for **Smart Home Spea
    - 8.3 [Apple HomePod (AirPlay 2 / pyatv)](#83-apple-homepod-airplay-2--pyatv)
    - 8.4 [ONVIF Network Camera (Two-Way Audio / Profile T)](#84-onvif-network-camera-two-way-audio--profile-t)
    - 8.5 [DLNA / UPnP Network Audio (MediaRenderer)](#85-dlna--upnp-network-audio-mediarenderer)
+   - 8.6 [PC Speaker Client (Windows / Mac / Linux)](#86-pc-speaker-client-windows--mac--linux)
 9. [Apple HomeKit / Homebridge Plugin Specifications (`homebridge-voicehub`)](#9-apple-homekit--homebridge-plugin-specifications-homebridge-voicehub)
    - 9.1 [Plugin Overview & Architecture](#91-plugin-overview--architecture)
    - 9.2 [Provided Accessory Specifications](#92-provided-accessory-specifications)
@@ -208,11 +209,13 @@ In the `/api/say` endpoint, `devices` or `targets` accepts individual device nam
 | `HP:ALL` / `HOMEPOD:ALL` | All Apple HomePod devices in the home. |
 | `ONVIF:ALL` / `CAM:ALL` | All registered ONVIF network cameras. |
 | `DLNA:ALL` | All registered DLNA / UPnP network speakers. |
+| `PC:ALL` / `CLIENT:ALL` | All currently connected PC speaker clients (Windows / Mac / Linux). |
 | `default` | System default speaker (specified via `GOOGLE_HOME_IP` or Web GUI). |
 | Custom Group Name (e.g., `1F`, `LDK`) | Expands custom speaker combinations defined under "Device Groups" in settings. |
 | Display Name (e.g., `Living Room`) | Resolves devices via case-insensitive partial substring match. |
 | `alexa:<DeviceName>` | Explicitly targets a specific Amazon Echo device. |
 | `homepod:<IP or MAC>` | Explicitly targets a specific Apple HomePod device. |
+| `client:<ID or Name>` | Explicitly targets a specific PC speaker client (Windows / Mac / Linux). |
 | `onvif:<IP>` | Explicitly targets a specific ONVIF network camera. |
 | `dlna:<IP>` | Explicitly targets a specific DLNA / UPnP renderer. |
 | Raw IPv4 (e.g., `192.168.1.50`) | Directly targets a Google Cast device by IP address. |
@@ -597,6 +600,21 @@ During morning briefings, Voice Hub supplies the AI engine with structured conte
 - **Compatible Devices**: Bose SoundTouch, Sonos, Denon HEOS, Yamaha MusicCast, foobar2000 UPnP, etc.
 - **Integration**: Auto-detected via SSDP scanning in the ONVIF/DLNA tab; ready for playback without authentication.
 
+### 8.6 PC Speaker Client (Windows / Mac / Linux)
+- **Protocol**: Server-Sent Events (SSE) bidirectional audio streaming (`GET /api/client-speakers/stream`)
+- **Client Implementation**: `clients/speaker/` (Single Python script `voicehub_speaker.py` + self-bootstrapping runners)
+- **Key Features & Specifications**:
+  1. **Ultra-Low Memory (~15MB RAM) & 0% CPU**:
+     Automatically selects the optimal native playback engine for the host OS (macOS uses native `afplay`, Windows uses `miniaudio` / PowerShell, Linux uses `paplay` / `mpv` / `aplay` / `miniaudio`), delivering instant, artifact-free audio playback.
+  2. **Zero-Setup (No Pre-installed Python Required)**:
+     Embeds an autonomous `uv` bootstrapping installer. Any clean PC can run `run.bat` / `run.sh` or the dynamic one-liner command from the Web GUI to automatically download Python runtime and dependencies in milliseconds.
+  3. **Dynamic Discovery & Presence Tracking**:
+     Connected PCs appear immediately as "💻 Hostname" in the VoiceHub speakers list and auto-deregister on sleep or disconnect.
+  4. **Bypasses NAT & Firewalls Seamlessly**:
+     Operates purely over outbound HTTP SSE streams, eliminating router port-forwarding or firewall exceptions.
+  5. **Silent Background Startup**:
+     Windows uses a hidden VBScript runner (`enable_autostart.bat`) with zero terminal popups. macOS (LaunchAgents) and Linux (`systemd --user`) are natively supported.
+
 ---
 
 ## 9. Apple HomeKit / Homebridge Plugin Specifications (`homebridge-voicehub`)
@@ -879,6 +897,8 @@ All API endpoints return JSON responses.
 - **`POST /api/onvif/register`**: Register, update, or remove ONVIF/DLNA devices.
 - **`POST /api/onvif/test`**: Test audio transmission to an ONVIF or DLNA target.
 - **`POST /api/onvif/default-auth`**: Save default camera credentials.
+- **`GET /api/client-speakers/stream`**: SSE audio stream for persistent PC speaker clients (Windows / Mac / Linux).
+- **`GET /api/client-speakers`**: Retrieve all currently connected PC speaker clients.
 
 ### 13.13 MQTT API
 - **`GET /api/mqtt/status`**: Check connection status of all configured MQTT brokers.

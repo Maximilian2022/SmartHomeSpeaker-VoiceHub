@@ -49,6 +49,7 @@
    - 8.3 [Apple HomePod (AirPlay 2 / pyatv)](#83-apple-homepod-airplay-2--pyatv)
    - 8.4 [ONVIF ネットワークカメラ (Two-Way Audio / Profile T)](#84-onvif-ネットワークカメラ-two-way-audio--profile-t)
    - 8.5 [DLNA / UPnP ネットワークオーディオ (MediaRenderer)](#85-dlna--upnp-ネットワークオーディオ-mediarenderer)
+   - 8.6 [PC スピーカークライアント (Windows / Mac / Linux)](#86-pc-スピーカークライアント-windows--mac--linux)
 9. [Apple HomeKit / Homebridge プラグイン仕様 (`homebridge-voicehub`)](#9-apple-homekit--homebridge-プラグイン仕様-homebridge-voicehub)
    - 9.1 [プラグイン概要とアーキテクチャ](#91-プラグイン概要とアーキテクチャ)
    - 9.2 [提供アクセサリ仕様](#92-提供アクセサリ仕様)
@@ -209,11 +210,13 @@ Docker の `HEALTHCHECK` や各種監視システム（Uptime Kuma, Beszel 等�
 | `HP:ALL` / `HOMEPOD:ALL` | 宅内のすべての Apple HomePod デバイス。 |
 | `ONVIF:ALL` / `CAM:ALL` | 宅内のすべての登録済み ONVIF ネットワークカメラ。 |
 | `DLNA:ALL` | 宅内のすべての登録済み DLNA / UPnP ネットワークスピーカー。 |
+| `PC:ALL` / `CLIENT:ALL` | 宅内でオンライン接続中のすべての PC スピーカー（Windows / Mac / Linux）。 |
 | `default` | システムで指定された標準スピーカー（`.my.env` の `GOOGLE_HOME_IP` または GUI 指定のデバイス）。 |
 | カスタムグループ名 (例: `1F`, `LDK`) | 設定画面の「デバイスグループ」で定義したスピーカーの組み合わせを展開。 |
 | デバイス表示名 (例: `リビング`, `書斎`) | デバイス名に部分一致する端末を自動検索して解決。 |
 | `alexa:<デバイス名>` | 特定の Amazon Echo デバイスを直接指定。 |
 | `homepod:<IPまたはMAC>` | 特定の Apple HomePod デバイスを直接指定。 |
+| `client:<IDまたは名前>` | 特定の PC スピーカークライアント（Windows / Mac / Linux）を直接指定。 |
 | `onvif:<IP>` | 特定の ONVIF ネットワークカメラを直接指定。 |
 | `dlna:<IP>` | 特定の DLNA / UPnP レンダラーを直接指定。 |
 | IPアドレス (例: `192.168.1.50`) | Google Cast デバイスの IP アドレス直打ち。 |
@@ -222,7 +225,7 @@ Docker の `HEALTHCHECK` や各種監視システム（Uptime Kuma, Beszel 等�
 
 スピーカーの解決は以下の優先順序で行われます：
 
-1. **マクロ・グループの展開**: `ALL`, `CAM:ALL`, `DLNA:ALL`, `1F` などを構成端末の配列へ展開。
+1. **マクロ・グループの展開**: `ALL`, `CAM:ALL`, `DLNA:ALL`, `PC:ALL`, `1F` などを構成端末の配列へ展開。
 2. **Google Cast グループ集約 (`preferNativeGroups`)**:
    - 複数の Google Home を個別指定して同時に鳴らすと、Wi-Fi の揺らぎによって輪唱（エコー）が発生します。
    - `ALL` や全体が指定された場合、個別の IP をまとめ、Google Home アプリ等で作成された **Cast グループ（ポート 32xxx 等）** 1つに集約して送信します。これにより Google Cast プロトコルのネイティブ同期が働き、エコーのない綺麗な同期再生が行われます。
@@ -230,6 +233,7 @@ Docker の `HEALTHCHECK` や各種監視システム（Uptime Kuma, Beszel 等�
    - **Google Cast**: `type: google` (pychromecast)
    - **Amazon Alexa**: `type: alexa` (Alexa Remote Control)
    - **Apple HomePod**: `type: homepod` (pyatv AirPlay 2)
+   - **PC Speaker Client**: `type: client` (SSE 双方向ストリーム / `clients/speaker/`)
    - **ONVIF Camera**: `type: onvif` (go2rtc Two-Way Audio / Profile T)
    - **DLNA Renderer**: `type: dlna` (UPnP AVTransport / RenderingControl)
 4. **重複排除**: 同一の IP やストリーミング先が複数回解決された場合、自動的に単一の呼び出しにまとめます。
@@ -623,6 +627,21 @@ P2P地震情報 API（`wss://api.p2pquake.net/v2/ws`）の WebSocket に常時�
 - **連携方法**:
   Web GUI の「ONVIF / DLNA」タブでスキャンすると自動検出されます。認証不要でそのまま登録・利用可能です。
 
+### 8.6 PC スピーカークライアント (Windows / Mac / Linux)
+- **プロトコル**: Server-Sent Events (SSE) 経由の双方向オーディオ配信 (`GET /api/client-speakers/stream`)
+- **クライアント実装**: `clients/speaker/`（単一 Python スクリプト `voicehub_speaker.py` ＋ 自動ブートストラップランチャー）
+- **主要な特徴と仕様**:
+  1. **常駐待機メモリ約 15MB・CPU 0%**:
+     OS ネイティブの最適再生エンジン（macOS は標準 `afplay`、Windows は `miniaudio` / PowerShell、Linux は `paplay` / `mpv` / `aplay` / `miniaudio`）を自動選択し、極低遅延・省メモリで動作します。
+  2. **事前の Python 手動インストール不要 (Zero-Setup)**:
+     `uv` の自動セットアップ機構を内蔵し、初期状態の PC でも `run.bat` や `run.sh`、または Web GUI のワンライナーを実行するだけで全自動で環境が整い即起動します。
+  3. **動的ディスカバリと自動オンライン認識**:
+     クライアントが接続すると VoiceHub のスピーカー一覧に「💻 PC名」が自動出現し、スリープや終了時は自動でオフライン化します。
+  4. **NAT・ファイアウォール完全スルー**:
+     クライアントからサーバーへの外向き HTTP (SSE) 接続のみで動作するため、ポート開放やファイアウォール警告が不要です。
+  5. **完全画面非表示スタートアップ常駐**:
+     Windows は黒いコンソール画面を出さない VBScript を自動生成してスタートアップ登録（`enable_autostart.bat`）。macOS（LaunchAgents）や Linux（systemd --user）にも完全対応。
+
 ---
 
 ## 9. Apple HomeKit / Homebridge プラグイン仕様 (`homebridge-voicehub`)
@@ -912,6 +931,8 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`POST /api/onvif/register`**: ONVIF / DLNA デバイスの登録・変更・解除
 - **`POST /api/onvif/test`**: ONVIF / DLNA テスト発声
 - **`POST /api/onvif/default-auth`**: カメラ共通デフォルト認証情報の保存
+- **`GET /api/client-speakers/stream`**: PC スピーカークライアント（Windows / Mac / Linux）常駐接続用 SSE オーディオストリーム
+- **`GET /api/client-speakers`**: 接続中の全 PC スピーカー一覧取得
 
 ### 13.13 MQTT API
 - **`GET /api/mqtt/status`**: 全 MQTT ブローカーの接続状態取得

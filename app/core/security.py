@@ -414,6 +414,7 @@ def check_admin_auth(request: Request):
         "/api/groups",
         "/api/status",
         "/api/events",
+        "/api/client-speakers",
     )
     is_integration = any(path == prefix or path.startswith(prefix) for prefix in INTEGRATION_PREFIXES) or (path == "/api/history" and request.method == "GET")
 

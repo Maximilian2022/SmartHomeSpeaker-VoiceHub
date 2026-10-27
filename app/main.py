@@ -35,7 +35,8 @@ from app.routers import (
     logs,
     rain_alarm,
     events,
-    system
+    system,
+    client_speakers
 )
 from app.core.logger import init_system_logging, get_logger
 from app.services.mqtt_service import mqtt_service
@@ -237,6 +238,7 @@ app.include_router(logs.router)
 app.include_router(rain_alarm.router)
 app.include_router(events.router)
 app.include_router(system.router)
+app.include_router(client_speakers.router)
 
 
 

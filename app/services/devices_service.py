@@ -7,6 +7,7 @@ from zeroconf import Zeroconf, ServiceBrowser, ServiceListener, InterfaceChoice,
 from app.services.settings_service import settings_manager
 from app.services.alexa_service import alexa_service
 from app.services.homepod_service import homepod_service
+from app.services.client_speaker_service import client_speaker_service
 
 def decode_avahi_string(s: str) -> str:
     r"""後方互換用: 文字列をそのまま返却"""
@@ -111,9 +112,10 @@ class DeviceManager:
             if dtype == "google": return 4
             if dtype == "alexa": return 5
             if dtype == "homepod": return 6
-            if dtype == "dlna": return 7
-            if dtype == "onvif": return 8
-            if dtype == "tapo": return 9
+            if dtype in ("client", "pc"): return 7
+            if dtype == "dlna": return 8
+            if dtype == "onvif": return 9
+            if dtype == "tapo": return 10
             return 4
 
     async def get_devices(self) -> List[Dict[str, Any]]:
@@ -179,6 +181,17 @@ class DeviceManager:
                         "isFavorite": is_fav
                     })
 
+        # 5. クライアントスピーカー (Windows / Mac / Linux PC)
+        try:
+            client_devs = client_speaker_service.get_active_devices()
+            for cd in client_devs:
+                d = dict(cd)
+                d["isDefault"] = (d["ip"] == default_ip or d["id"] == default_ip)
+                d["isFavorite"] = (d.get("ip") in favs or d.get("id") in favs or d.get("name") in favs)
+                results.append(d)
+        except Exception as e:
+            print(f"[DeviceManager] Client speaker list error: {e}")
+
         # ソート: お気に入り最優先 -> カテゴリ順 -> デフォルト優先 -> 名前順
         results.sort(key=lambda d: (
             0 if d.get("isFavorite") else 1,
@@ -197,6 +210,12 @@ class DeviceManager:
 
         onvif_config = settings_manager.get().get("onvif", {})
         reg_devices = [d for d in onvif_config.get("registeredDevices", []) if d.get("enabled", True)]
+
+        # クライアントスピーカー (Windows / Mac / Linux PC)
+        if norm.startswith("client:") or norm.startswith("pc:"):
+            c = client_speaker_service.find_client(norm)
+            if c:
+                return c.to_device_dict()
 
         # ONVIF / DLNA / TAPO プレフィックス
         if norm.startswith("onvif:") or norm.startswith("dlna:") or norm.startswith("tapo:"):
@@ -281,6 +300,11 @@ class DeviceManager:
                     "controlUrl": d.get("controlUrl"),
                     "renderingControlUrl": d.get("renderingControlUrl")
                 }
+
+        # クライアントスピーカーの名前照合
+        c_by_name = client_speaker_service.find_client(norm)
+        if c_by_name:
+            return c_by_name.to_device_dict()
 
         # Google Cast IP / 完全一致 (グループ優先)
         if norm in self.devices:

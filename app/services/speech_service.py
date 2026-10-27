@@ -11,6 +11,7 @@ from app.services.homepod_service import homepod_service
 from app.services.dlna_service import dlna_service
 from app.services.onvif_service import onvif_service
 from app.services.alexa_service import alexa_service
+from app.services.client_speaker_service import client_speaker_service
 from app.services.dnd_service import dnd_service
 from app.config import settings
 from app.services.calendar_service import calendar_service
@@ -79,6 +80,8 @@ class SpeechService:
                 expanded_devices.extend([d for d in all_devices if d.get("type") in ("onvif", "tapo")])
             elif norm_tgt in ("DLNA:ALL",):
                 expanded_devices.extend([d for d in all_devices if d.get("type") == "dlna"])
+            elif norm_tgt in ("PC:ALL", "CLIENT:ALL", "WIN:ALL", "MAC:ALL"):
+                expanded_devices.extend([d for d in all_devices if d.get("type") in ("client", "pc")])
             elif tgt in groups:
                 for member_name in groups[tgt]:
                     found = device_manager.find_device(member_name)
@@ -503,6 +506,10 @@ class SpeechService:
                 log.info(f"[Dispatch -> Alexa] {dev_name} text: '{text[:30]}' (delay={alexa_delay}ms)")
                 coro = alexa_service.speak(dev.get("name", ""), text, volume_level=effective_vol)
                 tasks.append(_run_delayed(alexa_delay, coro))
+            elif dtype in ("client", "pc"):
+                client_id = dev.get("ip", "").replace("client:", "")
+                log.info(f"[Dispatch -> Client Speaker] {dev_name} (id={client_id}) URL: {audio_url}")
+                tasks.append(client_speaker_service.send_play_event(client_id, audio_url, text=text, volume=effective_vol))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 

@@ -1039,8 +1039,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const isTapo = dev.type === 'tapo' || dev.ip.startsWith('tapo:');
       const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
       const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
-      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isTapo ? 'tapo' : (isOnvif ? 'onvif' : 'google'))));
-      let chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip'))));
+      const isClient = dev.type === 'client' || dev.type === 'pc' || dev.ip.startsWith('client:');
+      const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isClient ? 'client' : (isTapo ? 'tapo' : (isOnvif ? 'onvif' : 'google')))));
+      let chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isClient ? 'client-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip')))));
       if (isFav) chipClass += ' favorite-chip';
       const displayName = formatSpeakerDisplayName(dev.name);
 
@@ -1064,6 +1065,10 @@ document.addEventListener('DOMContentLoaded', () => {
           badgeHtml += '<span class="speaker-chip-badge alexa-badge">Echo</span>';
         } else if (isHomePod) {
           badgeHtml += '<span class="speaker-chip-badge homepod-badge">HomePod</span>';
+        } else if (isClient) {
+          const p = (dev.platform || '').toLowerCase();
+          const pLabel = p.includes('mac') || p.includes('darwin') ? '🍎 Mac' : (p.includes('win') ? '🪟 Win' : (p.includes('linux') ? '🐧 Linux' : '💻 PC'));
+          badgeHtml += `<span class="speaker-chip-badge client-badge" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);font-weight:600;">${pLabel}</span>`;
         } else if (isDlna) {
           badgeHtml += '<span class="speaker-chip-badge dlna-badge">🎵 DLNA</span>';
         } else if (isTapo) {
@@ -1404,6 +1409,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const isTapo = dev.type === 'tapo' || dev.ip.startsWith('tapo:');
       const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
       const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
+      const isClient = dev.type === 'client' || dev.type === 'pc' || dev.ip.startsWith('client:');
       const displayName = formatSpeakerDisplayName(dev.name);
 
       let groupBadge = '';
@@ -1418,7 +1424,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       cardsHtml += `
-        <div class="device-card ${isDef ? 'default-dev' : ''} ${isFav ? 'favorite-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''} ${isTapo ? 'tapo-dev' : ''} ${isOnvif ? 'onvif-dev' : ''} ${isDlna ? 'dlna-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : (isFav ? 'border-color: rgba(245, 158, 11, 0.3);' : '')}">
+        <div class="device-card ${isDef ? 'default-dev' : ''} ${isFav ? 'favorite-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''} ${isTapo ? 'tapo-dev' : ''} ${isOnvif ? 'onvif-dev' : ''} ${isDlna ? 'dlna-dev' : ''} ${isClient ? 'client-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : (isFav ? 'border-color: rgba(245, 158, 11, 0.3);' : '')}">
           <div class="device-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
             <div style="min-width:0;flex:1;display:flex;align-items:center;gap:6px;">
               <button type="button" class="btn-fav-star ${isFav ? 'active' : ''}" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" title="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}" aria-label="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}">
@@ -1432,10 +1438,15 @@ document.addEventListener('DOMContentLoaded', () => {
               ${isGroup ? groupBadge : `
                 ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
                 ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
+                ${isClient ? (() => {
+                  const p = (dev.platform || '').toLowerCase();
+                  const pLabel = p.includes('mac') || p.includes('darwin') ? '🍎 Mac' : (p.includes('win') ? '🪟 Windows' : (p.includes('linux') ? '🐧 Linux' : '💻 PC'));
+                  return `<span class="device-tag client" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);font-size:0.7rem;padding:2px 6px;">${pLabel}</span>`;
+                })() : ''}
                 ${isTapo ? '<span class="device-tag tapo" style="background:rgba(6,182,212,0.15);color:#22d3ee;border:1px solid rgba(6,182,212,0.3);font-size:0.7rem;padding:2px 6px;">📹 Tapo</span>' : ''}
                 ${isOnvif ? '<span class="device-tag onvif" style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.3);font-size:0.7rem;padding:2px 6px;">📷 ONVIF</span>' : ''}
                 ${isDlna ? '<span class="device-tag dlna" style="background:rgba(234,179,8,0.15);color:#facc15;border:1px solid rgba(234,179,8,0.3);font-size:0.7rem;padding:2px 6px;">🎵 DLNA</span>' : ''}
-                ${!isAlexa && !isHomePod && !isTapo && !isOnvif && !isDlna ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
+                ${!isAlexa && !isHomePod && !isClient && !isTapo && !isOnvif && !isDlna ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
               `}
             </div>
           </div>
@@ -1463,6 +1474,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     el.devicesGrid.innerHTML = cardsHtml;
+    updatePcSpeakerStatusBadge();
+  }
+
+  function updatePcSpeakerStatusBadge() {
+    const badge = document.getElementById('pcSpeakerStatusBadge');
+    if (!badge || !state.devices) return;
+    const pcCount = state.devices.filter(d => d.type === 'client' || d.type === 'pc' || (d.ip && d.ip.startsWith('client:'))).length;
+    if (window.i18n && window.i18n.getLanguage() === 'en') {
+      badge.textContent = `${pcCount} Connected`;
+    } else {
+      badge.textContent = `${pcCount} 台接続中`;
+    }
   }
 
   // お気に入り切り替え処理
@@ -5926,6 +5949,65 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
+
+    // 7. PC スピーカー連携 (Windows / Mac / Linux)
+    function updatePcSpeakerCommands() {
+      const serverUrl = window.location.origin;
+      const whToken = (state.settings && state.settings.webhookToken && state.settings.webhookToken !== '********') ? state.settings.webhookToken : '';
+      const tokenArg = whToken ? ` --token '${whToken}'` : '';
+
+      const winEl = document.getElementById('cmdWinOneLiner');
+      if (winEl) {
+        winEl.textContent = `powershell -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex; & $env:USERPROFILE\\.local\\bin\\uv.exe run https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/voicehub_speaker.py --server ${serverUrl} --name 'My-Windows-PC'${tokenArg}"`;
+      }
+      const macEl = document.getElementById('cmdMacOneLiner');
+      if (macEl) {
+        macEl.textContent = `curl -fsSL https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/run.sh | bash -s -- --server ${serverUrl} --name 'My-MacBook'${tokenArg}`;
+      }
+      const linuxEl = document.getElementById('cmdLinuxOneLiner');
+      if (linuxEl) {
+        linuxEl.textContent = `curl -fsSL https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/run.sh | bash -s -- --server ${serverUrl} --name 'My-Linux-PC'${tokenArg}`;
+      }
+    }
+
+    // OS切り替えタブ
+    document.querySelectorAll('input[name="pcSpeakerOs"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const val = e.target.value;
+        const panelWin = document.getElementById('pcSpeakerPanelWin');
+        const panelMac = document.getElementById('pcSpeakerPanelMac');
+        const panelLinux = document.getElementById('pcSpeakerPanelLinux');
+        if (panelWin) panelWin.style.display = val === 'win' ? 'block' : 'none';
+        if (panelMac) panelMac.style.display = val === 'mac' ? 'block' : 'none';
+        if (panelLinux) panelLinux.style.display = val === 'linux' ? 'block' : 'none';
+      });
+    });
+
+    // コピーボタン
+    document.querySelectorAll('.btn-copy-cmd').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const targetId = btn.getAttribute('data-target');
+        const targetEl = document.getElementById(targetId);
+        if (targetEl) {
+          const ok = await copyTextToClipboard(targetEl.textContent.trim());
+          if (ok) {
+            const origText = btn.textContent;
+            btn.textContent = '✓ コピー完了';
+            btn.style.color = '#34d399';
+            setTimeout(() => {
+              btn.textContent = origText;
+              btn.style.color = '';
+            }, 2000);
+            showToast('コマンドをクリップボードにコピーしました', 'success');
+          } else {
+            showToast('コピーに失敗しました', 'error');
+          }
+        }
+      });
+    });
+
+    updatePcSpeakerCommands();
+    window.addEventListener('voicehub:settings-loaded', updatePcSpeakerCommands);
   }
 
   // ================= ONVIF カメラスピーカー設定 =================

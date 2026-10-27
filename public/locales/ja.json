@@ -212,7 +212,7 @@
     "navTts": "外部音声エンジン (TTS)",
     "navDnd": "おやすみ・会議 (DND)",
     "navDisaster": "緊急速報・防災・天気",
-    "navIntegrations": "AI / Alexa / HomePod",
+    "navIntegrations": "AI / Alexa / HomePod / PC",
     "navOnvif": "ONVIF / DLNA",
     "navMqtt": "MQTT ブローカー連携",
     "navWebhook": "Webhook & Tunnel",
