@@ -237,3 +237,13 @@
   1. `public/app.js`、`public/i18n.js`、`public/locales/*.json`、`public/style.css` を変更した際は、必ず `index.html` / `i18n.js` 内の `?v=` クエリパラメータも同時にインクリメントしてブラウザキャッシュを確実に無効化する。
   2. プレースホルダー（`{SERVER_URL}`）を含む DOM 要素は、`index.html` 直後のインラインスクリプト・`app.js` 初期化時・コピーボタン押下時の3段階で `window.location.origin` に置換する多重防御を行う。
   3. クライアント配布スクリプトは VoiceHub 自身の静的配信パス（`${serverUrl}/clients/speaker/...`）から直接取得するようにし、GitHub 未 push 時やローカル環境でも常にサーバーと同一バージョンのスクリプトが実行されるようにする。
+
+
+## [2026-10-28 02] WatchtowerヘルスチェックでのBearerトークン付きGETリクエストによるコンテナ再作成の意図せぬ発動
+- **事象**: 本番ホスト（`network_mode: host`）のコンテナ内で単体テスト（`test_update_service.py`）を実行した際、`GET /api/system/version` のテスト後にコンテナが突然 Watchtower によって再作成された。
+- **原因**:
+  1. Watchtower の HTTP API (`/v1/update`) は `POST` だけでなく `GET` リクエストであっても有効な `Authorization: Bearer <token>` ヘッダーが付与されていると即座にアップデート処理を発動する仕様である。
+  2. `UpdateService.check_watchtower_health()` が有効なトークンを付けて `GET /v1/update` を呼び出しており、かつ `test_update_service.py` の `test_api_system_version_and_update` で `GET` 通信がモックされていなかったため、ホスト上の `127.0.0.1:8082` で待機していた本物の Watchtower に更新トリガーが送信された。
+- **防止策**:
+  1. Watchtower の生存確認（ヘルスチェック）では絶対に `Authorization` トークンを送信せず、トークンなしリクエストに対する `401 Unauthorized` 等の HTTP 応答コードのみで稼働状態を安全に判定する。
+  2. 単体テスト内で `/api/system/version` 等を呼び出す際も外部・ローカルサービスへの `httpx.AsyncClient.get` / `post` を必ずモックする。

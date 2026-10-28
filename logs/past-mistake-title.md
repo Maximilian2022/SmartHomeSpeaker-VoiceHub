@@ -30,5 +30,6 @@
 - [2026-10-26 02] 震度速報(ScalePrompt)受信時の震源地名空文字による「で最大震度」脱字および空文字部分一致による他地域地震の誤発報 (タグ: #防災速報 #地震情報 #ScalePrompt #文字列判定 #ローカルフィルタ #脱字防止)
 - [2026-10-27 01] GitHub Actionsのbash内インラインPythonで正規表現のエスケープ過多によるSyntaxErrorとCIビルド失敗 (タグ: #GitHubActions #CI #エスケープ #SyntaxError #リリース自動化)
 - [2026-10-28 01] フロントエンドJS/JSONのキャッシュバスター(?v=)未更新による旧コード実行とプレースホルダー({SERVER_URL})未置換エラー (タグ: #キャッシュバスター #WebUI #JavaScript #PowerShell #ワンライナー)
+- [2026-10-28 02] WatchtowerヘルスチェックでのBearerトークン付きGETリクエストによるコンテナ再作成の意図せぬ発動 (タグ: #Watchtower #Docker #ヘルスチェック #テスト #モック漏れ)
 
 

@@ -3,7 +3,6 @@
 
 # Logs & Debug history (作業ログ・履歴)
 logs/*
-!logs/*.md
 *.log
 
 # Scratch directory & temporary testing files (一時テスト・短期記憶)
