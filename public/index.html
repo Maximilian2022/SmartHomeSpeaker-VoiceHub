@@ -2025,9 +2025,31 @@
                   <!-- 説明バナー -->
                   <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.85rem; line-height: 1.6; color: var(--text-color);">
                     <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; color: #38bdf8; margin-bottom: 4px;">
-                      <span>✨ 事前の Python 手動インストール不要 (Zero-Setup)</span>
+                      <span data-i18n="settingsIntegrations.pcSpeakerZeroSetupTitle">✨ 事前の Python 手動インストール不要 (Zero-Setup) ＆ 自動アップデート対応</span>
                     </div>
-                    <div>クライアント起動時に、超高速ツール「uv」が Python ランタイムおよび依存関係をバックグラウンドで自動セットアップします。起動すると VoiceHub のスピーカー一覧に自動認識され、PC終了・スリープ時は自動でオフラインになります。</div>
+                    <div data-i18n="settingsIntegrations.pcSpeakerZeroSetupDesc">クライアント起動時に、超高速ツール「uv」が Python ランタイムおよび依存関係をバックグラウンドで自動セットアップします。PCに接続された複数のスピーカーや仮想デバイスも自動検出し、下の管理パネルから出力先ごとに有効/無効やメイン出力（一斉発話対象）を切り替えられます。サーバー側のスクリプトが更新されるとクライアントも自動アップデートされます。</div>
+                  </div>
+
+                  <!-- 接続中 PC の出力スピーカー管理パネル -->
+                  <div id="pcSpeakerConnectedManager" style="background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(99, 102, 241, 0.28); border-radius: 10px; padding: 14px 16px; margin-bottom: 18px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                      <div>
+                        <strong style="font-size: 0.92rem; color: #a5b4fc; display: flex; align-items: center; gap: 6px;">
+                          <span>🔊</span>
+                          <span data-i18n="settingsIntegrations.pcSpeakerOutputsHeader">接続中 PC の出力スピーカー管理 (有効/無効・メイン出力指定)</span>
+                        </strong>
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;" data-i18n="settingsIntegrations.pcSpeakerOutputsSub">
+                          「ALL（家中一斉）」や「PC:ALL」発話時は各PCの「⭐ メイン出力」1台のみで再生されます。個別指定時は有効な任意の出力先を個別に鳴らせます。
+                        </div>
+                      </div>
+                      <button type="button" id="btnRescanPcSpeakers" class="btn btn-secondary btn-xs" style="display: inline-flex; align-items: center; gap: 5px;">
+                        <span>🔄</span>
+                        <span data-i18n="settingsIntegrations.pcSpeakerBtnRescan">再スキャン・クライアント更新</span>
+                      </button>
+                    </div>
+                    <div id="pcSpeakerClientsList">
+                      <div style="font-size: 0.82rem; color: var(--text-muted); padding: 8px 0;">接続中の PC クライアントはありません</div>
+                    </div>
                   </div>
 
                   <!-- OS 切り替えピルタブ -->
@@ -2048,15 +2070,38 @@
 
                   <!-- Windows パネル -->
                   <div id="pcSpeakerPanelWin" class="pc-speaker-panel">
+                    <!-- 1. 一時起動 -->
+                    <div style="margin-bottom: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 0.86rem; color: #38bdf8;" data-i18n="settingsIntegrations.pcSpeakerOneLinerTempWin">⚡ ① ワンライナー: 一時起動 (テスト実行・PowerShell)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdWinOneLiner" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
+                      </div>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdWinOneLiner">powershell -ExecutionPolicy Bypass -Command "if (!(Test-Path $env:USERPROFILE\.local\bin\uv.exe)) { irm https://astral.sh/uv/install.ps1 | iex }; &amp; $env:USERPROFILE\.local\bin\uv.exe run '{SERVER_URL}/clients/speaker/voicehub_speaker.py' --server '{SERVER_URL}' --name 'My-Windows-PC'"</code>
+                      </div>
+                    </div>
+
+                    <!-- 2. 自動起動（常駐化） -->
+                    <div style="margin-bottom: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 0.86rem; color: #34d399;" data-i18n="settingsIntegrations.pcSpeakerOneLinerEnableWin">🚀 ② ワンライナー: 自動起動（常駐化） (バックグラウンド常駐・スタートアップ登録)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdWinAutostartEnable" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
+                      </div>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(52, 211, 153, 0.25); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdWinAutostartEnable">powershell -ExecutionPolicy Bypass -Command "if (!(Test-Path $env:USERPROFILE\.local\bin\uv.exe)) { irm https://astral.sh/uv/install.ps1 | iex }; &amp; $env:USERPROFILE\.local\bin\uv.exe run '{SERVER_URL}/clients/speaker/voicehub_speaker.py' --server '{SERVER_URL}' --name 'My-Windows-PC' --autostart enable"</code>
+                      </div>
+                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;" data-i18n="settingsIntegrations.pcSpeakerWinEnableNote">※ PowerShell に貼り付けて Enter を押すだけで、黒い画面を出さずに即時バックグラウンド常駐を開始し、次回PC起動時からも自動常駐します。</div>
+                    </div>
+
+                    <!-- 3. 自動起動の解除 -->
                     <div style="margin-bottom: 14px;">
                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <strong style="font-size: 0.88rem; color: #38bdf8;">⚡ ワンライナー起動 (ダウンロード不要・PowerShell)</strong>
-                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdWinOneLiner">📋 コピー</button>
+                        <strong style="font-size: 0.86rem; color: #f87171;" data-i18n="settingsIntegrations.pcSpeakerOneLinerDisableWin">🛑 ③ ワンライナー: 自動起動の解除 (常駐停止・スタートアップ解除)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdWinAutostartDisable" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
                       </div>
-                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.82rem; color: #e2e8f0; word-break: break-all; position: relative;">
-                        <code id="cmdWinOneLiner">powershell -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex; &amp; $env:USERPROFILE\.local\bin\uv.exe run https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/voicehub_speaker.py --server {SERVER_URL} --name 'My-Windows-PC'"</code>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(248, 113, 113, 0.2); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdWinAutostartDisable">powershell -ExecutionPolicy Bypass -Command "if (!(Test-Path $env:USERPROFILE\.local\bin\uv.exe)) { irm https://astral.sh/uv/install.ps1 | iex }; &amp; $env:USERPROFILE\.local\bin\uv.exe run '{SERVER_URL}/clients/speaker/voicehub_speaker.py' --autostart disable"</code>
                       </div>
-                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">※ PowerShell を開いて貼り付けて Enter を押すだけで起動します（uv 導入済みなら <code>uv run https://...</code> だけでOK）。</div>
                     </div>
 
                     <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 12px 14px;">
@@ -2071,15 +2116,38 @@
 
                   <!-- macOS パネル -->
                   <div id="pcSpeakerPanelMac" class="pc-speaker-panel" style="display: none;">
+                    <!-- 1. 一時起動 -->
+                    <div style="margin-bottom: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 0.86rem; color: #f472b6;" data-i18n="settingsIntegrations.pcSpeakerOneLinerTempMac">⚡ ① ワンライナー: 一時起動 (テスト実行・ターミナル)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdMacOneLiner" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
+                      </div>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdMacOneLiner">curl -fsSL '{SERVER_URL}/clients/speaker/run.sh' | bash -s -- --server '{SERVER_URL}' --name 'My-MacBook'</code>
+                      </div>
+                    </div>
+
+                    <!-- 2. 自動起動（常駐化） -->
+                    <div style="margin-bottom: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 0.86rem; color: #34d399;" data-i18n="settingsIntegrations.pcSpeakerOneLinerEnableMac">🚀 ② ワンライナー: 自動起動（常駐化） (バックグラウンド常駐・LaunchAgents 登録)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdMacAutostartEnable" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
+                      </div>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(52, 211, 153, 0.25); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdMacAutostartEnable">curl -fsSL '{SERVER_URL}/clients/speaker/run.sh' | bash -s -- --server '{SERVER_URL}' --name 'My-MacBook' --autostart enable</code>
+                      </div>
+                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;" data-i18n="settingsIntegrations.pcSpeakerMacEnableNote">※ macOS 標準の afplay を使用するため外部音声ライブラリ不要で極低遅延再生されます。LaunchAgents に登録され即時バックグラウンド常駐を開始します。</div>
+                    </div>
+
+                    <!-- 3. 自動起動の解除 -->
                     <div style="margin-bottom: 14px;">
                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <strong style="font-size: 0.88rem; color: #f472b6;">⚡ ワンライナー起動 (ダウンロード不要・ターミナル)</strong>
-                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdMacOneLiner">📋 コピー</button>
+                        <strong style="font-size: 0.86rem; color: #f87171;" data-i18n="settingsIntegrations.pcSpeakerOneLinerDisableMac">🛑 ③ ワンライナー: 自動起動の解除 (常駐停止・LaunchAgents 解除)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdMacAutostartDisable" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
                       </div>
-                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.82rem; color: #e2e8f0; word-break: break-all;">
-                        <code id="cmdMacOneLiner">curl -fsSL https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/run.sh | bash -s -- --server {SERVER_URL} --name 'My-MacBook'</code>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(248, 113, 113, 0.2); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdMacAutostartDisable">curl -fsSL '{SERVER_URL}/clients/speaker/run.sh' | bash -s -- --autostart disable</code>
                       </div>
-                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">※ macOS 標準の <code>afplay</code> を使用するため、外部音声ライブラリ不要で極低遅延再生されます。</div>
                     </div>
 
                     <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 8px; padding: 12px 14px;">
@@ -2094,13 +2162,37 @@
 
                   <!-- Linux パネル -->
                   <div id="pcSpeakerPanelLinux" class="pc-speaker-panel" style="display: none;">
+                    <!-- 1. 一時起動 -->
+                    <div style="margin-bottom: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 0.86rem; color: #38bdf8;" data-i18n="settingsIntegrations.pcSpeakerOneLinerTempLinux">⚡ ① ワンライナー: 一時起動 (テスト実行・Bash)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdLinuxOneLiner" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
+                      </div>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdLinuxOneLiner">curl -fsSL '{SERVER_URL}/clients/speaker/run.sh' | bash -s -- --server '{SERVER_URL}' --name 'My-Linux-PC'</code>
+                      </div>
+                    </div>
+
+                    <!-- 2. 自動起動（常駐化） -->
+                    <div style="margin-bottom: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 0.86rem; color: #34d399;" data-i18n="settingsIntegrations.pcSpeakerOneLinerEnableLinux">🚀 ② ワンライナー: 自動起動（常駐化） (バックグラウンド常駐・systemd --user 登録)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdLinuxAutostartEnable" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
+                      </div>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(52, 211, 153, 0.25); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdLinuxAutostartEnable">curl -fsSL '{SERVER_URL}/clients/speaker/run.sh' | bash -s -- --server '{SERVER_URL}' --name 'My-Linux-PC' --autostart enable</code>
+                      </div>
+                      <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;" data-i18n="settingsIntegrations.pcSpeakerLinuxEnableNote">※ systemd --user サービスとして登録され、即時バックグラウンド常駐を開始します。</div>
+                    </div>
+
+                    <!-- 3. 自動起動の解除 -->
                     <div style="margin-bottom: 14px;">
                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <strong style="font-size: 0.88rem; color: #34d399;">⚡ ワンライナー起動 (ダウンロード不要・Bash)</strong>
-                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdLinuxOneLiner">📋 コピー</button>
+                        <strong style="font-size: 0.86rem; color: #f87171;" data-i18n="settingsIntegrations.pcSpeakerOneLinerDisableLinux">🛑 ③ ワンライナー: 自動起動の解除 (常駐停止・systemd --user 解除)</strong>
+                        <button type="button" class="btn btn-secondary btn-xs btn-copy-cmd" data-target="cmdLinuxAutostartDisable" data-i18n="settingsIntegrations.pcSpeakerCopyBtn">📋 コピー</button>
                       </div>
-                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.82rem; color: #e2e8f0; word-break: break-all;">
-                        <code id="cmdLinuxOneLiner">curl -fsSL https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/run.sh | bash -s -- --server {SERVER_URL} --name 'My-Linux-PC'</code>
+                      <div class="code-box" style="background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(248, 113, 113, 0.2); border-radius: 6px; padding: 10px 12px; font-family: monospace; font-size: 0.8rem; color: #e2e8f0; word-break: break-all;">
+                        <code id="cmdLinuxAutostartDisable">curl -fsSL '{SERVER_URL}/clients/speaker/run.sh' | bash -s -- --autostart disable</code>
                       </div>
                     </div>
 
@@ -2113,13 +2205,21 @@
                       </ul>
                     </div>
                   </div>
+                  <script>
+                    (function() {
+                      var origin = window.location.origin;
+                      document.querySelectorAll('#pcSpeakerCard code').forEach(function(el) {
+                        el.textContent = el.textContent.replace(/\{SERVER_URL\}/g, origin);
+                      });
+                    })();
+                  </script>
 
                   <!-- 下部: ガイドリンクとマクロ説明 -->
                   <div style="margin-top: 16px; padding-top: 14px; border-top: 1px dashed rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                     <div style="font-size: 0.82rem; color: var(--text-muted);">
                       <span>📣 発話宛先マクロ: <code>PC:ALL</code>（PC全台） / <code>ALL</code>（家中一斉） / 個別指定（例: <code>My-Windows-PC</code>）</span>
                     </div>
-                    <a href="/clients/speaker/README.md" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                    <a href="/clients/speaker/README.md" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" data-i18n="settingsIntegrations.pcSpeakerReadmeBtn">
                       📖 PC Speaker 取扱説明書 (README)
                     </a>
                   </div>
@@ -4255,7 +4355,7 @@ Body:
   </div>
 
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="i18n.js?v=1.0.5"></script>
-  <script src="app.js?v=1.0.22"></script>
+  <script src="i18n.js?v=1.0.7"></script>
+  <script src="app.js?v=1.0.24"></script>
 </body>
 </html>

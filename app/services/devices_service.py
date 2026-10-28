@@ -213,9 +213,9 @@ class DeviceManager:
 
         # クライアントスピーカー (Windows / Mac / Linux PC)
         if norm.startswith("client:") or norm.startswith("pc:"):
-            c = client_speaker_service.find_client(norm)
-            if c:
-                return c.to_device_dict()
+            c_dev = client_speaker_service.find_device_dict(norm)
+            if c_dev:
+                return c_dev
 
         # ONVIF / DLNA / TAPO プレフィックス
         if norm.startswith("onvif:") or norm.startswith("dlna:") or norm.startswith("tapo:"):
@@ -301,10 +301,10 @@ class DeviceManager:
                     "renderingControlUrl": d.get("renderingControlUrl")
                 }
 
-        # クライアントスピーカーの名前照合
-        c_by_name = client_speaker_service.find_client(norm)
-        if c_by_name:
-            return c_by_name.to_device_dict()
+        # クライアントスピーカーの名前・出力デバイス名照合
+        c_dev_by_name = client_speaker_service.find_device_dict(norm)
+        if c_dev_by_name:
+            return c_dev_by_name
 
         # Google Cast IP / 完全一致 (グループ優先)
         if norm in self.devices:

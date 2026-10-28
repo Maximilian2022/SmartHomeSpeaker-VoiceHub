@@ -95,13 +95,16 @@ class TestUpdateService(unittest.TestCase):
 
     def test_api_system_version_and_update(self):
         """/api/system/version および /api/system/update エンドポイントの検証"""
-        # 1. GET /api/system/version
-        res_v = self.client.get("/api/system/version")
-        self.assertEqual(res_v.status_code, 200)
-        data_v = res_v.json()
-        self.assertIn("currentVersion", data_v)
-        self.assertIn("watchtower", data_v)
-        self.assertIn("autoUpdate", data_v)
+        mock_get_resp = MagicMock(status_code=401, text="Unauthorized")
+        mock_get_resp.json.return_value = {"tag_name": "v1.0.14"}
+        with patch("httpx.AsyncClient.get", return_value=mock_get_resp):
+            # 1. GET /api/system/version
+            res_v = self.client.get("/api/system/version")
+            self.assertEqual(res_v.status_code, 200)
+            data_v = res_v.json()
+            self.assertIn("currentVersion", data_v)
+            self.assertIn("watchtower", data_v)
+            self.assertIn("autoUpdate", data_v)
 
         # 2. 管理者パスワード設定時の POST /api/system/update 認証保護
         settings_manager.set_admin_password("super-sys-admin")

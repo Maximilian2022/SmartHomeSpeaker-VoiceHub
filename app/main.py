@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import PUBLIC_DIR, VOICE_DIR, SOUND_DIR, settings
+from app.config import BASE_DIR, PUBLIC_DIR, VOICE_DIR, SOUND_DIR, settings
 from app.core.security import check_tunnel_access, check_admin_auth
 from app.services.disaster_service import disaster_service
 from app.services.calendar_service import calendar_service
@@ -267,6 +267,8 @@ async def serve_voice_file(filename: str):
     )
 
 app.mount("/sound", StaticFiles(directory=str(SOUND_DIR)), name="sound")
+if (BASE_DIR / "clients").exists():
+    app.mount("/clients", StaticFiles(directory=str(BASE_DIR / "clients")), name="clients")
 
 @app.get("/")
 async def serve_index():

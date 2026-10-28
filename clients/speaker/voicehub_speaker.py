@@ -7,18 +7,20 @@
 # ///
 
 import os
+import re
 import sys
 import time
 import json
 import socket
 import shutil
+import hashlib
 import tempfile
 import argparse
 import platform
 import asyncio
 import subprocess
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # ==============================================================================
 # プラットフォーム判定と定数
@@ -57,9 +59,59 @@ class AudioPlayer:
             except ImportError:
                 self._miniaudio_avail = False
 
-    def play(self, audio_data: bytes, volume: Optional[float] = None) -> bool:
-        """音声バイト列（MP3/WAV等）をローカルスピーカーで再生"""
-        # 一時ファイルに保存して再生
+    def get_playback_devices(self) -> List[Dict[str, Any]]:
+        """OS に接続されている全オーディオ出力デバイス（物理・仮想含む）を列挙"""
+        if not IS_MAC and self._miniaudio_avail:
+            try:
+                import miniaudio
+                devs: List[Dict[str, Any]] = []
+                ctx = miniaudio.ffi.new("ma_context*")
+                res = miniaudio.lib.ma_context_init(miniaudio.ffi.NULL, 0, miniaudio.ffi.NULL, ctx)
+                if res != miniaudio.lib.MA_SUCCESS:
+                    return devs
+                try:
+                    with miniaudio.ffi.new("ma_device_info**") as p_infos, miniaudio.ffi.new("ma_uint32*") as p_count:
+                        res = miniaudio.lib.ma_context_get_devices(ctx, p_infos, p_count, miniaudio.ffi.NULL, miniaudio.ffi.NULL)
+                        if res == miniaudio.lib.MA_SUCCESS:
+                            seen_keys = set()
+                            for i in range(p_count[0]):
+                                info = p_infos[0][i]
+                                raw_name = miniaudio.ffi.string(info.name)
+                                try:
+                                    name = raw_name.decode("utf-8")
+                                except UnicodeDecodeError:
+                                    name = raw_name.decode("cp932", errors="replace")
+                                name = name.strip() or f"Speaker {i + 1}"
+                                dev_id = miniaudio.ffi.new("ma_device_id *", info.id)
+                                base_key = re.sub(r"[^a-zA-Z0-9_\u3000-\u9fff-]+", "_", name).strip("_") or f"out_{i}"
+                                key = base_key
+                                suffix = 2
+                                while key in seen_keys:
+                                    key = f"{base_key}_{suffix}"
+                                    suffix += 1
+                                seen_keys.add(key)
+                                devs.append({
+                                    "index": i,
+                                    "key": key,
+                                    "name": name,
+                                    "isDefault": bool(info.isDefault),
+                                    "ma_id": dev_id
+                                })
+                finally:
+                    miniaudio.lib.ma_context_uninit(ctx)
+                return devs
+            except Exception as e:
+                print(f"[Player] Device enumeration error: {e}", file=sys.stderr)
+        return []
+
+    def play(
+        self,
+        audio_data: bytes,
+        volume: Optional[float] = None,
+        output_key: Optional[str] = None,
+        output_name: Optional[str] = None
+    ) -> bool:
+        """音声バイト列（MP3/WAV等）を指定されたローカルスピーカーで再生"""
         suffix = ".mp3"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
             tf.write(audio_data)
@@ -69,23 +121,39 @@ class AudioPlayer:
             if IS_MAC:
                 return self._play_mac(temp_path, volume)
             elif IS_WIN:
-                return self._play_windows(temp_path, audio_data, volume)
+                return self._play_windows(temp_path, audio_data, volume, output_key=output_key, output_name=output_name)
             else:
-                return self._play_linux(temp_path, audio_data, volume)
+                return self._play_linux(temp_path, audio_data, volume, output_key=output_key, output_name=output_name)
         finally:
-            # 再生完了またはエラー後に一時ファイル削除（Windows等のファイルロック解放待ち含む）
             try:
                 if os.path.exists(temp_path):
                     os.remove(temp_path)
             except Exception:
                 pass
 
+    def _resolve_miniaudio_device_id(self, output_key: Optional[str], output_name: Optional[str]):
+        """指定された output_key / output_name（または OS 既定デバイス）の ma_device_id を取得"""
+        devs = self.get_playback_devices()
+        if not devs:
+            return None, None
+        if output_key and output_key != "default":
+            for d in devs:
+                if d["key"] == output_key:
+                    return d["ma_id"], d["name"]
+        if output_name:
+            for d in devs:
+                if d["name"] == output_name or output_name.lower() in d["name"].lower():
+                    return d["ma_id"], d["name"]
+        for d in devs:
+            if d.get("isDefault"):
+                return d["ma_id"], d["name"]
+        return devs[0]["ma_id"], devs[0]["name"]
+
     def _play_mac(self, file_path: str, volume: Optional[float]) -> bool:
         """macOS: OS標準の afplay コマンドを使用（追加依存なし・極低メモリ・超低遅延）"""
         try:
             cmd = ["afplay"]
             if volume is not None:
-                # afplay -v <0.0-1.0または255等> (通常 0.0〜1.0)
                 cmd.extend(["-v", str(max(0.0, min(1.0, float(volume))))])
             cmd.append(file_path)
             res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -94,13 +162,24 @@ class AudioPlayer:
             print(f"[Player] afplay error: {e}", file=sys.stderr)
             return False
 
-    def _play_windows(self, file_path: str, audio_data: bytes, volume: Optional[float]) -> bool:
-        """Windows: miniaudio または PowerShell MediaPlayer で再生"""
+    def _play_windows(
+        self,
+        file_path: str,
+        audio_data: bytes,
+        volume: Optional[float],
+        output_key: Optional[str] = None,
+        output_name: Optional[str] = None
+    ) -> bool:
+        """Windows: miniaudio で対象デバイスの ma_device_id を直接指定して再生"""
         if self._miniaudio_avail:
             try:
                 import miniaudio
+                target_ma_id, resolved_name = self._resolve_miniaudio_device_id(output_key, output_name)
                 stream = miniaudio.stream_file(file_path)
-                device = miniaudio.PlaybackDevice()
+                if target_ma_id is not None:
+                    device = miniaudio.PlaybackDevice(device_id=target_ma_id)
+                else:
+                    device = miniaudio.PlaybackDevice()
                 device.start(stream)
                 while device.is_running:
                     time.sleep(0.05)
@@ -133,9 +212,34 @@ class AudioPlayer:
             print(f"[Player] PowerShell MediaPlayer error: {e}", file=sys.stderr)
             return False
 
-    def _play_linux(self, file_path: str, audio_data: bytes, volume: Optional[float]) -> bool:
-        """Linux: paplay / mpv / ffplay / aplay または miniaudio"""
-        # 1. 外部CLIツールの存在確認
+    def _play_linux(
+        self,
+        file_path: str,
+        audio_data: bytes,
+        volume: Optional[float],
+        output_key: Optional[str] = None,
+        output_name: Optional[str] = None
+    ) -> bool:
+        """Linux: miniaudio (デバイス指定対応) または paplay / mpv / ffplay / aplay"""
+        # 1. 個別デバイス指定時は miniaudio で対象デバイスを直接指定して再生
+        if self._miniaudio_avail and (output_key or output_name):
+            try:
+                import miniaudio
+                target_ma_id, _ = self._resolve_miniaudio_device_id(output_key, output_name)
+                stream = miniaudio.stream_file(file_path)
+                if target_ma_id is not None:
+                    device = miniaudio.PlaybackDevice(device_id=target_ma_id)
+                else:
+                    device = miniaudio.PlaybackDevice()
+                device.start(stream)
+                while device.is_running:
+                    time.sleep(0.05)
+                device.close()
+                return True
+            except Exception as e:
+                print(f"[Player] Linux miniaudio targeted error: {e}", file=sys.stderr)
+
+        # 2. 外部CLIツールの存在確認
         for cmd_name, cmd_args in [
             ("mpv", ["mpv", "--no-terminal", "--really-quiet", file_path]),
             ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path]),
@@ -150,7 +254,7 @@ class AudioPlayer:
                 except Exception:
                     pass
 
-        # 2. miniaudio フォールバック
+        # 3. miniaudio フォールバック
         if self._miniaudio_avail:
             try:
                 import miniaudio
@@ -174,8 +278,39 @@ class AutostartManager:
     """各OSネイティブのバックグラウンド自動起動を自己管理"""
 
     @staticmethod
-    def get_current_cmd_args(server: str, name: str, token: Optional[str]) -> list:
-        script_path = str(Path(__file__).resolve())
+    def _ensure_persistent_script() -> str:
+        """ワンライナー (uv run https://...) 実行時でも永続パス (~/.voicehub/voicehub_speaker.py) に配置して参照"""
+        current_file = Path(__file__).resolve()
+        persistent_dir = Path.home() / ".voicehub"
+        persistent_script = persistent_dir / "voicehub_speaker.py"
+        try:
+            persistent_dir.mkdir(parents=True, exist_ok=True)
+            if current_file != persistent_script and current_file.exists():
+                shutil.copy2(current_file, persistent_script)
+            if persistent_script.exists():
+                return str(persistent_script)
+        except Exception:
+            pass
+        return str(current_file)
+
+    @staticmethod
+    def _find_uv_path() -> str:
+        """PATH 未反映のシェル環境でも uv の絶対パスを確実に解決"""
+        found = shutil.which("uv")
+        if found:
+            return str(Path(found).resolve())
+        exe_name = "uv.exe" if IS_WIN else "uv"
+        for candidate in [
+            Path.home() / ".local" / "bin" / exe_name,
+            Path.home() / ".cargo" / "bin" / exe_name,
+        ]:
+            if candidate.exists():
+                return str(candidate.resolve())
+        return "uv"
+
+    @classmethod
+    def get_current_cmd_args(cls, server: str, name: str, token: Optional[str]) -> tuple:
+        script_path = cls._ensure_persistent_script()
         args = ["--server", server, "--name", name]
         if token:
             args.extend(["--token", token])
@@ -184,7 +319,7 @@ class AutostartManager:
     @classmethod
     def enable(cls, server: str, name: str, token: Optional[str]) -> bool:
         script_path, args = cls.get_current_cmd_args(server, name, token)
-        uv_path = shutil.which("uv") or "uv"
+        uv_path = cls._find_uv_path()
 
         if IS_WIN:
             return cls._enable_windows(uv_path, script_path, args)
@@ -224,6 +359,23 @@ class AutostartManager:
         startup_dir = Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
         return startup_dir / "VoiceHub_Speaker.vbs"
 
+    @staticmethod
+    def _stop_windows_background():
+        """バックグラウンド常駐中の voicehub_speaker.py プロセスを停止"""
+        try:
+            ps_kill = (
+                "Get-CimInstance Win32_Process | "
+                "Where-Object { $_.CommandLine -like '*voicehub_speaker.py*' -and $_.CommandLine -notlike '*--autostart*' } | "
+                "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_kill],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
+
     @classmethod
     def _enable_windows(cls, uv_path: str, script_path: str, args: list) -> bool:
         vbs_path = cls._get_windows_startup_vbs()
@@ -237,10 +389,16 @@ WshShell.Run "{cmd_line.replace('"', '""')}", 0, False
         try:
             with open(vbs_path, "w", encoding="utf-8") as f:
                 f.write(vbs_content)
+            cls._stop_windows_background()
+            subprocess.Popen(
+                ["wscript.exe", "//B", str(vbs_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
             print("=" * 65)
-            print("✅ Windows スタートアップへの登録が完了しました！")
+            print("✅ Windows スタートアップへの登録とバックグラウンド常駐を開始しました！")
             print(f"   登録ファイル: {vbs_path}")
-            print("   次回PC起動時から、黒い画面を出さずにバックグラウンドで自動常駐します。")
+            print("   現在および次回PC起動時から、黒い画面を出さずにバックグラウンドで常駐します。")
             print("=" * 65)
             return True
         except Exception as e:
@@ -250,11 +408,12 @@ WshShell.Run "{cmd_line.replace('"', '""')}", 0, False
     @classmethod
     def _disable_windows(cls) -> bool:
         vbs_path = cls._get_windows_startup_vbs()
+        cls._stop_windows_background()
         if vbs_path.exists():
             vbs_path.unlink()
-            print("✅ Windows スタートアップからの登録を解除しました。")
+            print("✅ Windows スタートアップ登録を解除し、バックグラウンド常駐を停止しました。")
             return True
-        print("ℹ️ スタートアップ登録はされていませんでした。")
+        print("ℹ️ スタートアップ登録はされていませんでした（実行中のプロセスがある場合は停止しました）。")
         return True
 
     @classmethod
@@ -411,6 +570,95 @@ class VoiceHubSpeakerClient:
         self.player = AudioPlayer()
         self._running = True
 
+    @staticmethod
+    def _get_local_script_hash() -> str:
+        """現在のクライアントスクリプトの SHA-256 ハッシュを計算"""
+        try:
+            current_file = Path(__file__).resolve()
+            if current_file.exists():
+                return hashlib.sha256(current_file.read_bytes()).hexdigest()
+        except Exception:
+            pass
+        return ""
+
+    async def _check_and_self_update(self, expected_hash: Optional[str] = None):
+        """サーバー上の最新スクリプトをチェックし、更新があれば自動ダウンロード＆再起動"""
+        import httpx
+        local_hash = self._get_local_script_hash()
+        if expected_hash and local_hash and expected_hash == local_hash:
+            return
+
+        script_url = f"{self.server_url}/clients/speaker/voicehub_speaker.py"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(script_url)
+                if res.status_code != 200:
+                    return
+                new_bytes = res.content
+                new_text = new_bytes.decode("utf-8", errors="replace")
+                if "# /// script" not in new_text or "VoiceHubSpeakerClient" not in new_text:
+                    return
+                new_hash = hashlib.sha256(new_bytes).hexdigest()
+                if local_hash and new_hash == local_hash:
+                    return
+
+                print(f"[{time.strftime('%H:%M:%S')}] 🔄 新しいバージョンのクライアントスクリプトを検出しました。自動アップデートを実行します...")
+                # 1. 永続パス (~/.voicehub/voicehub_speaker.py) を更新
+                persistent_dir = Path.home() / ".voicehub"
+                persistent_dir.mkdir(parents=True, exist_ok=True)
+                persistent_script = persistent_dir / "voicehub_speaker.py"
+                persistent_script.write_bytes(new_bytes)
+
+                # 2. 現在実行中のスクリプトパスも更新可能な場合は上書き
+                try:
+                    current_file = Path(__file__).resolve()
+                    if current_file != persistent_script and current_file.exists():
+                        current_file.write_bytes(new_bytes)
+                except Exception:
+                    pass
+
+                print(f"[{time.strftime('%H:%M:%S')}] ✅ アップデート完了！プロセスを自動再起動します...")
+                if IS_WIN:
+                    vbs_path = AutostartManager._get_windows_startup_vbs()
+                    if vbs_path.exists():
+                        ps_restart = f"Start-Sleep -Seconds 1; wscript.exe //B '{str(vbs_path)}'"
+                        subprocess.Popen(
+                            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps_restart],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                        os._exit(0)
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 自動アップデート確認エラー: {e}")
+
+    def _collect_outputs_meta(self) -> List[Dict[str, Any]]:
+        devs = self.player.get_playback_devices()
+        return [
+            {
+                "key": d["key"],
+                "name": d["name"],
+                "isDefault": bool(d.get("isDefault"))
+            }
+            for d in devs
+        ]
+
+    async def _report_outputs(self):
+        import httpx
+        outputs_meta = self._collect_outputs_meta()
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(
+                    f"{self.server_url}/api/client-speakers/outputs",
+                    json={"clientId": self.client_id, "outputs": outputs_meta},
+                    headers=headers
+                )
+        except Exception as e:
+            print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 出力デバイス一覧送信エラー: {e}")
+
     async def run(self):
         try:
             import httpx
@@ -426,24 +674,22 @@ class VoiceHubSpeakerClient:
             print("=" * 65, file=sys.stderr)
             return
 
+        outputs_meta = self._collect_outputs_meta()
         print("=" * 65)
         print("🎙️ [VoiceHub PC Speaker Client]")
         print(f"   接続先サーバー : {self.server_url}")
         print(f"   スピーカー名   : {self.name}")
         print(f"   クライアントID : {self.client_id}")
         print(f"   プラットフォーム: {self.platform} ({platform.system()} {platform.release()})")
+        if outputs_meta:
+            print(f"   検出オーディオ出力 ({len(outputs_meta)}台):")
+            for o in outputs_meta:
+                mark = "★既定" if o.get("isDefault") else "     "
+                print(f"     {mark} [{o['name']}]")
         print("=" * 65)
         print("VoiceHub サーバーへの常駐接続を開始します... (Ctrl+C で終了)\n")
 
         stream_url = f"{self.server_url}/api/client-speakers/stream"
-        params = {
-            "name": self.name,
-            "id": self.client_id,
-            "platform": self.platform
-        }
-        if self.token:
-            params["token"] = self.token
-
         headers = {}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -451,12 +697,27 @@ class VoiceHubSpeakerClient:
         backoff = 2.0
         while self._running:
             try:
+                current_outputs = self._collect_outputs_meta()
+                params = {
+                    "name": self.name,
+                    "id": self.client_id,
+                    "platform": self.platform,
+                    "outputs": json.dumps(current_outputs, ensure_ascii=False),
+                    "script_hash": self._get_local_script_hash()
+                }
+                if self.token:
+                    params["token"] = self.token
+
                 # タイムアウトなしでSSEストリーミング接続
                 async with httpx.AsyncClient(timeout=None) as client:
                     async with client.stream("GET", stream_url, params=params, headers=headers) as resp:
                         if resp.status_code == 401:
                             print("❌ 認証エラー (HTTP 401): --token に正しい Webhook トークンまたは管理者パスワードを指定してください。")
-                            await asyncio.sleep(5)
+                            await asyncio.sleep(30)
+                            continue
+                        elif resp.status_code == 429:
+                            print("⚠️ レート制限中 (HTTP 429): しばらく待機してから再接続します...")
+                            await asyncio.sleep(30)
                             continue
                         elif resp.status_code != 200:
                             print(f"⚠️ 接続エラー: HTTP {resp.status_code}。再試行します...")
@@ -504,13 +765,25 @@ class VoiceHubSpeakerClient:
 
         if event_type == "connected":
             print(f"[{time.strftime('%H:%M:%S')}] ✅ 登録完了: VoiceHub 上にスピーカーとして認識されました。")
+            srv_hash = data.get("scriptHash")
+            if srv_hash:
+                await self._check_and_self_update(srv_hash)
+
+        elif event_type == "self_update":
+            await self._check_and_self_update(data.get("scriptHash"))
+
+        elif event_type == "rescan":
+            await self._report_outputs()
 
         elif event_type == "play":
             audio_url = data.get("audio_url")
             text = data.get("text", "")
             volume = data.get("volume")
+            output_key = data.get("output_key")
+            output_name = data.get("output_name")
             display_text = f"'{text}'" if text else "(音声ファイル)"
-            print(f"[{time.strftime('%H:%M:%S')}] 🔊 音声再生要求を受信: {display_text}")
+            target_label = f" -> [{output_name or output_key}]" if (output_name or output_key) else ""
+            print(f"[{time.strftime('%H:%M:%S')}] 🔊 音声再生要求を受信{target_label}: {display_text}")
 
             if not audio_url:
                 return
@@ -520,9 +793,15 @@ class VoiceHubSpeakerClient:
                 audio_url = f"{self.server_url}{audio_url}"
 
             # 非同期で音声ファイルをダウンロードしてローカル再生
-            asyncio.create_task(self._download_and_play(audio_url, volume))
+            asyncio.create_task(self._download_and_play(audio_url, volume, output_key, output_name))
 
-    async def _download_and_play(self, audio_url: str, volume: Optional[float]):
+    async def _download_and_play(
+        self,
+        audio_url: str,
+        volume: Optional[float],
+        output_key: Optional[str] = None,
+        output_name: Optional[str] = None
+    ):
         import httpx
         try:
             headers = {}
@@ -535,7 +814,14 @@ class VoiceHubSpeakerClient:
                     audio_bytes = res.content
                     # 別スレッドでブロック再生を実行（非同期ループをブロックさせない）
                     loop = asyncio.get_running_loop()
-                    ok = await loop.run_in_executor(None, self.player.play, audio_bytes, volume)
+                    ok = await loop.run_in_executor(
+                        None,
+                        self.player.play,
+                        audio_bytes,
+                        volume,
+                        output_key,
+                        output_name
+                    )
                     if ok:
                         print(f"[{time.strftime('%H:%M:%S')}] ✅ 再生完了")
                     else:

@@ -203,19 +203,20 @@ In the `/api/say` endpoint, `devices` or `targets` accepts individual device nam
 
 | Target Identifier | Target Speakers & Behavior |
 |---|---|
-| `ALL` or `*` | **All speakers in the home**. Concurrently targets the whole-home Google Cast group, all Amazon Echo devices, all HomePods, registered ONVIF cameras, and DLNA renderers. |
+| `ALL` or `*` | **All speakers in the home**. Concurrently targets the whole-home Google Cast group, all Amazon Echo devices, all HomePods, registered ONVIF cameras, DLNA renderers, and connected PC speakers (1 "⭐ Primary Output" per PC). |
 | `GH:ALL` / `GOOGLE:ALL` | All Google Home / Nest devices in the home (prefers Cast groups). |
 | `AL:ALL` / `ALEXA:ALL` | All Amazon Echo devices in the home (prefers Alexa Everywhere group). |
 | `HP:ALL` / `HOMEPOD:ALL` | All Apple HomePod devices in the home. |
 | `ONVIF:ALL` / `CAM:ALL` | All registered ONVIF network cameras. |
 | `DLNA:ALL` | All registered DLNA / UPnP network speakers. |
-| `PC:ALL` / `CLIENT:ALL` | All currently connected PC speaker clients (Windows / Mac / Linux). |
+| `PC:ALL` / `CLIENT:ALL` | All currently connected PC speaker clients (Windows / Mac / Linux, 1 "⭐ Primary Output" per PC). |
 | `default` | System default speaker (specified via `GOOGLE_HOME_IP` or Web GUI). |
 | Custom Group Name (e.g., `1F`, `LDK`) | Expands custom speaker combinations defined under "Device Groups" in settings. |
 | Display Name (e.g., `Living Room`) | Resolves devices via case-insensitive partial substring match. |
 | `alexa:<DeviceName>` | Explicitly targets a specific Amazon Echo device. |
 | `homepod:<IP or MAC>` | Explicitly targets a specific Apple HomePod device. |
-| `client:<ID or Name>` | Explicitly targets a specific PC speaker client (Windows / Mac / Linux). |
+| `client:<ID or Name>` | Explicitly targets a specific PC speaker client (plays on that PC's "⭐ Primary Output"). |
+| `client:<ID>@<OutputKey>` | Explicitly targets a specific audio output device on a PC (e.g., headset, secondary speaker). |
 | `onvif:<IP>` | Explicitly targets a specific ONVIF network camera. |
 | `dlna:<IP>` | Explicitly targets a specific DLNA / UPnP renderer. |
 | Raw IPv4 (e.g., `192.168.1.50`) | Directly targets a Google Cast device by IP address. |
@@ -601,19 +602,21 @@ During morning briefings, Voice Hub supplies the AI engine with structured conte
 - **Integration**: Auto-detected via SSDP scanning in the ONVIF/DLNA tab; ready for playback without authentication.
 
 ### 8.6 PC Speaker Client (Windows / Mac / Linux)
-- **Protocol**: Server-Sent Events (SSE) bidirectional audio streaming (`GET /api/client-speakers/stream`)
-- **Client Implementation**: `clients/speaker/` (Single Python script `voicehub_speaker.py` + self-bootstrapping runners)
+- **Protocol**: Server-Sent Events (SSE) bidirectional audio & control streaming (`GET /api/client-speakers/stream`)
+- **Client Implementation**: `clients/speaker/` (Single Python script `voicehub_speaker.py` + self-bootstrapping runners, served directly from the VoiceHub server at `/clients/speaker/`)
 - **Key Features & Specifications**:
   1. **Ultra-Low Memory (~15MB RAM) & 0% CPU**:
      Automatically selects the optimal native playback engine for the host OS (macOS uses native `afplay`, Windows uses `miniaudio` / PowerShell, Linux uses `paplay` / `mpv` / `aplay` / `miniaudio`), delivering instant, artifact-free audio playback.
-  2. **Zero-Setup (No Pre-installed Python Required)**:
-     Embeds an autonomous `uv` bootstrapping installer. Any clean PC can run `run.bat` / `run.sh` or the dynamic one-liner command from the Web GUI to automatically download Python runtime and dependencies in milliseconds.
-  3. **Dynamic Discovery & Presence Tracking**:
-     Connected PCs appear immediately as "💻 Hostname" in the VoiceHub speakers list and auto-deregister on sleep or disconnect.
-  4. **Bypasses NAT & Firewalls Seamlessly**:
-     Operates purely over outbound HTTP SSE streams, eliminating router port-forwarding or firewall exceptions.
-  5. **Silent Background Startup**:
-     Windows uses a hidden VBScript runner (`enable_autostart.bat`) with zero terminal popups. macOS (LaunchAgents) and Linux (`systemd --user`) are natively supported.
+  2. **Zero-Setup & 3 Dynamic One-Liners per OS**:
+     Embeds an autonomous `uv` bootstrapping installer. The Web GUI ("Smart Home Integrations") provides 3 pre-configured one-liners per OS with the server URL and token dynamically embedded: **① Temporary Launch**, **② Enable Autostart (Background Resident)**, and **③ Disable Autostart**.
+  3. **Multi-Output Audio Device Detection, Enable/Disable & Primary Output Selection**:
+     Automatically enumerates all physical speakers (e.g., `Logicool G560`, monitor speakers) and virtual audio devices (`SteelSeries Sonar`, etc.) connected to a PC and registers each output individually.
+     - **Enable / Disable**: Toggle individual outputs on or off in the Web GUI ("🔊 Connected PC Audio Output Management") to hide unused virtual channels.
+     - **⭐ Primary Output (`isPrimary`)**: Whole-home (`ALL`) and `PC:ALL` broadcasts play only on each PC's designated **1 Primary Output** (defaults to the OS default playback device) to prevent simultaneous playback across multiple speakers on the same PC, while individual targeting can address any enabled output device directly.
+  4. **Automatic Client Script Self-Update**:
+     Upon SSE connection (`connected` event) or manual rescan (`self_update` event), the client compares its local SHA-256 script hash against the server's latest `scriptHash`. Whenever `voicehub_speaker.py` is updated on the server, connected PCs automatically download the latest script to `~/.voicehub/voicehub_speaker.py` and restart their background process seamlessly.
+  5. **Bypasses NAT & Firewalls + Silent Background Startup**:
+     Operates purely over outbound HTTP SSE streams. Windows generates a hidden VBScript launcher (`VoiceHub_Speaker.vbs`) with zero console popups and starts running in the background immediately. macOS (LaunchAgents) and Linux (`systemd --user`) are natively supported.
 
 ---
 
@@ -897,8 +900,11 @@ All API endpoints return JSON responses.
 - **`POST /api/onvif/register`**: Register, update, or remove ONVIF/DLNA devices.
 - **`POST /api/onvif/test`**: Test audio transmission to an ONVIF or DLNA target.
 - **`POST /api/onvif/default-auth`**: Save default camera credentials.
-- **`GET /api/client-speakers/stream`**: SSE audio stream for persistent PC speaker clients (Windows / Mac / Linux).
-- **`GET /api/client-speakers`**: Retrieve all currently connected PC speaker clients.
+- **`GET /api/client-speakers/stream`**: SSE audio & control stream for persistent PC speaker clients (supports multi-output reporting and script hash verification).
+- **`GET /api/client-speakers`**: Retrieve all connected PC speaker clients, per-output configurations, and server script hash.
+- **`POST /api/client-speakers/config`**: Update and persist per-output enable/disable (`enabled`), custom name (`customName`), and primary output (`isPrimary`) settings.
+- **`POST /api/client-speakers/outputs`**: Receive updated audio output device lists from clients upon rescan.
+- **`POST /api/client-speakers/rescan`**: Broadcast audio output rescan (`rescan`) and script self-update check (`self_update`) events to connected PC clients.
 
 ### 13.13 MQTT API
 - **`GET /api/mqtt/status`**: Check connection status of all configured MQTT brokers.
@@ -1009,6 +1015,8 @@ Designed so all operations run non-blockingly on the asynchronous event loop (`a
   WS-Discovery for camera detection and RTSP two-way audio backchannel streaming via bundled `go2rtc`.
 - **`dlna_service.py`**:
   SSDP renderer discovery and UPnP AVTransport / RenderingControl SOAP playback control.
+- **`client_speaker_service.py`**:
+  Manages SSE sessions for Windows / Mac / Linux PC speaker clients, multi-output device expansion, enable/disable filtering, primary output (`isPrimary`) resolution, and dispatches audio playback, `rescan`, and `self_update` events.
 - **`calendar_service.py`**:
   Asynchronous iCal synchronization across multiple Google Calendars, meeting keyword detection, and briefing generation.
 - **`disaster_service.py`**:

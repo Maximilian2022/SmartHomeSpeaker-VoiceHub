@@ -227,3 +227,13 @@
   1. シェルスクリプトや CI ワークフロー定義内で Python のインライン実行（`python3 -c`）を行う際は、正規表現の複雑なエスケープを避け、Python の標準インポート構文 `python3 -c "from app.version import __version__; print(__version__)"` を使用する。
   2. バージョン取得や設定値抽出などの定型処理は、エスケープの衝突リスクがあるワンライナーではなく、モジュールの直接ロードか独立した検証済みスクリプトに委ねる。
 
+
+## [2026-10-28 01] フロントエンドJS/JSONのキャッシュバスター(?v=)未更新による旧コード実行とプレースホルダー({SERVER_URL})未置換エラー
+- **事象**: `index.html` と `app.js` に新しいワンライナー要素（`cmdWinAutostartEnable` 等）を追加した際、ブラウザでコピーしたコマンドに `--server {SERVER_URL}` が未置換のまま残り、PowerShell 上で `{SERVER_URL}` がスクリプトブロックとして解釈されて `error: argument --server: expected one argument` が発生した。
+- **原因**:
+  1. `public/index.html` 内の `<script src="app.js?v=1.0.22"></script>` や `i18n.js?v=1.0.5` のキャッシュバスター（`?v=`）を更新しなかったため、ブラウザが新しい `index.html` と古いキャッシュ済み `app.js` を組み合わせて実行し、新設した DOM ID（`cmdWinAutostartEnable` 等）の `{SERVER_URL}` 置換処理が走らなかった。
+  2. また、ワンライナーの取得先 URL が GitHub の `raw.githubusercontent.com` 固定になっており、GitHub へ push する前のローカル改修内容がクライアント側から参照できなかった。
+- **防止策**:
+  1. `public/app.js`、`public/i18n.js`、`public/locales/*.json`、`public/style.css` を変更した際は、必ず `index.html` / `i18n.js` 内の `?v=` クエリパラメータも同時にインクリメントしてブラウザキャッシュを確実に無効化する。
+  2. プレースホルダー（`{SERVER_URL}`）を含む DOM 要素は、`index.html` 直後のインラインスクリプト・`app.js` 初期化時・コピーボタン押下時の3段階で `window.location.origin` に置換する多重防御を行う。
+  3. クライアント配布スクリプトは VoiceHub 自身の静的配信パス（`${serverUrl}/clients/speaker/...`）から直接取得するようにし、GitHub 未 push 時やローカル環境でも常にサーバーと同一バージョンのスクリプトが実行されるようにする。

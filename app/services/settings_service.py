@@ -250,6 +250,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "watchtowerUrl": settings.watchtower_url,
         "watchtowerToken": settings.watchtower_token,
         "checkIntervalHours": 24
+    },
+    "pcSpeakers": {
+        "outputs": {},
+        "primaryOutput": {}
     }
 }
 
@@ -571,5 +575,43 @@ class SettingsManager:
             if val is not None:
                 return str(val).strip()
         return settings.webhook_token or ""
+
+    def get_pc_speakers_config(self) -> Dict[str, Any]:
+        """PCスピーカーの出力デバイス別設定 (enabled / customName / primaryOutput) を取得"""
+        conf = self.settings.get("pcSpeakers")
+        if not isinstance(conf, dict):
+            conf = {"outputs": {}, "primaryOutput": {}}
+            self.settings["pcSpeakers"] = conf
+        if not isinstance(conf.get("outputs"), dict):
+            conf["outputs"] = {}
+        if not isinstance(conf.get("primaryOutput"), dict):
+            conf["primaryOutput"] = {}
+        return conf
+
+    def update_pc_speaker_output(
+        self,
+        client_id: str,
+        output_key: str,
+        enabled: Any = None,
+        custom_name: Any = None,
+        is_primary: Any = None
+    ) -> Dict[str, Any]:
+        """特定のPCクライアントの出力デバイスの有効/無効・カスタム名・メイン指定を更新して永続化"""
+        conf = self.get_pc_speakers_config()
+        comp_key = f"{client_id}@{output_key}"
+        out_conf = dict(conf["outputs"].get(comp_key) or {})
+        if enabled is not None:
+            out_conf["enabled"] = bool(enabled)
+        if custom_name is not None:
+            out_conf["name"] = str(custom_name).strip()
+        conf["outputs"][comp_key] = out_conf
+
+        if is_primary is True:
+            conf["primaryOutput"][client_id] = output_key
+            # メインに指定された出力は自動的に有効化
+            out_conf["enabled"] = True
+
+        self._save(self.settings)
+        return conf
 
 settings_manager = SettingsManager()

@@ -12,12 +12,18 @@ class TestSseEvents(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
         self.orig_admin_password = settings_manager.get().get("adminPassword", "")
-        # テスト実行中は管理者パスワードを一時退避
+        self.orig_dnd = dict(settings_manager.get().get("dnd", {}))
+        # テスト実行中は管理者パスワードを一時退避し、時刻依存の定時スケジュール・カレンダー連動を無効化
         settings_manager.set_admin_password("")
+        dnd_conf = dict(self.orig_dnd)
+        dnd_conf["scheduleEnabled"] = False
+        dnd_conf["calendarEnabled"] = False
+        settings_manager.update({"dnd": dnd_conf})
         ACTIVE_SESSIONS.clear()
 
     def tearDown(self):
         settings_manager.set_admin_password(self.orig_admin_password)
+        settings_manager.update({"dnd": self.orig_dnd})
         ACTIVE_SESSIONS.clear()
 
     def test_event_service_pubsub(self):

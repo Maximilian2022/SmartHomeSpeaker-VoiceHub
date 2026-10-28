@@ -69,7 +69,10 @@ class SpeechService:
         for tgt in target_list:
             norm_tgt = tgt.upper()
             if norm_tgt in ("ALL", "*"):
-                expanded_devices.extend(all_devices)
+                expanded_devices.extend([
+                    d for d in all_devices
+                    if d.get("type") not in ("client", "pc") or d.get("isPrimary", True)
+                ])
             elif norm_tgt in ("GH:ALL", "GOOGLE:ALL"):
                 expanded_devices.extend([d for d in all_devices if d.get("type") == "google"])
             elif norm_tgt in ("AL:ALL", "ALEXA:ALL"):
@@ -81,7 +84,10 @@ class SpeechService:
             elif norm_tgt in ("DLNA:ALL",):
                 expanded_devices.extend([d for d in all_devices if d.get("type") == "dlna"])
             elif norm_tgt in ("PC:ALL", "CLIENT:ALL", "WIN:ALL", "MAC:ALL"):
-                expanded_devices.extend([d for d in all_devices if d.get("type") in ("client", "pc")])
+                expanded_devices.extend([
+                    d for d in all_devices
+                    if d.get("type") in ("client", "pc") and d.get("isPrimary", True)
+                ])
             elif tgt in groups:
                 for member_name in groups[tgt]:
                     found = device_manager.find_device(member_name)
@@ -220,9 +226,9 @@ class SpeechService:
 
         effective_source = source or ("web_ui" if "Mozilla" in client_name or "Web" in client_name else "api")
 
-        # 1. 重複排除 (Deduplication)
+        # 1. 重複排除 (Deduplication) - Web画面からの直接テスト発言(web_ui / quick_test)は除外
         dedup_conf = settings_manager.get().get("deduplication", {})
-        if not urgent and dedup_conf.get("enabled", True):
+        if not urgent and effective_source not in ("web_ui", "quick_test") and dedup_conf.get("enabled", True):
             cooldown = dedup_conf.get("cooldownSeconds", 30)
             if deduplicator.is_duplicate(text, client_name, cooldown):
                 skip_msg = f"直前の同一通知から {cooldown} 秒以内のため重複スキップしました"

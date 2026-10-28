@@ -204,19 +204,20 @@ Docker の `HEALTHCHECK` や各種監視システム（Uptime Kuma, Beszel 等�
 
 | 指定文字列 | 対象スピーカー・動作 |
 |---|---|
-| `ALL` または `*` | **家中すべてのスピーカー**。Google Cast全体グループ、全室Echo、全室HomePod、登録済みONVIFカメラ、DLNAレンダラーを一斉に解決。 |
+| `ALL` または `*` | **家中すべてのスピーカー**。Google Cast全体グループ、全室Echo、全室HomePod、登録済みONVIFカメラ、DLNAレンダラー、および接続中PCスピーカー（各PCの「⭐ メイン出力」1台）を一斉に解決。 |
 | `GH:ALL` / `GOOGLE:ALL` | 宅内のすべての Google Home / Nest デバイス（全体 Cast グループ優先）。 |
 | `AL:ALL` / `ALEXA:ALL` | 宅内のすべての Amazon Echo デバイス（Echo全体グループ優先）。 |
 | `HP:ALL` / `HOMEPOD:ALL` | 宅内のすべての Apple HomePod デバイス。 |
 | `ONVIF:ALL` / `CAM:ALL` | 宅内のすべての登録済み ONVIF ネットワークカメラ。 |
 | `DLNA:ALL` | 宅内のすべての登録済み DLNA / UPnP ネットワークスピーカー。 |
-| `PC:ALL` / `CLIENT:ALL` | 宅内でオンライン接続中のすべての PC スピーカー（Windows / Mac / Linux）。 |
+| `PC:ALL` / `CLIENT:ALL` | 宅内でオンライン接続中のすべての PC スピーカー（Windows / Mac / Linux、各PCの「⭐ メイン出力」1台）。 |
 | `default` | システムで指定された標準スピーカー（`.my.env` の `GOOGLE_HOME_IP` または GUI 指定のデバイス）。 |
 | カスタムグループ名 (例: `1F`, `LDK`) | 設定画面の「デバイスグループ」で定義したスピーカーの組み合わせを展開。 |
 | デバイス表示名 (例: `リビング`, `書斎`) | デバイス名に部分一致する端末を自動検索して解決。 |
 | `alexa:<デバイス名>` | 特定の Amazon Echo デバイスを直接指定。 |
 | `homepod:<IPまたはMAC>` | 特定の Apple HomePod デバイスを直接指定。 |
-| `client:<IDまたは名前>` | 特定の PC スピーカークライアント（Windows / Mac / Linux）を直接指定。 |
+| `client:<IDまたは名前>` | 特定の PC スピーカークライアント（そのPCの「⭐ メイン出力」）を直接指定。 |
+| `client:<ID>@<出力キー>` | PC に接続された特定のオーディオ出力デバイス（例: ヘッドセット、個別スピーカー）をピンポイント指定。 |
 | `onvif:<IP>` | 特定の ONVIF ネットワークカメラを直接指定。 |
 | `dlna:<IP>` | 特定の DLNA / UPnP レンダラーを直接指定。 |
 | IPアドレス (例: `192.168.1.50`) | Google Cast デバイスの IP アドレス直打ち。 |
@@ -628,19 +629,21 @@ P2P地震情報 API（`wss://api.p2pquake.net/v2/ws`）の WebSocket に常時�
   Web GUI の「ONVIF / DLNA」タブでスキャンすると自動検出されます。認証不要でそのまま登録・利用可能です。
 
 ### 8.6 PC スピーカークライアント (Windows / Mac / Linux)
-- **プロトコル**: Server-Sent Events (SSE) 経由の双方向オーディオ配信 (`GET /api/client-speakers/stream`)
-- **クライアント実装**: `clients/speaker/`（単一 Python スクリプト `voicehub_speaker.py` ＋ 自動ブートストラップランチャー）
+- **プロトコル**: Server-Sent Events (SSE) 経由の双方向オーディオ＆制御配信 (`GET /api/client-speakers/stream`)
+- **クライアント実装**: `clients/speaker/`（単一 Python スクリプト `voicehub_speaker.py` ＋ 自動ブートストラップランチャー、VoiceHub サーバーの `/clients/speaker/` から直接配信）
 - **主要な特徴と仕様**:
   1. **常駐待機メモリ約 15MB・CPU 0%**:
      OS ネイティブの最適再生エンジン（macOS は標準 `afplay`、Windows は `miniaudio` / PowerShell、Linux は `paplay` / `mpv` / `aplay` / `miniaudio`）を自動選択し、極低遅延・省メモリで動作します。
-  2. **事前の Python 手動インストール不要 (Zero-Setup)**:
-     `uv` の自動セットアップ機構を内蔵し、初期状態の PC でも `run.bat` や `run.sh`、または Web GUI のワンライナーを実行するだけで全自動で環境が整い即起動します。
-  3. **動的ディスカバリと自動オンライン認識**:
-     クライアントが接続すると VoiceHub のスピーカー一覧に「💻 PC名」が自動出現し、スリープや終了時は自動でオフライン化します。
-  4. **NAT・ファイアウォール完全スルー**:
-     クライアントからサーバーへの外向き HTTP (SSE) 接続のみで動作するため、ポート開放やファイアウォール警告が不要です。
-  5. **完全画面非表示スタートアップ常駐**:
-     Windows は黒いコンソール画面を出さない VBScript を自動生成してスタートアップ登録（`enable_autostart.bat`）。macOS（LaunchAgents）や Linux（systemd --user）にも完全対応。
+  2. **事前の Python 手動インストール不要 (Zero-Setup) ＆ OS別3種ワンライナー**:
+     `uv` の自動セットアップ機構を内蔵。Web GUI の「スマートホーム連携」タブに、閲覧中のサーバーURLと認証トークンが自動埋め込みされた **①一時起動（テスト実行）、②自動起動（常駐化・バックグラウンド起動）、③自動起動の解除（常駐停止）** の3種類のワンライナーを OS 別に提供し、コピー＆ペーストだけで完結します。
+  3. **マルチオーディオ出力デバイスの個別検出・ON/OFF・メイン出力指定**:
+     1台の PC に複数の物理スピーカー（例: `Logicool G560`、モニター内蔵スピーカー）や仮想オーディオデバイス（`SteelSeries Sonar` 等）が接続されている場合、全出力デバイスを自動列挙して VoiceHub に個別登録します。
+     - **有効/無効 (ON/OFF)**: Web GUI の「🔊 接続中 PC の出力スピーカー管理」パネルから、使わない仮想デバイスやモニタースピーカーをワンクリックで無効化（一覧から非表示）できます。
+     - **⭐ メイン出力指定 (`isPrimary`)**: `ALL`（家中一斉）や `PC:ALL`、PC名単体指定時は、複数スピーカーが同時に鳴らないよう各 PC の「⭐ メイン出力」1台のみで再生されます（初期値は OS の既定デバイス）。個別指定時は有効な任意の出力先（ヘッドセット等）をピンポイントで鳴らせます。
+  4. **クライアントスクリプトの自動自己更新 (Auto Self-Update)**:
+     SSE 接続時（`connected` イベント）および Web GUI からの再スキャン指示時（`self_update` イベント）に、サーバー上の `voicehub_speaker.py` の SHA-256 ハッシュ (`scriptHash`) を照合。サーバー側のスクリプトが更新されていた場合、クライアントが自動的に最新版をダウンロードして `~/.voicehub/voicehub_speaker.py` をアトミック更新し、自身のバックグラウンドプロセスを自動再起動します。
+  5. **NAT・ファイアウォール完全スルー ＆ 完全画面非表示常駐**:
+     クライアントからサーバーへの外向き HTTP (SSE) 接続のみで動作。Windows は黒いコンソール画面を一切出さない VBScript ランチャー（`VoiceHub_Speaker.vbs`）を自動生成してスタートアップ登録＆即時バックグラウンド起動。macOS（LaunchAgents）や Linux（`systemd --user`）にも完全対応。
 
 ---
 
@@ -931,8 +934,11 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
 - **`POST /api/onvif/register`**: ONVIF / DLNA デバイスの登録・変更・解除
 - **`POST /api/onvif/test`**: ONVIF / DLNA テスト発声
 - **`POST /api/onvif/default-auth`**: カメラ共通デフォルト認証情報の保存
-- **`GET /api/client-speakers/stream`**: PC スピーカークライアント（Windows / Mac / Linux）常駐接続用 SSE オーディオストリーム
-- **`GET /api/client-speakers`**: 接続中の全 PC スピーカー一覧取得
+- **`GET /api/client-speakers/stream`**: PC スピーカークライアント（Windows / Mac / Linux）常駐接続用 SSE オーディオ＆制御ストリーム（出力デバイス一覧・スクリプトハッシュ照合対応）
+- **`GET /api/client-speakers`**: 接続中の全 PC スピーカークライアント一覧、各出力デバイス設定、サーバースクリプトハッシュの取得
+- **`POST /api/client-speakers/config`**: PC 出力デバイスごとの有効/無効 (`enabled`)、表示名 (`customName`)、メイン出力指定 (`isPrimary`) の更新・永続化
+- **`POST /api/client-speakers/outputs`**: クライアントからのオーディオ出力デバイス再スキャン結果の受信・即時反映
+- **`POST /api/client-speakers/rescan`**: 接続中の PC クライアントへ出力デバイス再スキャン (`rescan`) およびスクリプト自動更新チェック (`self_update`) を送信
 
 ### 13.13 MQTT API
 - **`GET /api/mqtt/status`**: 全 MQTT ブローカーの接続状態取得
@@ -1037,6 +1043,8 @@ Web GUI の「拡張・システム設定」は、macOS や Home Assistant の�
   WS-Discovery によるカメラ探索と、同梱 `go2rtc` 経由での Two-Way Audio バックチャンネルプッシュ。
 - **`dlna_service.py`**:
   SSDP によるレンダラー探索と、UPnP AVTransport / RenderingControl SOAP 制御。
+- **`client_speaker_service.py`**:
+  Windows / Mac / Linux 常駐 PC スピーカークライアントの SSE セッション管理、マルチオーディオ出力デバイスの個別展開・有効/無効フィルタリング・メイン出力 (`isPrimary`) 解決、音声再生イベントおよび自己更新 (`self_update`) / 再スキャン (`rescan`) イベントのディスパッチ。
 - **`dnd_service.py`**:
   カレンダー、スケジュール、手動タイマーの多層判定と、保留キュー・AI要約トリガーの管理。
 - **`calendar_service.py`**:

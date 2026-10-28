@@ -3,6 +3,31 @@
 すべての重要な変更はこのファイルに記録されます。
 フォーマットは [Keep a Changelog](https://keepachangelog.com/ja/1.0.0/) に基づいています。
 
+## [1.0.14] - 2026-10-28
+
+### 追加・新機能 (Added)
+- **PC スピーカーのマルチオーディオ出力デバイス個別検出・ON/OFF・メイン出力指定 (`clients/speaker/voicehub_speaker.py`, `app/services/client_speaker_service.py`, `app/routers/client_speakers.py`, `app/services/speech_service.py`)**:
+  - 1台の PC に複数の物理スピーカー（`Logicool G560`、モニター内蔵スピーカー等）や仮想オーディオデバイス（`SteelSeries Sonar` 等）が接続されている場合、全再生デバイスを自動列挙して VoiceHub に個別登録する機能を追加。
+  - Web GUI の「💻 PC スピーカー連携」カード内に **「🔊 接続中 PC の出力スピーカー管理」** パネルを新設し、出力デバイスごとの **有効/無効 (ON/OFF)** トグル、**「⭐ メインに設定」** ラジオボタン、および単体テスト発声ボタン（`🔊 テスト`）を実装。
+  - `ALL`（家中一斉）や `PC:ALL`、PC名単体指定時は、複数スピーカーが同時に鳴らないよう各 PC の「⭐ メイン出力」1台のみで再生し、個別指定時は有効な任意の出力デバイスをピンポイントで鳴らせるよう改善。
+- **クライアントスクリプトの自動自己更新 (Auto Self-Update) (`clients/speaker/voicehub_speaker.py`, `app/routers/client_speakers.py`)**:
+  - SSE 接続時（`connected` イベント）および Web GUI からの再スキャン指示時（`self_update` イベント）にサーバー上の `voicehub_speaker.py` の SHA-256 ハッシュ (`scriptHash`) を照合。更新があれば自動ダウンロードして `~/.voicehub/voicehub_speaker.py` をアトミック更新し、プロセスを自動再起動する機構を実装。
+- **OS別ワンライナー3種への拡充とサーバー直接配信 (`public/index.html`, `public/app.js`, `app/main.py`)**:
+  - Windows / macOS / Linux の各タブに **①一時起動（テスト実行）、②自動起動（常駐化・バックグラウンド起動）、③自動起動の解除（常駐停止）** の3種類のワンライナーを整備。
+  - VoiceHub サーバー自身（`/clients/speaker/`）からクライアントスクリプトを直接配信し、Windows でも `--autostart enable` 実行と同時に `wscript.exe //B` で黒い画面を出さずに即時バックグラウンド常駐を開始するよう改善。
+
+### 修正・堅牢化 (Fixed / Reliability)
+- **PCスピーカー連携カードの i18n 翻訳キー補完とキャッシュバスター更新 (`public/locales/ja.json`, `public/locales/en.json`, `public/index.html`, `public/i18n.js`)**:
+  - `settingsIntegrations.pcSpeakerHeader` / `pcSpeakerSub` をはじめとする全翻訳キーを日英辞書に追加し、`{SERVER_URL}` の3段階置換により未置換エラーを完全防止。
+- **管理者ブラウザセッションのレート制限ロックアウト巻き込み防止 (`app/core/security.py`, `app/services/speech_service.py`)**:
+  - 同一 PC 上の外部スクリプトが認証エラーを起こした際でも、静的 Web UI アセットや認証済みブラウザセッション（`auth_token` Cookie）が 429 ロックアウトに巻き込まれないよう認証評価順序を改善。
+  - Web UI からの直接テスト発言（`web_ui` / `quick_test`）を30秒重複スキップ（Deduplication）の対象外とし、連続テスト発声が行えるよう改善。
+- **Watchtower 稼働ヘルスチェック時の意図せぬコンテナ更新トリガー防止 (`app/services/update_service.py`, `tests/test_update_service.py`, `tests/test_sse_events.py`)**:
+  - Watchtower の `/v1/update` エンドポイントは `GET` リクエストであっても有効な Bearer トークンを付与すると即座にコンテナ更新を開始する仕様であるため、`check_watchtower_health()` ではトークンを付与せずステータスコード（`401` 等）の応答のみで安全に生存確認を行うよう修正。
+  - 単体テスト実行時間帯（DND 定時スケジュール時間内）に依存しないよう `test_sse_events.py` のテスト環境分離を強化。
+- **仕様書・取扱説明書の最新化 (`MANUAL.md`, `MANUAL-en.md`, `clients/speaker/README.md`)**:
+  - マルチ出力管理、メイン出力解決アルゴリズム、クライアント自動自己更新、新規 API エンドポイント（`/api/client-speakers/config`, `/outputs`, `/rescan`）を日英マニュアルへ反映。
+
 ## [1.0.13] - 2026-10-28
 
 ### 追加・新機能 (Added)

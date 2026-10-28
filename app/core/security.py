@@ -222,7 +222,15 @@ def check_tunnel_access(request: Request):
             return
 
         path = request.url.path
-        if not (path == "/api/say" or path == "/api/webhook" or path.startswith("/mcp") or path.startswith("/.well-known/")):
+        if not (
+            path == "/api/say"
+            or path == "/api/webhook"
+            or path.startswith("/api/client-speakers")
+            or path.startswith("/clients/speaker/")
+            or path.startswith("/voice/")
+            or path.startswith("/mcp")
+            or path.startswith("/.well-known/")
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: Web GUI and management APIs are restricted to internal LAN when ADMIN_PASSWORD is not configured."
@@ -334,6 +342,19 @@ def check_admin_auth(request: Request):
     if path in ("/api/auth/login", "/api/auth/status") or path in ("/api/say", "/api/webhook") or (path == "/api/system/version" and request.method == "GET"):
         return True
 
+    # 静的アセット (WebUI: /, /app.js, /style.css 等) は除外
+    if not path.startswith("/api/") and not path.startswith("/mcp"):
+        return True
+
+    admin_password = get_effective_admin_password()
+    if not admin_password:
+        return True
+
+    # 1. 既に認証済みの管理者ブラウザセッション Cookie (auth_token) は同一IPの他プロセス失敗ロックに巻き込まない
+    cookie_token = request.cookies.get("auth_token")
+    if cookie_token and cookie_token in ACTIVE_SESSIONS:
+        return True
+
     client_ip = extract_client_ip(request)
     is_locked, remaining = login_rate_limiter.is_locked(client_ip)
     if is_locked:
@@ -341,15 +362,6 @@ def check_admin_auth(request: Request):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"認証試行回数が上限を超えました。{remaining}秒後に再試行してください。"
         )
-
-    admin_password = get_effective_admin_password()
-    if not admin_password:
-        return True
-
-    # 1. Cookie auth_token
-    cookie_token = request.cookies.get("auth_token")
-    if cookie_token and cookie_token in ACTIVE_SESSIONS:
-        return True
 
     # 2. Direct Header auth (X-Admin-Password / Bearer) (タイミング攻撃対策のため hmac.compare_digest を使用)
     x_admin_pass = request.headers.get("x-admin-password")

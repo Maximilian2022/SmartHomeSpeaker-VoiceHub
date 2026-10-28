@@ -104,17 +104,19 @@ class UpdateService:
         return res_data
 
     async def check_watchtower_health(self) -> Dict[str, Any]:
-        """Watchtower HTTP API の稼働状態を確認"""
+        """
+        Watchtower HTTP API の稼働状態を確認。
+        注意: Watchtower の /v1/update は GET リクエストであっても有効な Bearer トークンを渡すと
+        即時アップデートが発動してしまう仕様のため、ヘルスチェック時はトークンを付与せず
+        HTTP 応答 (401 Unauthorized / 404 / 405 / 200) の有無のみでプロセス生存を安全に判定する。
+        """
         conf = settings_manager.get().get("systemUpdate", {})
         wt_url = (conf.get("watchtowerUrl") or "http://127.0.0.1:8082").rstrip("/")
-        token = conf.get("watchtowerToken") or "voicehub-watchtower-token"
 
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
-                # Watchtower HTTP API は無効なパスやメソッドでも応答が返れば起動確認可能
-                resp = await client.get(f"{wt_url}/v1/update", headers={"Authorization": f"Bearer {token}"})
-                # 405 Method Not Allowed (POSTのみ許可) または 200 OK なら Watchtower が正常待機中
-                is_ready = resp.status_code in (200, 405, 401)
+                resp = await client.get(f"{wt_url}/v1/update")
+                is_ready = resp.status_code in (200, 401, 404, 405)
                 return {
                     "available": is_ready,
                     "url": wt_url,

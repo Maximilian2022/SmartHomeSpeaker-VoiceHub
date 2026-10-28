@@ -557,6 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof updateGeminiGuidePrompt === 'function') {
         updateGeminiGuidePrompt();
       }
+      window.dispatchEvent(new CustomEvent('voicehub:settings-loaded'));
 
       // HomePod 台数の反映
       const hpBadge = document.getElementById('homepodStatusBadge');
@@ -1441,7 +1442,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${isClient ? (() => {
                   const p = (dev.platform || '').toLowerCase();
                   const pLabel = p.includes('mac') || p.includes('darwin') ? '🍎 Mac' : (p.includes('win') ? '🪟 Windows' : (p.includes('linux') ? '🐧 Linux' : '💻 PC'));
-                  return `<span class="device-tag client" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);font-size:0.7rem;padding:2px 6px;">${pLabel}</span>`;
+                  const primBadge = dev.isPrimary
+                    ? `<span class="device-tag" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-size:0.68rem;padding:2px 5px;margin-left:4px;" title="ALL / PC:ALL 一斉発話時のメイン出力">⭐ メイン</span>`
+                    : '';
+                  return `<span class="device-tag client" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);font-size:0.7rem;padding:2px 6px;">${pLabel}</span>${primBadge}`;
                 })() : ''}
                 ${isTapo ? '<span class="device-tag tapo" style="background:rgba(6,182,212,0.15);color:#22d3ee;border:1px solid rgba(6,182,212,0.3);font-size:0.7rem;padding:2px 6px;">📹 Tapo</span>' : ''}
                 ${isOnvif ? '<span class="device-tag onvif" style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.3);font-size:0.7rem;padding:2px 6px;">📷 ONVIF</span>' : ''}
@@ -1480,11 +1484,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function updatePcSpeakerStatusBadge() {
     const badge = document.getElementById('pcSpeakerStatusBadge');
     if (!badge || !state.devices) return;
-    const pcCount = state.devices.filter(d => d.type === 'client' || d.type === 'pc' || (d.ip && d.ip.startsWith('client:'))).length;
+    const clientDevs = state.devices.filter(d => d.type === 'client' || d.type === 'pc' || (d.ip && d.ip.startsWith('client:')));
+    const uniquePcs = new Set(clientDevs.map(d => d.clientId || String(d.ip || '').split('@')[0]));
+    const pcCount = uniquePcs.size;
+    const outCount = clientDevs.length;
     if (window.i18n && window.i18n.getLanguage() === 'en') {
-      badge.textContent = `${pcCount} Connected`;
+      badge.textContent = outCount > pcCount ? `${pcCount} PC (${outCount} Speakers)` : `${pcCount} Connected`;
     } else {
-      badge.textContent = `${pcCount} 台接続中`;
+      badge.textContent = outCount > pcCount ? `${pcCount} 台接続中 (${outCount} 出力有効)` : `${pcCount} 台接続中`;
+    }
+    if (typeof loadPcSpeakerClients === 'function') {
+      loadPcSpeakerClients();
     }
   }
 
@@ -5953,21 +5963,65 @@ document.addEventListener('DOMContentLoaded', () => {
     // 7. PC スピーカー連携 (Windows / Mac / Linux)
     function updatePcSpeakerCommands() {
       const serverUrl = window.location.origin;
-      const whToken = (state.settings && state.settings.webhookToken && state.settings.webhookToken !== '********') ? state.settings.webhookToken : '';
+      let whToken = state.serverInfo?.webhookToken
+        || state.serverStatus?.webhookToken
+        || document.getElementById('txtWebhookTokenVal')?.value
+        || state.settings?.webhookToken
+        || '';
+      if (whToken === '********') {
+        whToken = '';
+      }
       const tokenArg = whToken ? ` --token '${whToken}'` : '';
+
+      const scriptUrl = `${serverUrl}/clients/speaker/voicehub_speaker.py`;
+      const runShUrl = `${serverUrl}/clients/speaker/run.sh`;
+      const winBase = `if (!(Test-Path $env:USERPROFILE\\.local\\bin\\uv.exe)) { irm https://astral.sh/uv/install.ps1 | iex }; & $env:USERPROFILE\\.local\\bin\\uv.exe run '${scriptUrl}'`;
+      const unixBase = `curl -fsSL '${runShUrl}' | bash -s --`;
 
       const winEl = document.getElementById('cmdWinOneLiner');
       if (winEl) {
-        winEl.textContent = `powershell -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex; & $env:USERPROFILE\\.local\\bin\\uv.exe run https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/voicehub_speaker.py --server ${serverUrl} --name 'My-Windows-PC'${tokenArg}"`;
+        winEl.textContent = `powershell -ExecutionPolicy Bypass -Command "${winBase} --server '${serverUrl}' --name 'My-Windows-PC'${tokenArg}"`;
       }
+      const winEnableEl = document.getElementById('cmdWinAutostartEnable');
+      if (winEnableEl) {
+        winEnableEl.textContent = `powershell -ExecutionPolicy Bypass -Command "${winBase} --server '${serverUrl}' --name 'My-Windows-PC'${tokenArg} --autostart enable"`;
+      }
+      const winDisableEl = document.getElementById('cmdWinAutostartDisable');
+      if (winDisableEl) {
+        winDisableEl.textContent = `powershell -ExecutionPolicy Bypass -Command "${winBase} --autostart disable"`;
+      }
+
       const macEl = document.getElementById('cmdMacOneLiner');
       if (macEl) {
-        macEl.textContent = `curl -fsSL https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/run.sh | bash -s -- --server ${serverUrl} --name 'My-MacBook'${tokenArg}`;
+        macEl.textContent = `${unixBase} --server '${serverUrl}' --name 'My-MacBook'${tokenArg}`;
       }
+      const macEnableEl = document.getElementById('cmdMacAutostartEnable');
+      if (macEnableEl) {
+        macEnableEl.textContent = `${unixBase} --server '${serverUrl}' --name 'My-MacBook'${tokenArg} --autostart enable`;
+      }
+      const macDisableEl = document.getElementById('cmdMacAutostartDisable');
+      if (macDisableEl) {
+        macDisableEl.textContent = `${unixBase} --autostart disable`;
+      }
+
       const linuxEl = document.getElementById('cmdLinuxOneLiner');
       if (linuxEl) {
-        linuxEl.textContent = `curl -fsSL https://raw.githubusercontent.com/Maximilian2022/SmartHomeSpeaker-VoiceHub/main/clients/speaker/run.sh | bash -s -- --server ${serverUrl} --name 'My-Linux-PC'${tokenArg}`;
+        linuxEl.textContent = `${unixBase} --server '${serverUrl}' --name 'My-Linux-PC'${tokenArg}`;
       }
+      const linuxEnableEl = document.getElementById('cmdLinuxAutostartEnable');
+      if (linuxEnableEl) {
+        linuxEnableEl.textContent = `${unixBase} --server '${serverUrl}' --name 'My-Linux-PC'${tokenArg} --autostart enable`;
+      }
+      const linuxDisableEl = document.getElementById('cmdLinuxAutostartDisable');
+      if (linuxDisableEl) {
+        linuxDisableEl.textContent = `${unixBase} --autostart disable`;
+      }
+
+      document.querySelectorAll('#pcSpeakerCard code').forEach(el => {
+        if (el.textContent.includes('{SERVER_URL}')) {
+          el.textContent = el.textContent.replace(/\{SERVER_URL\}/g, serverUrl);
+        }
+      });
     }
 
     // OS切り替えタブ
@@ -5986,10 +6040,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // コピーボタン
     document.querySelectorAll('.btn-copy-cmd').forEach(btn => {
       btn.addEventListener('click', async () => {
+        updatePcSpeakerCommands();
         const targetId = btn.getAttribute('data-target');
         const targetEl = document.getElementById(targetId);
         if (targetEl) {
-          const ok = await copyTextToClipboard(targetEl.textContent.trim());
+          const cmdText = targetEl.textContent.trim().replace(/\{SERVER_URL\}/g, window.location.origin);
+          const ok = await copyTextToClipboard(cmdText);
           if (ok) {
             const origText = btn.textContent;
             btn.textContent = '✓ コピー完了';
@@ -6008,6 +6064,208 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updatePcSpeakerCommands();
     window.addEventListener('voicehub:settings-loaded', updatePcSpeakerCommands);
+
+    // PCスピーカーの出力デバイス管理（有効/無効・メイン出力指定・再スキャン）
+    const btnRescanPc = document.getElementById('btnRescanPcSpeakers');
+    if (btnRescanPc) {
+      btnRescanPc.addEventListener('click', async () => {
+        const origHtml = btnRescanPc.innerHTML;
+        btnRescanPc.disabled = true;
+        btnRescanPc.innerHTML = '<span>⏳</span> <span>スキャン・更新送信中...</span>';
+        try {
+          const res = await fetch('/api/client-speakers/rescan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          showToast(isEn() ? 'Sent rescan & self-update command to connected PCs' : '接続中のPCへ出力再スキャン＆スクリプト更新指示を送信しました', 'info');
+          setTimeout(async () => {
+            await loadPcSpeakerClients();
+            if (typeof loadDevices === 'function') await loadDevices(true);
+          }, 1500);
+        } catch (err) {
+          showToast('再スキャン送信失敗: ' + err.message, 'error');
+        } finally {
+          setTimeout(() => {
+            btnRescanPc.disabled = false;
+            btnRescanPc.innerHTML = origHtml;
+          }, 1500);
+        }
+      });
+    }
+
+    loadPcSpeakerClients();
+  }
+
+  async function loadPcSpeakerClients() {
+    const listEl = document.getElementById('pcSpeakerClientsList');
+    if (!listEl) return;
+    try {
+      const res = await fetch('/api/client-speakers');
+      if (!res.ok) return;
+      const data = await res.json();
+      renderPcSpeakerClientsList(data.clients || [], data.scriptHash || '');
+    } catch (e) {
+      console.warn('[PcSpeaker] Failed to load client speakers:', e);
+    }
+  }
+
+  function renderPcSpeakerClientsList(clients, serverScriptHash) {
+    const listEl = document.getElementById('pcSpeakerClientsList');
+    if (!listEl) return;
+
+    if (!Array.isArray(clients) || clients.length === 0) {
+      listEl.innerHTML = `<div style="font-size: 0.82rem; color: var(--text-muted); padding: 8px 0;">${
+        isEn()
+          ? 'No PC clients currently connected. Run the one-liner below on your PC to connect.'
+          : '現在接続中の PC クライアントはありません。下のワンライナーを PC で実行するとここに自動表示されます。'
+      }</div>`;
+      return;
+    }
+
+    listEl.innerHTML = clients.map(c => {
+      const p = (c.platform || '').toLowerCase();
+      const osIcon = p.includes('mac') || p.includes('darwin') ? '🍎 macOS' : (p.includes('win') ? '🪟 Windows' : (p.includes('linux') ? '🐧 Linux' : '💻 PC'));
+      const outputs = Array.isArray(c.outputs) ? c.outputs : [];
+      const hasMulti = outputs.some(o => o.outputKey);
+      const scriptBadge = c.scriptHash
+        ? (c.isUpToDate
+            ? `<span style="font-size:0.72rem; padding:2px 7px; border-radius:999px; background:rgba(16,185,129,0.15); color:#34d399; border:1px solid rgba(16,185,129,0.35);">🟢 最新スクリプト (${escapeHtml(c.scriptHash.slice(0, 7))})</span>`
+            : `<span style="font-size:0.72rem; padding:2px 7px; border-radius:999px; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.35);">🔄 更新待機中 (${escapeHtml(c.scriptHash.slice(0, 7))})</span>`)
+        : `<span style="font-size:0.72rem; padding:2px 7px; border-radius:999px; background:rgba(245,158,11,0.18); color:#fbbf24; border:1px solid rgba(245,158,11,0.4);" title="自動アップデート機能導入前の旧スクリプトで動作中です。下の『② ワンライナー: 自動起動（常駐化）』を1度だけPCで再実行すると、マルチスピーカー個別検出＆自動アップデート対応版に更新されます。">⚠️ 旧スクリプト動作中 (ワンライナー再実行でマルチ出力検出に対応)</span>`;
+
+      const rowsHtml = outputs.map((out, idx) => {
+        const outKey = out.outputKey || 'default';
+        const outLabel = out.outputName || out.name || '規定の出力デバイス';
+        const isEnabled = out.enabled !== false;
+        const isPrimary = !!out.isPrimary;
+        const isOsDef = !!out.isOsDefault;
+        const radioName = `pcPrimary_${c.clientId}`;
+
+        return `
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; padding:8px 10px; border-radius:6px; background:${isPrimary ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.03)'}; border:1px solid ${isPrimary ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255,255,255,0.06)'}; opacity:${isEnabled ? '1' : '0.55'};">
+            <div style="display:flex; align-items:center; gap:10px; min-width:200px; flex:1;">
+              <label class="switch" title="${isEn() ? 'Enable / Disable this output in VoiceHub speaker list' : 'この出力デバイスをVoiceHubのスピーカー一覧に表示・有効化'}">
+                <input type="checkbox" class="chk-pc-output-enable" data-client-id="${escapeHtml(c.clientId)}" data-output-key="${escapeHtml(outKey)}" ${isEnabled ? 'checked' : ''} ${!hasMulti ? 'disabled' : ''}>
+                <span class="slider"></span>
+              </label>
+              <div style="min-width:0;">
+                <div style="font-size:0.85rem; font-weight:600; color:var(--text-color); display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <span>${escapeHtml(outLabel)}</span>
+                  ${isOsDef && hasMulti ? `<span style="font-size:0.68rem; padding:1px 6px; border-radius:4px; background:rgba(56,189,248,0.15); color:#38bdf8; border:1px solid rgba(56,189,248,0.3);">OS既定</span>` : ''}
+                  ${isPrimary ? `<span style="font-size:0.68rem; padding:1px 6px; border-radius:4px; background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4);">⭐ メイン出力 (ALL対象)</span>` : ''}
+                </div>
+                <div style="font-size:0.74rem; color:var(--text-muted);">
+                  宛先指定名: <code>${escapeHtml(out.name)}</code> / ID: <code>${escapeHtml(out.ip)}</code>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              ${hasMulti ? `
+                <label style="display:inline-flex; align-items:center; gap:5px; font-size:0.78rem; cursor:pointer; color:${isPrimary ? '#34d399' : 'var(--text-muted)'}; font-weight:${isPrimary ? '600' : '400'}; padding:4px 8px; border-radius:6px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08);">
+                  <input type="radio" name="${escapeHtml(radioName)}" class="rad-pc-output-primary" data-client-id="${escapeHtml(c.clientId)}" data-output-key="${escapeHtml(outKey)}" ${isPrimary ? 'checked' : ''}>
+                  <span>${isEn() ? 'Primary (ALL)' : 'メインに設定'}</span>
+                </label>
+              ` : ''}
+              <button type="button" class="btn btn-secondary btn-xs btn-test-pc-output" data-ip="${escapeHtml(out.ip)}" data-name="${escapeHtml(out.name)}" style="white-space:nowrap;">
+                🔊 ${isEn() ? 'Test' : 'テスト'}
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div style="background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <strong style="font-size:0.9rem; color:#e2e8f0;">${escapeHtml(c.name)}</strong>
+              <span style="font-size:0.75rem; color:var(--text-muted);">(${osIcon} · IP: ${escapeHtml(c.ip)})</span>
+            </div>
+            <div>${scriptBadge}</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            ${rowsHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // イベントバインド: 有効/無効トグル
+    listEl.querySelectorAll('.chk-pc-output-enable').forEach(chk => {
+      chk.addEventListener('change', async (e) => {
+        const clientId = e.target.getAttribute('data-client-id');
+        const outputKey = e.target.getAttribute('data-output-key');
+        const enabled = e.target.checked;
+        try {
+          const res = await fetch('/api/client-speakers/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId, outputKey, enabled })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          renderPcSpeakerClientsList(data.clients || []);
+          if (typeof loadDevices === 'function') await loadDevices(true);
+          showToast(enabled ? '出力スピーカーを有効化しました' : '出力スピーカーを無効化（一覧から非表示）しました', 'success');
+        } catch (err) {
+          showToast('設定変更失敗: ' + err.message, 'error');
+        }
+      });
+    });
+
+    // イベントバインド: メイン出力ラジオ選択
+    listEl.querySelectorAll('.rad-pc-output-primary').forEach(rad => {
+      rad.addEventListener('change', async (e) => {
+        if (!e.target.checked) return;
+        const clientId = e.target.getAttribute('data-client-id');
+        const outputKey = e.target.getAttribute('data-output-key');
+        try {
+          const res = await fetch('/api/client-speakers/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId, outputKey, isPrimary: true })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          renderPcSpeakerClientsList(data.clients || []);
+          if (typeof loadDevices === 'function') await loadDevices(true);
+          showToast('メイン出力スピーカー（ALL / PC:ALL 対象）を変更しました', 'success');
+        } catch (err) {
+          showToast('メイン出力変更失敗: ' + err.message, 'error');
+        }
+      });
+    });
+
+    // イベントバインド: 出力デバイス個別テスト発声
+    listEl.querySelectorAll('.btn-test-pc-output').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const ip = btn.getAttribute('data-ip');
+        const name = btn.getAttribute('data-name');
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '⏳ 送信中...';
+        try {
+          const res = await fetch('/api/say', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: `${name} のスピーカー出力テストです。`,
+              target: ip,
+              source: 'quick_test'
+            })
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          showToast(`「${name}」へテスト音声を送信しました`, 'success');
+        } catch (err) {
+          showToast('テスト送信失敗: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = origText;
+        }
+      });
+    });
   }
 
   // ================= ONVIF カメラスピーカー設定 =================

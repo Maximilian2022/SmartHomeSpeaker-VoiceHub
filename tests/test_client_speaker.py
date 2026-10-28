@@ -122,6 +122,54 @@ class TestClientSpeakerIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(targets_single), 1)
         self.assertEqual(targets_single[0]["id"], "client_pc1")
 
+    async def test_multi_output_devices_and_primary_selection(self):
+        """1台のPCに複数スピーカー（物理・仮想）が接続されている場合の個別登録・ON/OFF・メイン指定テスト"""
+        sample_outputs = [
+            {"key": "0_Logicool_G560", "name": "Logicool G560 Gaming Speaker", "isDefault": True},
+            {"key": "1_SteelSeries_Sonar", "name": "SteelSeries Sonar - Gaming", "isDefault": False},
+            {"key": "2_Realtek_Audio", "name": "Realtek Digital Output", "isDefault": False},
+        ]
+        queue = await client_speaker_service.register(
+            client_id="win_multi",
+            name="My-Windows-PC",
+            ip="192.168.11.158",
+            platform="windows",
+            outputs=sample_outputs,
+            script_hash="abcd1234"
+        )
+        self.assertIsNotNone(queue)
+
+        # 全3出力が個別に有効デバイスとして取得されること
+        active_devs = client_speaker_service.get_active_devices(include_disabled=False)
+        self.assertEqual(len(active_devs), 3)
+
+        # OS既定の Logicool G560 が初期メイン (isPrimary=True) になっていること
+        primaries = [d for d in active_devs if d.get("isPrimary")]
+        self.assertEqual(len(primaries), 1)
+        self.assertEqual(primaries[0]["outputKey"], "0_Logicool_G560")
+
+        # PC:ALL マクロ解決時は、3台すべてではなくメイン出力 (Logicool G560) の1台のみが選ばれること
+        pc_all_targets = await speech_service.resolve_targets(["PC:ALL"])
+        win_targets = [d for d in pc_all_targets if d.get("clientId") == "win_multi"]
+        self.assertEqual(len(win_targets), 1)
+        self.assertEqual(win_targets[0]["outputKey"], "0_Logicool_G560")
+
+        # 個別スピーカー指定時は、メイン以外の出力 (SteelSeries Sonar) もピンポイントで指定再生できること
+        sonar_targets = await speech_service.resolve_targets(["My-Windows-PC (SteelSeries Sonar - Gaming)"])
+        self.assertEqual(len(sonar_targets), 1)
+        self.assertEqual(sonar_targets[0]["outputKey"], "1_SteelSeries_Sonar")
+
+        # send_play_event で対象出力の output_key と output_name がSSEイベントに含まれること
+        ok = await client_speaker_service.send_play_event(
+            client_id=sonar_targets[0]["ip"],
+            audio_url="http://localhost:8080/voice/test.mp3",
+            text="個別出力テスト"
+        )
+        self.assertTrue(ok)
+        ev = queue.get_nowait()
+        self.assertEqual(ev["data"]["output_key"], "1_SteelSeries_Sonar")
+        self.assertEqual(ev["data"]["output_name"], "SteelSeries Sonar - Gaming")
+
     def test_api_client_speakers_list(self):
         """GET /api/client-speakers の API テスト"""
         client = TestClient(app)
@@ -130,3 +178,5 @@ class TestClientSpeakerIntegration(unittest.IsolatedAsyncioTestCase):
         data = res.json()
         self.assertIn("count", data)
         self.assertIn("devices", data)
+        self.assertIn("clients", data)
+        self.assertIn("scriptHash", data)

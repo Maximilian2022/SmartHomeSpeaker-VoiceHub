@@ -1,5 +1,49 @@
 # 修正履歴 (Remediation History)
 
+## 2026-10-28 14:10 - PCスピーカーのマルチ出力個別管理（ON/OFF・メイン指定）・クライアント自動自己更新・OS別3種ワンライナー拡充・マニュアル最新化とv1.0.14リリース
+- **背景と課題**:
+  1. Windows PC に複数のオーディオ出力デバイス（`Logicool G560`、モニタースピーカー、`SteelSeries Sonar` 等の仮想オーディオデバイス）が接続されている環境で、発話時に意図しない複数スピーカーから音が鳴る事象が発生。
+  2. 汎用性を高めるため、PC に接続されている全出力デバイス（物理・仮想）を検出して個別に VoiceHub へ登録し、Web UI から各出力デバイスの **有効/無効 (ON/OFF)** と **メイン出力（`ALL` / `PC:ALL` 一斉発話時に鳴らす代表1台）** を切り替えられるようにしたい。
+  3. 今後クライアントスクリプト (`voicehub_speaker.py`) にアップデートがあった際、PC 側で手動再設定しなくても自動でアップデートされる仕組みを組み込みたい。
+  4. Web UI の PC スピーカー連携カードにおいて、OS 別に「① 一時起動」「② 自動起動（常駐化）」「③ 自動起動の解除」の3種類のワンライナーを用意し、翻訳キー補完およびマニュアル（`MANUAL.md` / `MANUAL-en.md` / `clients/speaker/README.md`）を最新仕様へアップデートして `v1.0.14` としてリリースしたい。
+- **改修内容**:
+  1. **PC クライアント側のマルチ出力デバイス列挙・デバイス指定再生・自動自己更新 ([clients/speaker/voicehub_speaker.py](file:///root/google-home-voicetext-docker/clients/speaker/voicehub_speaker.py))**:
+     - `AudioPlayer.get_playback_devices()`: `miniaudio.Devices()` (Windows/Linux) 等を用いて PC に接続されている全再生デバイス（`key`, `name`, `isDefault`）を列挙し、SSE 接続時および `rescan` イベント受信時にサーバーへ報告する機能を実装。
+     - `AudioPlayer.play()` / `_play_windows()` / `_play_linux()`: サーバーからの `play` イベントに含まれる `output_key` / `output_name` から対象の `ma_device_id` を特定し、`miniaudio.PlaybackDevice(device_id=target_ma_id)` に明示指定してピンポイントで該当スピーカーのみから再生するよう改善。
+     - `_check_and_self_update()`: サーバー接続時の `connected` イベントおよび `self_update` イベントに含まれるサーバー側スクリプトの SHA-256 ハッシュ (`scriptHash`) とローカルスクリプトハッシュを比較し、差異があれば `${server_url}/clients/speaker/voicehub_speaker.py` から最新版を自動ダウンロードして `~/.voicehub/voicehub_speaker.py` をアトミック更新し、自身のプロセスを自動再起動する機構を実装。
+  2. **サーバー側のマルチ出力管理・メイン出力解決・設定永続化 ([app/services/client_speaker_service.py](file:///root/google-home-voicetext-docker/app/services/client_speaker_service.py), [app/routers/client_speakers.py](file:///root/google-home-voicetext-docker/app/routers/client_speakers.py), [app/services/settings_service.py](file:///root/google-home-voicetext-docker/app/services/settings_service.py), [app/services/devices_service.py](file:///root/google-home-voicetext-docker/app/services/devices_service.py), [app/services/speech_service.py](file:///root/google-home-voicetext-docker/app/services/speech_service.py))**:
+     - `ClientSpeakerInfo.to_device_dicts()`: PC ごとの各出力デバイスを `client:<clientId>@<outputKey>`（表示名 `PC名 (デバイス名)`）として個別スピーカー辞書に展開。
+     - `settings_service.py` に `pcSpeakers.outputs`（有効/無効・カスタム名）および `pcSpeakers.primaryOutput`（PCごとのメイン出力キー）の永続化を追加。
+     - `speech_service.py` の `resolve_targets()` にて、`ALL`（家中一斉）および `PC:ALL` 指定時は各 PC の **メイン出力 (`isPrimary=True`) 1台のみ** を対象とし、個別指定時は有効な任意の出力デバイスを個別に鳴らせるように実装。また Web UI からのテスト発言（`web_ui` / `quick_test`）を30秒重複スキップ対象外に変更。
+     - `POST /api/client-speakers/config`（出力ごとの ON/OFF・メイン指定保存）、`POST /api/client-speakers/outputs`（再スキャン報告）、`POST /api/client-speakers/rescan`（再スキャン＆自己更新トリガー）を新設。
+  3. **Web UI「接続中 PC の出力スピーカー管理」パネル・OS別3種ワンライナー・認証保護 ([public/index.html](file:///root/google-home-voicetext-docker/public/index.html), [public/app.js](file:///root/google-home-voicetext-docker/public/app.js), [public/locales/ja.json](file:///root/google-home-voicetext-docker/public/locales/ja.json), [public/locales/en.json](file:///root/google-home-voicetext-docker/public/locales/en.json), [app/core/security.py](file:///root/google-home-voicetext-docker/app/core/security.py), [app/main.py](file:///root/google-home-voicetext-docker/app/main.py))**:
+     - PC スピーカー連携カード内に接続中 PC ごとの出力デバイス一覧を表示し、各出力の有効/無効トグル、`⭐ メインに設定` ラジオボタン、`🔊 テスト` 発声ボタン、スクリプト最新状態バッジ、`🔄 再スキャン・クライアント更新` ボタンを実装。
+     - Windows / macOS / Linux 各タブに ①一時起動、②自動起動（常駐化）、③自動起動の解除 の3種ワンライナーを整備し、`/clients` StaticFiles マウントによって VoiceHub サーバー自身から最新クライアントスクリプトを直接配信。
+     - 同一 IP 上の外部スクリプトが認証エラーを起こした際でも、認証済み管理者ブラウザセッション（`auth_token` Cookie）や静的アセットが 429 ロックアウトに巻き込まれないよう `check_admin_auth()` の評価順序を改善。
+  4. **Watchtower ヘルスチェック暴発防止・ドキュメント最新化・単体テスト検証・v1.0.14 リリース ([app/services/update_service.py](file:///root/google-home-voicetext-docker/app/services/update_service.py), [MANUAL.md](file:///root/google-home-voicetext-docker/MANUAL.md), [MANUAL-en.md](file:///root/google-home-voicetext-docker/MANUAL-en.md), [clients/speaker/README.md](file:///root/google-home-voicetext-docker/clients/speaker/README.md), [CHANGELOG.md](file:///root/google-home-voicetext-docker/CHANGELOG.md), [app/version.py](file:///root/google-home-voicetext-docker/app/version.py))**:
+     - Watchtower の `/v1/update` が `GET` でも有効な Bearer トークン付きだと即時アップデートを発動してしまう仕様に対処し、`check_watchtower_health()` ではトークンを送らず HTTP 応答（401等）のみで安全に生存判定するよう修正。
+     - 日英マニュアルおよび PC Speaker README にマルチ出力管理・メイン出力仕様・自動自己更新・新規 API 仕様を完全反映し、全単体テストのパスを確認の上で `v1.0.14` へバージョンバンプ。
+
+## 2026-10-28 12:41 - PCスピーカー設定カードのi18n翻訳キー定義追加・ワンライナー3種拡充・コンテナ再起動反映および認証レート制限巻き込み防止
+- **背景と課題**:
+  1. Web GUI の PC スピーカー連携カードにおいて、`data-i18n="settingsIntegrations.pcSpeakerHeader"` および `settingsIntegrations.pcSpeakerSub` が `public/locales/ja.json` / `en.json` に未定義だったため、生のキー文字列がそのまま画面に表示されていた。
+  2. ワンライナー起動コマンドについて、「① 一時起動」「② 自動起動（常駐化）」「③ 自動起動の解除」の3つをそれぞれワンライナーでコピー＆実行できるようにしたいという要望。
+  3. 初回反映時、`index.html` の `app.js?v=` キャッシュバスター未更新によりブラウザで旧 `app.js` が実行され、`cmdWinAutostartEnable` 内の `{SERVER_URL}` が未置換のままコピーされて PowerShell で `argument --server: expected one argument` エラーが発生した。
+  4. さらに、`SmartSpeaker-VoiceHub` コンテナが11時間前に起動したまま再起動されていなかったため、メモリ上の旧 `security.py` が `/api/client-speakers/stream` のトークン認証を 401 で弾き、バックグラウンド常駐プロセスの5秒おきリトライ（5回）によって同一 IP（`192.168.11.244`）のブラウザ画面まで 429 レート制限ロックアウトに巻き込まれた。
+- **改修内容**:
+  1. **i18n 翻訳キーの追加 ([public/locales/ja.json](file:///root/google-home-voicetext-docker/public/locales/ja.json), [public/locales/en.json](file:///root/google-home-voicetext-docker/public/locales/en.json))**:
+     - `settingsIntegrations.pcSpeakerHeader`、`settingsIntegrations.pcSpeakerSub` をはじめ、PC スピーカー連携カード内の説明バナー・ワンライナー見出し・補足テキスト・ボタンラベルの日英翻訳キーをすべて追加し、`index.html` 内の全 `data-i18n` キーに欠落がないことを検証。
+  2. **OS別ワンライナー3種（一時起動 / 自動起動（常駐化） / 自動起動の解除）への拡充と多重置換・キャッシュバスター更新 ([public/index.html](file:///root/google-home-voicetext-docker/public/index.html), [public/app.js](file:///root/google-home-voicetext-docker/public/app.js), [public/i18n.js](file:///root/google-home-voicetext-docker/public/i18n.js))**:
+     - Windows (PowerShell)、macOS (ターミナル)、Linux (Bash) の各タブにおいて、①一時起動、②自動起動（常駐化：`--autostart enable`）、③自動起動の解除（`--autostart disable`）の3つのワンライナーと個別コピーボタンを整備。
+     - `app.js?v=1.0.23`、`i18n.js?v=1.0.6`、`/locales/*.json?v=1.0.6` にキャッシュバスターを更新。
+     - `{SERVER_URL}` の置換を `index.html` 直後のインラインスクリプト、`updatePcSpeakerCommands()`（`/api/status` ロード完了時含む）、およびコピーボタン押下時の3段階で実行し、未置換を完全防止。
+     - Webhook トークン（`state.serverInfo.webhookToken`）設定時は自動的に `--token '...'` をワンライナーへ付与。
+  3. **VoiceHub サーバー自身からのスクリプト直接配信・自動起動対応とレート制限巻き込み防止 ([clients/speaker/voicehub_speaker.py](file:///root/google-home-voicetext-docker/clients/speaker/voicehub_speaker.py), [clients/speaker/run.sh](file:///root/google-home-voicetext-docker/clients/speaker/run.sh), [app/core/security.py](file:///root/google-home-voicetext-docker/app/core/security.py))**:
+     - ワンライナーのスクリプト取得先を `${serverUrl}/clients/speaker/voicehub_speaker.py`（および `run.sh`）に変更。
+     - `AutostartManager._ensure_persistent_script()` により `~/.voicehub/voicehub_speaker.py` にスクリプトを永続配置して自動起動登録し、Windows でも登録と同時に `wscript.exe //B` で非表示バックグラウンド常駐を即時開始。
+     - [`check_admin_auth()`](file:///root/google-home-voicetext-docker/app/core/security.py#L341-L364) において、静的WebUIアセット（`/` 等）および既に認証済みの管理者ブラウザセッション（`auth_token` Cookie）を `login_rate_limiter.is_locked()` より先に通過させるよう順序を改善し、同一PC上の外部スクリプトの認証失敗でブラウザ画面がロックアウトされないように対策。またクライアント側の 401/429 リトライ間隔を30秒に延長。
+     - `SmartSpeaker-VoiceHub` コンテナを再起動してメモリ上のバックエンドコードを更新し、Windows PC（`My-Windows-PC` / `windows_MasterOMEN2025`）がバックグラウンドから正常に自動再接続（`200 OK`・`1 台接続中`）したことを確認。
+
 ## 2026-10-28 01:25 - PC スピーカー連携機能（Win/Mac/Linux）のWebUI動的ワンライナー統合・マニュアル最新化・v1.0.13リリース
 - **背景と課題**:
   - 作業中やテレワーク中、ヘッドホン装着時などに、リビングのスマートスピーカーと同じアナウンスを Windows / Mac / Linux PC 本体から直接受話・再生したいという要望。
