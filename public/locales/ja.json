@@ -202,7 +202,18 @@
     "deviceTypeHomePod": "Apple HomePod",
     "deviceTypeOnvif": "ONVIF カメラ",
     "deviceTypeDlna": "DLNA スピーカー",
-    "bannerNotice": "💡 Amazon Alexa や Apple HomePod の認証・設定は「外部連携」、ONVIF カメラや DLNA スピーカーの検出・登録は「ONVIF / DLNA」設定で行えます。"
+    "bannerNotice": "💡 Amazon Alexa や Apple HomePod の認証・設定は「外部連携」、ONVIF カメラや DLNA スピーカーの検出・登録は「ONVIF / DLNA」設定で行えます。",
+    "labelModalTitle": "デバイスラベル (一意な別名) の設定",
+    "labelInputLabel": "ラベル名 (半角英数・日本語可・全体で一意) *",
+    "labelInputPlaceholder": "例: 全体, main, 書斎スピーカー",
+    "labelInputHelp": "※ Webhook や API (/api/say) で短く指定できる一意の識別名です。空欄で保存するとラベルを解除します。",
+    "btnClearLabel": "ラベル解除",
+    "labelField": "ラベル:",
+    "labelNone": "未設定",
+    "btnSetLabel": "+ ラベル設定",
+    "btnEditLabel": "編集",
+    "labelSavedToast": "デバイスラベルを設定しました",
+    "labelClearedToast": "デバイスラベルを解除しました"
   },
   "settings": {
     "groupAudio": "🔊 音声・アナウンス",

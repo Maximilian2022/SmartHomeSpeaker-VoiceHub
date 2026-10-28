@@ -350,6 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupCalendarHandlers();
     setupDndHandlers();
     setupSettingsHandlers();
+    setupDeviceLabelModal();
     setupAiHandlers();
     setupDisasterHandlers();
     setupOnvifSettings();
@@ -634,7 +635,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isDefA && !isDefB) return -1;
       if (!isDefA && isDefB) return 1;
 
-      return (a.name || '').localeCompare(b.name || '', 'ja');
+      return (a.label || a.name || '').localeCompare(b.label || b.name || '', 'ja');
     });
   }
 
@@ -1047,6 +1048,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const displayName = formatSpeakerDisplayName(dev.name);
 
       let badgeHtml = '';
+      if (dev.label) {
+        badgeHtml += `<span class="speaker-chip-badge" style="background:rgba(59,130,246,0.2);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);font-weight:600;" title="ラベル: ${escapeHtml(dev.label)}">🏷️ ${escapeHtml(dev.label)}</span>`;
+      }
       if (isFav) {
         badgeHtml += `<span class="speaker-chip-badge fav-badge" title="${isEn() ? 'Favorite Speaker' : 'お気に入りスピーカー'}" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>`;
       }
@@ -1083,7 +1087,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `
         <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
-          <input type="checkbox" name="${nameAttr}" value="${escapeHtml(dev.ip)}" data-name="${escapeHtml(dev.name || '')}" data-raw-name="${escapeHtml(dev.rawName || dev.name || '')}" data-id="${escapeHtml(dev.id || '')}" data-type="${escapeHtml(devType)}" ${isChecked}>
+          <input type="checkbox" name="${nameAttr}" value="${escapeHtml(dev.ip)}" data-name="${escapeHtml(dev.name || '')}" data-raw-name="${escapeHtml(dev.rawName || dev.name || '')}" data-id="${escapeHtml(dev.id || '')}" data-label="${escapeHtml(dev.label || '')}" data-type="${escapeHtml(devType)}" ${isChecked}>
           <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
           <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
@@ -1457,6 +1461,15 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="device-card-info" style="margin-top:8px;">
             <span><strong>${window.i18n && window.i18n.getLanguage() === 'en' ? 'ID / IP:' : '識別子/IP:'}</strong> ${escapeHtml(dev.ip)}</span>
             <span><strong>${window.i18n && window.i18n.getLanguage() === 'en' ? 'Model:' : 'モデル:'}</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
+            <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.82rem;">
+              <div style="min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <strong style="color: var(--text-muted);">${window.t ? window.t('devices.labelField') : 'ラベル:'}</strong>
+                ${dev.label ? `<span class="device-label-badge" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:12px;background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.4);font-weight:600;font-size:0.75rem;" title="${escapeHtml(dev.label)}">🏷️ ${escapeHtml(dev.label)}</span>` : `<span style="color:var(--text-muted);font-style:italic;">${window.t ? window.t('devices.labelNone') : '未設定'}</span>`}
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm btn-edit-device-label" data-dev-id="${escapeHtml(dev.id || dev.ip || '')}" data-ip="${escapeHtml(dev.ip || '')}" data-name="${escapeHtml(displayName)}" data-label="${escapeHtml(dev.label || '')}" style="padding: 2px 8px; font-size: 0.75rem; flex-shrink: 0;" title="${dev.label ? (window.t ? window.t('devices.btnEditLabel') : '編集') : (window.t ? window.t('devices.btnSetLabel') : '+ ラベル設定')}">
+                ${dev.label ? (window.t ? window.t('devices.btnEditLabel') : '編集') : (window.t ? window.t('devices.btnSetLabel') : '+ ラベル設定')}
+              </button>
+            </div>
           </div>
           <div class="device-card-actions" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
             <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" style="width:100%;justify-content:center;">
@@ -2336,7 +2349,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // デバイス一覧内クイックテストボタン (イベント委譲)
     el.devicesGrid.addEventListener('click', async (e) => {
-      // 0. お気に入り切り替えボタン
+      // 0-A. ラベル編集ボタン
+      const labelBtn = e.target.closest('.btn-edit-device-label');
+      if (labelBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const devId = labelBtn.getAttribute('data-dev-id');
+        const ip = labelBtn.getAttribute('data-ip');
+        const name = labelBtn.getAttribute('data-name');
+        const label = labelBtn.getAttribute('data-label') || '';
+        openDeviceLabelModal(devId, ip, name, label);
+        return;
+      }
+
+      // 0-B. お気に入り切り替えボタン
       const favBtn = e.target.closest('.btn-fav-star');
       if (favBtn) {
         e.preventDefault();
@@ -3059,6 +3085,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const isChecked = dev.isDefault || (!state.devices.some(d => d.isDefault) && state.devices[0]?.ip === dev.ip);
 
       let badgeHtml = '';
+      if (dev.label) {
+        badgeHtml += `<span class="speaker-chip-badge" style="background:rgba(59,130,246,0.2);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);font-weight:600;" title="ラベル: ${escapeHtml(dev.label)}">🏷️ ${escapeHtml(dev.label)}</span>`;
+      }
       if (isFav) {
         badgeHtml += `<span class="speaker-chip-badge fav-badge" title="${isEn() ? 'Favorite Speaker' : 'お気に入りスピーカー'}" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>`;
       }
@@ -3081,7 +3110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       html += `
         <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
-          <input type="checkbox" name="builderSpeaker" value="${dev.ip}" data-type="${devType}" ${isChecked ? 'checked' : ''}>
+          <input type="checkbox" name="builderSpeaker" value="${dev.ip}" data-label="${escapeHtml(dev.label || '')}" data-type="${devType}" ${isChecked ? 'checked' : ''}>
           <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
           <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
@@ -3115,7 +3144,7 @@ document.addEventListener('DOMContentLoaded', () => {
       devices = [builderMacroTarget];
     } else {
       const checkedBoxes = Array.from(document.querySelectorAll('#builderSpeakersGrid input[type="checkbox"]:checked'));
-      devices = checkedBoxes.map(c => c.value);
+      devices = checkedBoxes.map(c => c.getAttribute('data-label') || c.value);
     }
 
     const isTunnel = document.querySelector('input[name="builderUrlType"]:checked')?.value === 'tunnel';
@@ -6431,6 +6460,143 @@ document.addEventListener('DOMContentLoaded', () => {
 
     modal.style.display = 'flex';
     setTimeout(() => nameInput?.focus(), 50);
+  }
+
+  // ================= デバイスラベル設定モーダル関連 =================
+  function openDeviceLabelModal(deviceId, ip, name, currentLabel = '') {
+    const modal = document.getElementById('modalDeviceLabel');
+    const nameEl = document.getElementById('labelTargetDeviceName');
+    const idEl = document.getElementById('labelTargetDeviceId');
+    const hiddenDevId = document.getElementById('labelTargetDevIdHidden');
+    const hiddenIp = document.getElementById('labelTargetDevIpHidden');
+    const inputLabel = document.getElementById('inputDeviceLabel');
+    const errorMsg = document.getElementById('deviceLabelErrorMsg');
+
+    if (!modal) return;
+
+    if (nameEl) nameEl.textContent = name || 'Smart Speaker';
+    if (idEl) {
+      const showId = ip ? `${ip}${deviceId && deviceId !== ip ? ' (' + deviceId + ')' : ''}` : (deviceId || '-');
+      idEl.textContent = showId;
+    }
+    if (hiddenDevId) hiddenDevId.value = deviceId || '';
+    if (hiddenIp) hiddenIp.value = ip || '';
+    if (inputLabel) inputLabel.value = currentLabel || '';
+    if (errorMsg) {
+      errorMsg.textContent = '';
+      errorMsg.style.display = 'none';
+    }
+
+    modal.style.display = 'flex';
+    setTimeout(() => {
+      if (inputLabel) {
+        inputLabel.focus();
+        inputLabel.select();
+      }
+    }, 50);
+  }
+
+  function closeDeviceLabelModal() {
+    const modal = document.getElementById('modalDeviceLabel');
+    if (modal) modal.style.display = 'none';
+  }
+
+  function setupDeviceLabelModal() {
+    const modal = document.getElementById('modalDeviceLabel');
+    const btnClose = document.getElementById('btnCloseDeviceLabelModal');
+    const btnCancel = document.getElementById('btnCancelDeviceLabelModal');
+    const btnSave = document.getElementById('btnSaveDeviceLabel');
+    const btnClear = document.getElementById('btnClearDeviceLabel');
+    const inputLabel = document.getElementById('inputDeviceLabel');
+    const errorMsg = document.getElementById('deviceLabelErrorMsg');
+    const hiddenDevId = document.getElementById('labelTargetDevIdHidden');
+    const hiddenIp = document.getElementById('labelTargetDevIpHidden');
+
+    if (!modal) return;
+
+    btnClose?.addEventListener('click', closeDeviceLabelModal);
+    btnCancel?.addEventListener('click', closeDeviceLabelModal);
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        closeDeviceLabelModal();
+      }
+    });
+
+    // Enterキー押下で保存
+    inputLabel?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        btnSave?.click();
+      }
+    });
+
+    const submitLabel = async (labelToSet) => {
+      const devId = hiddenDevId?.value || '';
+      const ip = hiddenIp?.value || '';
+      if (!devId && !ip) {
+        if (errorMsg) {
+          errorMsg.textContent = '対象デバイスが指定されていません';
+          errorMsg.style.display = 'block';
+        }
+        return;
+      }
+
+      if (btnSave) btnSave.disabled = true;
+      if (btnClear) btnClear.disabled = true;
+      if (errorMsg) {
+        errorMsg.textContent = '';
+        errorMsg.style.display = 'none';
+      }
+
+      try {
+        const res = await fetch('/api/devices/label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deviceId: devId,
+            ip: ip,
+            label: labelToSet
+          })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !data.success) {
+          const errMsg = data.error || data.detail || 'デバイスラベルの設定に失敗しました';
+          if (errorMsg) {
+            errorMsg.textContent = errMsg;
+            errorMsg.style.display = 'block';
+          }
+          return;
+        }
+
+        closeDeviceLabelModal();
+        const toastMsg = labelToSet
+          ? (window.t ? window.t('devices.labelSavedToast') : 'デバイスラベルを設定しました')
+          : (window.t ? window.t('devices.labelClearedToast') : 'デバイスラベルを解除しました');
+        showToast(toastMsg, 'success');
+
+        await loadDevices();
+      } catch (err) {
+        if (errorMsg) {
+          errorMsg.textContent = `エラー: ${err.message}`;
+          errorMsg.style.display = 'block';
+        }
+      } finally {
+        if (btnSave) btnSave.disabled = false;
+        if (btnClear) btnClear.disabled = false;
+      }
+    };
+
+    btnSave?.addEventListener('click', async () => {
+      const label = (inputLabel?.value || '').trim();
+      await submitLabel(label);
+    });
+
+    btnClear?.addEventListener('click', async () => {
+      await submitLabel('');
+    });
   }
 
   function closeOnvifRegisterModal() {

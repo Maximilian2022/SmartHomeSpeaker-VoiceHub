@@ -3,7 +3,7 @@ import json
 import shutil
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 from app.config import DATA_DIR, settings
 
 SETTINGS_FILE = DATA_DIR / "settings.json"
@@ -97,6 +97,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         ]
     },
     "ipAliases": {},
+    "deviceLabels": {},
     "onvif": {
         "enabled": True,
         "defaultUsername": "admin",
@@ -502,7 +503,7 @@ class SettingsManager:
         return self.settings
 
     def update(self, new_data: Dict[str, Any]) -> Dict[str, Any]:
-        OVERWRITE_COLLECTIONS = {"deviceGroups", "ipAliases", "dndScheduleRules", "favoriteDevices"}
+        OVERWRITE_COLLECTIONS = {"deviceGroups", "ipAliases", "deviceLabels", "dndScheduleRules", "favoriteDevices"}
         for k, v in new_data.items():
             if k in OVERWRITE_COLLECTIONS:
                 self.settings[k] = v
@@ -613,5 +614,92 @@ class SettingsManager:
 
         self._save(self.settings)
         return conf
+
+    def get_device_labels(self) -> Dict[str, str]:
+        """全デバイスのカスタムラベルマッピング (deviceId -> label) を取得"""
+        labels = self.settings.get("deviceLabels")
+        if not isinstance(labels, dict):
+            labels = {}
+            self.settings["deviceLabels"] = labels
+        return labels
+
+    def get_label_for_device(self, device_id: Optional[str] = None, alt_id: Optional[str] = None) -> str:
+        """指定されたデバイスIDまたはIPに設定されているラベルを取得"""
+        labels = self.get_device_labels()
+        if device_id and device_id in labels:
+            return labels[device_id]
+        if alt_id and alt_id in labels:
+            return labels[alt_id]
+        return ""
+
+    def set_device_label(
+        self,
+        device_id: str,
+        label: Optional[str] = None,
+        alt_id: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        """
+        特定のデバイスに一意なカスタムラベルを設定または解除。
+        全体で一意（大文字小文字無視、重複禁止）を保証。
+        成功時は (True, 保存されたラベル文字列)、失敗時は (False, エラーメッセージ) を返却。
+        """
+        dev_key = str(device_id or "").strip()
+        alt_key = str(alt_id or "").strip() if alt_id else ""
+        if not dev_key:
+            return False, "デバイスIDが指定されていません"
+
+        labels = self.get_device_labels()
+        clean_label = str(label or "").strip()
+
+        # ラベル解除 (空文字または未指定)
+        if not clean_label:
+            removed = False
+            if dev_key in labels:
+                del labels[dev_key]
+                removed = True
+            if alt_key and alt_key in labels:
+                del labels[alt_key]
+                removed = True
+            if removed:
+                self._save(self.settings)
+            return True, ""
+
+        clean_lower = clean_label.lower()
+
+        # 1. 予約語チェック (システムマクロ・一斉発話キーワードとの衝突防止)
+        RESERVED_LABELS = {
+            "all", "*", "default",
+            "gh:all", "google:all",
+            "al:all", "alexa:all",
+            "hp:all", "homepod:all",
+            "pc:all", "client:all", "win:all", "mac:all",
+            "cam:all", "onvif:all", "tapo:all",
+            "dlna:all"
+        }
+        if clean_lower in RESERVED_LABELS:
+            return False, f"「{clean_label}」はシステム予約語のためラベルとして使用できません"
+
+        # 2. デバイスグループ名との重複チェック
+        groups = self.settings.get("deviceGroups", {})
+        if isinstance(groups, dict):
+            for grp_name in groups.keys():
+                if str(grp_name).strip().lower() == clean_lower:
+                    return False, f"「{clean_label}」は既存のグループ名と重複しているため使用できません"
+
+        # 3. 他デバイスとの一意性チェック (重複禁止)
+        for k, v in labels.items():
+            if k != dev_key and k != alt_key:
+                if str(v).strip().lower() == clean_lower:
+                    return False, f"ラベル「{clean_label}」は既に他のデバイスで使用されています (重複不可)"
+
+        # 保存
+        labels[dev_key] = clean_label
+        # alt_key がキーとして存在していた場合は古い方を整理
+        if alt_key and alt_key in labels and alt_key != dev_key:
+            del labels[alt_key]
+
+        self.settings["deviceLabels"] = labels
+        self._save(self.settings)
+        return True, clean_label
 
 settings_manager = SettingsManager()

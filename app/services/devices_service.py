@@ -193,12 +193,70 @@ class DeviceManager:
             print(f"[DeviceManager] Client speaker list error: {e}")
 
         # ソート: お気に入り最優先 -> カテゴリ順 -> デフォルト優先 -> 名前順
+        for d in results:
+            d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+
         results.sort(key=lambda d: (
             0 if d.get("isFavorite") else 1,
             self.get_device_category_order(d),
             0 if d.get("isDefault") else 1,
-            d.get("name", "")
+            d.get("label") or d.get("name", "")
         ))
+
+        return results
+
+    def get_current_devices_sync(self) -> List[Dict[str, Any]]:
+        """同期コンテキスト（find_device等）向けにキャッシュされている全デバイス辞書リストを返却"""
+        results: List[Dict[str, Any]] = []
+
+        # 1. Google Cast
+        with self._lock:
+            for dev in self.devices.values():
+                d = dict(dev)
+                d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                results.append(d)
+
+        # 2. Alexa
+        if alexa_service.is_enabled() and alexa_service.devices_cache:
+            for ad in alexa_service.devices_cache:
+                d = dict(ad)
+                d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                results.append(d)
+
+        # 3. HomePod
+        if homepod_service.devices_cache:
+            for hd in homepod_service.devices_cache:
+                d = dict(hd)
+                d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                results.append(d)
+
+        # 4. ONVIF / DLNA
+        onvif_config = settings_manager.get().get("onvif", {})
+        if onvif_config.get("enabled", True):
+            for dev in onvif_config.get("registeredDevices", []):
+                if dev.get("enabled", True):
+                    dtype = dev.get("type", "onvif")
+                    raw_ip = str(dev.get("ip", "")).replace("onvif:", "").replace("dlna:", "").replace("tapo:", "")
+                    prefix = f"{dtype}:{raw_ip}"
+                    dev_id = dev.get("id") or f"{dtype}_{raw_ip.replace('.', '_')}"
+                    dev_name = dev.get("name") or dev.get("friendlyName") or f"{dtype.upper()} ({raw_ip})"
+                    d = {
+                        "id": dev_id,
+                        "name": dev_name,
+                        "ip": prefix,
+                        "rawIp": raw_ip,
+                        "port": dev.get("port", 8000),
+                        "model": dev.get("model", ""),
+                        "type": dtype,
+                        "label": settings_manager.get_label_for_device(dev_id, prefix)
+                    }
+                    results.append(d)
+
+        # 5. Client
+        for cd in client_speaker_service.get_active_devices(include_disabled=True):
+            d = dict(cd)
+            d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+            results.append(d)
 
         return results
 
@@ -207,6 +265,25 @@ class DeviceManager:
             return None
         norm = query.strip()
         norm_lower = norm.lower()
+
+        # 0. カスタムラベル照合 (最優先・全体で一意)
+        labels = settings_manager.get_device_labels()
+        target_dev_key = None
+        for k, v in labels.items():
+            if v and str(v).strip().lower() == norm_lower:
+                target_dev_key = k
+                break
+
+        if target_dev_key:
+            # 現在の検出デバイスから検索
+            for d in self.get_current_devices_sync():
+                if d.get("id") == target_dev_key or d.get("ip") == target_dev_key or d.get("rawIp") == target_dev_key:
+                    return d
+            # まだキャッシュに完全一致しない場合は target_dev_key でフォールバック照合
+            if target_dev_key.lower() != norm_lower:
+                fallback_found = self.find_device(target_dev_key)
+                if fallback_found:
+                    return fallback_found
 
         onvif_config = settings_manager.get().get("onvif", {})
         reg_devices = [d for d in onvif_config.get("registeredDevices", []) if d.get("enabled", True)]

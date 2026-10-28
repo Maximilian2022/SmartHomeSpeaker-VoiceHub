@@ -1,6 +1,7 @@
 import asyncio
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from app.services.devices_service import device_manager
 from app.services.settings_service import settings_manager
@@ -18,13 +19,20 @@ class DeviceFavoriteToggleRequest(BaseModel):
     ip: Optional[str] = None
     id: Optional[str] = None
 
+class DeviceLabelRequest(BaseModel):
+    id: Optional[str] = None
+    deviceId: Optional[str] = None
+    ip: Optional[str] = None
+    label: Optional[str] = None
+
 @router.get("/api/devices")
 async def get_devices():
     devs = await device_manager.get_devices()
     return {
         "devices": devs,
         "defaultIp": device_manager.get_default_device_ip(),
-        "favorites": settings_manager.get_favorite_devices()
+        "favorites": settings_manager.get_favorite_devices(),
+        "labels": settings_manager.get_device_labels()
     }
 
 @router.post("/api/devices/rescan-all")
@@ -37,7 +45,8 @@ async def rescan_all_devices():
         "count": len(devs),
         "devices": devs,
         "defaultIp": device_manager.get_default_device_ip(),
-        "favorites": settings_manager.get_favorite_devices()
+        "favorites": settings_manager.get_favorite_devices(),
+        "labels": settings_manager.get_device_labels()
     }
 
 @router.get("/api/devices/default")
@@ -70,6 +79,28 @@ async def toggle_favorite_device(req: DeviceFavoriteToggleRequest):
         "target": target,
         "isFavorite": is_fav,
         "favorites": settings_manager.get_favorite_devices()
+    }
+
+@router.get("/api/devices/labels")
+async def get_device_labels():
+    return {"labels": settings_manager.get_device_labels()}
+
+@router.post("/api/devices/label")
+async def set_device_label(req: DeviceLabelRequest):
+    dev_id = req.deviceId or req.id or req.ip or ""
+    alt_id = req.ip if (req.deviceId or req.id) and req.ip != dev_id else (req.id if req.ip and req.id != dev_id else None)
+    if not dev_id:
+        return JSONResponse(status_code=400, content={"success": False, "error": "deviceId または ip が指定されていません"})
+
+    ok, result_or_err = settings_manager.set_device_label(dev_id, req.label, alt_id=alt_id)
+    if not ok:
+        return JSONResponse(status_code=400, content={"success": False, "error": result_or_err})
+
+    return {
+        "success": True,
+        "deviceId": dev_id,
+        "label": result_or_err,
+        "labels": settings_manager.get_device_labels()
     }
 
 @router.get("/api/groups")

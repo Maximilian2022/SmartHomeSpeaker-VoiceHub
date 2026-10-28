@@ -202,7 +202,18 @@
     "deviceTypeHomePod": "Apple HomePod",
     "deviceTypeOnvif": "ONVIF Camera",
     "deviceTypeDlna": "DLNA Speaker",
-    "bannerNotice": "💡 Alexa & HomePod credentials can be configured under \"Integrations\". ONVIF cameras and DLNA speakers can be scanned under \"ONVIF / DLNA\"."
+    "bannerNotice": "💡 Alexa & HomePod credentials can be configured under \"Integrations\". ONVIF cameras and DLNA speakers can be scanned under \"ONVIF / DLNA\".",
+    "labelModalTitle": "Device Label Settings (Unique Alias)",
+    "labelInputLabel": "Label Name (Alphanumeric or Japanese · Globally Unique) *",
+    "labelInputPlaceholder": "e.g., all, main, study_speaker",
+    "labelInputHelp": "※ Unique identifier to conveniently target this device via Webhook or API (/api/say). Leave blank to remove.",
+    "btnClearLabel": "Remove Label",
+    "labelField": "Label:",
+    "labelNone": "None",
+    "btnSetLabel": "+ Label",
+    "btnEditLabel": "Edit",
+    "labelSavedToast": "Device label updated successfully",
+    "labelClearedToast": "Device label removed"
   },
   "settings": {
     "groupAudio": "🔊 Audio & Announcements",

@@ -3985,6 +3985,37 @@ Body:
       </div>
     </div>
 
+    <!-- デバイスラベル設定モーダル -->
+    <div id="modalDeviceLabel" class="modal-backdrop" style="display: none;">
+      <div class="modal-content glass-card" style="max-width: 480px;">
+        <div class="modal-header">
+          <h3 id="modalDeviceLabelTitle" data-i18n="devices.labelModalTitle">🏷️ デバイスラベル (一意な別名) の設定</h3>
+          <button type="button" id="btnCloseDeviceLabelModal" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom: 14px; padding: 10px 14px; background: rgba(255,255,255,0.04); border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); font-size: 0.88rem;">
+            <div style="font-weight: 600; color: var(--text-color); margin-bottom: 4px;" id="labelTargetDeviceName">-</div>
+            <div style="font-size: 0.78rem; color: var(--text-muted); font-family: monospace; word-break: break-all;" id="labelTargetDeviceId">-</div>
+          </div>
+          <div id="deviceLabelErrorMsg" class="alert alert-danger" style="display: none; margin-bottom: 12px; font-size: 0.85rem; padding: 8px 12px; border-radius: 6px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #fca5a5;"></div>
+          <div class="form-group">
+            <label for="inputDeviceLabel" class="form-label" data-i18n="devices.labelInputLabel">ラベル名 (半角英数・日本語可・全体で一意) *</label>
+            <input type="text" id="inputDeviceLabel" class="form-input" data-i18n-placeholder="devices.labelInputPlaceholder" placeholder="例: 全体, main, 書斎スピーカー" maxlength="50">
+            <p class="form-help" style="margin-top: 6px; font-size: 0.78rem; color: var(--text-muted);" data-i18n="devices.labelInputHelp">※ Webhook や API (/api/say) で短く指定できる一意の識別名です。空欄で保存するとラベルを解除します。</p>
+          </div>
+          <input type="hidden" id="labelTargetDevIdHidden">
+          <input type="hidden" id="labelTargetDevIpHidden">
+          <div class="modal-footer" style="padding: 12px 0 0; border-top: 1px solid rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" id="btnClearDeviceLabel" class="btn btn-secondary" style="color: #ef4444; border-color: rgba(239,68,68,0.3);" data-i18n="devices.btnClearLabel">ラベル解除</button>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" id="btnCancelDeviceLabelModal" class="btn btn-secondary" data-i18n="settingsIntegrations.alexaProxyCancelBtn">キャンセル</button>
+              <button type="button" id="btnSaveDeviceLabel" class="btn btn-primary" data-i18n="common.save">保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- グループ作成モーダル -->
     <div id="modalDeviceGroup" class="modal-backdrop" style="display: none;">
       <div class="modal-content glass-card" style="max-width: 500px;">
@@ -4355,7 +4386,7 @@ Body:
   </div>
 
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="i18n.js?v=1.0.7"></script>
-  <script src="app.js?v=1.0.24"></script>
+  <script src="i18n.js?v=1.0.8"></script>
+  <script src="app.js?v=1.0.25"></script>
 </body>
 </html>
