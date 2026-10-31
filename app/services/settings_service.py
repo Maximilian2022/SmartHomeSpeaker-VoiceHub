@@ -555,6 +555,45 @@ class SettingsManager:
         self.set_favorite_devices(favs)
         return is_fav
 
+    def get_disabled_devices(self) -> List[str]:
+        raw = self.settings.get("disabledDevices", [])
+        if isinstance(raw, list):
+            return [str(x) for x in raw if x]
+        return []
+
+    def set_disabled_devices(self, disabled_list: List[str]) -> List[str]:
+        unique_list: List[str] = []
+        for d in disabled_list:
+            s = str(d).strip()
+            if s and s not in unique_list:
+                unique_list.append(s)
+        self.settings["disabledDevices"] = unique_list
+        self._save(self.settings)
+        return unique_list
+
+    def toggle_disabled_device(self, dev_id: str) -> bool:
+        target = str(dev_id).strip()
+        if not target:
+            return False
+        dis = self.get_disabled_devices()
+        if target in dis:
+            dis.remove(target)
+            is_disabled = False
+        else:
+            dis.append(target)
+            is_disabled = True
+        self.set_disabled_devices(dis)
+        return is_disabled
+
+    def is_device_disabled(self, dev_id: Optional[str], ip: Optional[str] = None, name: Optional[str] = None) -> bool:
+        dis = set(self.get_disabled_devices())
+        if not dis:
+            return False
+        for k in (dev_id, ip, name):
+            if k and str(k).strip() in dis:
+                return True
+        return False
+
     def get_admin_password(self) -> str:
         """設定ファイル (settings.json) を優先し、未設定 (None) の場合のみ .my.env の値を返す"""
         if "adminPassword" in self.settings:

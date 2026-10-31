@@ -99,6 +99,55 @@ class TestDisasterTriggers(unittest.TestCase):
             self.assertTrue(len(ja[k]) > 0)
             self.assertTrue(len(en[k]) > 0)
 
+    def test_eew_min_scale_filtering(self):
+        """EEW受信時の予想震度フィルタリング (eewMinScale) の動作を検証"""
+        spoken_messages = []
+        async def mock_speak(text, urgent=False, volume=None):
+            spoken_messages.append(text)
+
+        disaster_service.speak = mock_speak
+
+        # 設定: 東京都、local、eewMinScale=30 (震度3以上)
+        settings = {
+            "enabled": True,
+            "area": {"prefName": "東京都"},
+            "earthquake": {
+                "enabled": True,
+                "eewEnabled": True,
+                "targetScope": "local",
+                "eewMinScale": 30
+            }
+        }
+
+        # ケース1: 東京の予想震度が20 (震度2) -> 発報されないこと
+        data_low = {
+            "code": 556,
+            "id": "eew_test_low_001",
+            "cancelled": False,
+            "areas": [
+                {"name": "東京都２３区", "pref": "東京", "scaleFrom": 10, "scaleTo": 20},
+                {"name": "千葉県北東部", "pref": "千葉", "scaleFrom": 40, "scaleTo": 50}
+            ]
+        }
+        spoken_messages.clear()
+        asyncio.run(disaster_service._handle_p2p_message(data_low))
+        self.assertEqual(len(spoken_messages), 0, "震度2以下の東京は発報されないこと")
+
+        # ケース2: 東京の予想震度が40 (震度4) -> 発報されること
+        data_high = {
+            "code": 556,
+            "id": "eew_test_high_002",
+            "cancelled": False,
+            "areas": [
+                {"name": "東京都２３区", "pref": "東京", "scaleFrom": 30, "scaleTo": 40},
+                {"name": "千葉県北東部", "pref": "千葉", "scaleFrom": 40, "scaleTo": 50}
+            ]
+        }
+        spoken_messages.clear()
+        asyncio.run(disaster_service._handle_p2p_message(data_high))
+        self.assertEqual(len(spoken_messages), 1, "震度4の東京は発報されること")
+        self.assertIn("緊急地震速報", spoken_messages[0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -350,8 +350,10 @@ class SpeechService:
                 log.info(f"[Speech] Alexa native group detected: '{alexa_group.get('name')}' -> Consolidating {len(alexa_devs)} individual Alexa targets into group")
                 unique_targets = [d for d in unique_targets if d.get("type") != "alexa" or d == alexa_group]
 
-        if not unique_targets:
-            err_msg = "対象スピーカーが見つかりませんでした (No valid target devices found)"
+        # 無効化 (disabled) されたスピーカーを除外
+        active_targets = [d for d in unique_targets if not settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))]
+        if not active_targets:
+            err_msg = "対象スピーカーが見つからないか、無効化されています (No active target devices found)"
             log.warning(f"[Speech] {err_msg}: targets={targets}")
             self.record_history({
                 "text": text,
@@ -368,6 +370,8 @@ class SpeechService:
                 "results": []
             })
             return {"status": "error", "message": err_msg}
+
+        unique_targets = active_targets
 
         # 4. 音声合成 (TTS)
         opt_voice = voice or tts_service.get_default_voice_id()
@@ -435,8 +439,10 @@ class SpeechService:
             - 個別: 最大3回試行 (失敗時、DHCP等によるIP変動を名前から再解決してリトライ)
             """
             is_group = bool(dev.get("isGroup") or dev.get("port", 8009) != 8009)
-            max_attempts = 2 if is_group else 3
+            # グループは複数IP候補があるため最大3回試行
+            max_attempts = 3
             dev_name = dev.get("name") or dev.get("ip")
+            tried_endpoints = set()
 
             current_host = dev.get("host")
             current_port = int(dev.get("port", 8009))
@@ -453,6 +459,7 @@ class SpeechService:
                     current_host = ip_val
 
             for attempt in range(1, max_attempts + 1):
+                tried_endpoints.add((current_host, current_port))
                 if attempt > 1 and google_delay > 0:
                     await asyncio.sleep(google_delay / 1000.0)
 
@@ -461,12 +468,15 @@ class SpeechService:
                 if success:
                     if attempt > 1:
                         log.info(f"[Speech] ✅ Google Cast '{dev_name}' はリトライ (試行 {attempt}/{max_attempts}) で再生成功しました")
+                        if is_group:
+                            # 成功した別IP/ポートをグループの代表エンドポイントに昇格＆デフォルト端末を自動成り代わり更新
+                            device_manager.promote_group_endpoint(dev.get("name") or dev_name, current_host, current_port)
                     return True
 
                 cast_service.purge_cache(current_host, current_port)
                 if attempt < max_attempts:
                     target_type_str = "キャストグループ" if is_group else "個別スピーカー"
-                    log.warning(f"[Speech] ⚠️ Google Cast {target_type_str} '{dev_name}' ({current_host}:{current_port}) への再生失敗。最新ポート/IPを再解決してリトライします (試行 {attempt + 1}/{max_attempts})...")
+                    log.warning(f"[Speech] ⚠️ Google Cast {target_type_str} '{dev_name}' ({current_host}:{current_port}) への再生失敗。別ポート/IPを探索してリトライします (試行 {attempt + 1}/{max_attempts})...")
                     try:
                         latest_devs = await device_manager.get_devices()
                         matched = None
@@ -480,10 +490,25 @@ class SpeechService:
                                     if ld.get("name") == dev.get("name") or ld.get("rawName") == dev.get("rawName"):
                                         matched = ld
                                         break
-                        if matched:
+
+                        # グループの場合は保持している候補IPリストから未試行の別IPへフォールバック
+                        alt_found = False
+                        if is_group:
+                            candidates = (matched.get("candidateEndpoints") if matched else None) or dev.get("candidateEndpoints") or []
+                            for ep in candidates:
+                                ep_h = ep.get("host")
+                                ep_p = int(ep.get("port", 8009))
+                                if (ep_h, ep_p) not in tried_endpoints:
+                                    log.info(f"[Speech] 🔄 キャストグループ '{dev_name}' の未試行候補エンドポイントへ切り替えます: ({current_host}:{current_port} -> {ep_h}:{ep_p})")
+                                    current_host = ep_h
+                                    current_port = ep_p
+                                    alt_found = True
+                                    break
+
+                        if not alt_found and matched:
                             new_host = matched.get("host") or str(matched.get("ip", "")).split(":")[0]
                             new_port = int(matched.get("port", 8009))
-                            if new_host != current_host or new_port != current_port:
+                            if (new_host, new_port) not in tried_endpoints:
                                 log.info(f"[Speech] 🔄 最新接続先を検出しました: {dev_name} ({current_host}:{current_port} -> {new_host}:{new_port})")
                                 current_host = new_host
                                 current_port = new_port

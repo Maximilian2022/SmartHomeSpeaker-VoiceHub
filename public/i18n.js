@@ -162,7 +162,7 @@
       return dictionaries[lang];
     }
     try {
-      const res = await fetch(`/locales/${encodeURIComponent(lang)}.json?v=1.0.8`);
+      const res = await fetch(`/locales/${encodeURIComponent(lang)}.json?v=1.0.10`);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status} while fetching /locales/${lang}.json`);
       }

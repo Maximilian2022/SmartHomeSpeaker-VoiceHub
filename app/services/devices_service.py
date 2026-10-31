@@ -8,6 +8,9 @@ from app.services.settings_service import settings_manager
 from app.services.alexa_service import alexa_service
 from app.services.homepod_service import homepod_service
 from app.services.client_speaker_service import client_speaker_service
+from app.core.logger import get_logger
+
+log = get_logger("DeviceManager")
 
 def decode_avahi_string(s: str) -> str:
     r"""後方互換用: 文字列をそのまま返却"""
@@ -52,11 +55,13 @@ class CastServiceListener(ServiceListener):
             md = props.get("md") or "Google Cast"
             is_group = (md == "Google Cast Group") or name.startswith("Google-Cast-Group")
 
-            key = f"group_{ip}_{port}" if is_group else ip
             formatted_ip = f"{ip}:{port}" if is_group else ip
+            # Cast グループは同名ごとに集約（複数IP/ポートの重複排除）
+            key = f"group_{fn}" if is_group else ip
+            dev_id = f"group_{re.sub(r'[^a-zA-Z0-9_]', '_', fn)}" if is_group else f"dev_{ip.replace('.', '_')}"
 
             dev_data = {
-                "id": f"group_{port}_{ip.replace('.', '_')}" if is_group else f"dev_{ip.replace('.', '_')}",
+                "id": dev_id,
                 "name": fn,
                 "ip": formatted_ip,
                 "host": ip,
@@ -65,6 +70,8 @@ class CastServiceListener(ServiceListener):
                 "isGroup": is_group,
                 "type": "google"
             }
+            if is_group:
+                dev_data["candidateEndpoints"] = [{"host": ip, "port": port, "ip": formatted_ip}]
 
             self.manager.update_device(key, dev_data)
         except Exception as e:
@@ -192,11 +199,13 @@ class DeviceManager:
         except Exception as e:
             print(f"[DeviceManager] Client speaker list error: {e}")
 
-        # ソート: お気に入り最優先 -> カテゴリ順 -> デフォルト優先 -> 名前順
+        # ソート: 有効端末優先 -> お気に入り最優先 -> カテゴリ順 -> デフォルト優先 -> 名前順
         for d in results:
             d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+            d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
 
         results.sort(key=lambda d: (
+            1 if d.get("disabled") else 0,
             0 if d.get("isFavorite") else 1,
             self.get_device_category_order(d),
             0 if d.get("isDefault") else 1,
@@ -214,6 +223,7 @@ class DeviceManager:
             for dev in self.devices.values():
                 d = dict(dev)
                 d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
                 results.append(d)
 
         # 2. Alexa
@@ -221,6 +231,7 @@ class DeviceManager:
             for ad in alexa_service.devices_cache:
                 d = dict(ad)
                 d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
                 results.append(d)
 
         # 3. HomePod
@@ -228,6 +239,7 @@ class DeviceManager:
             for hd in homepod_service.devices_cache:
                 d = dict(hd)
                 d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
                 results.append(d)
 
         # 4. ONVIF / DLNA
@@ -248,7 +260,8 @@ class DeviceManager:
                         "port": dev.get("port", 8000),
                         "model": dev.get("model", ""),
                         "type": dtype,
-                        "label": settings_manager.get_label_for_device(dev_id, prefix)
+                        "label": settings_manager.get_label_for_device(dev_id, prefix),
+                        "disabled": settings_manager.is_device_disabled(dev_id, prefix, dev_name)
                     }
                     results.append(d)
 
@@ -256,6 +269,7 @@ class DeviceManager:
         for cd in client_speaker_service.get_active_devices(include_disabled=True):
             d = dict(cd)
             d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+            d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
             results.append(d)
 
         return results
@@ -435,11 +449,52 @@ class DeviceManager:
                 existing = self.devices[key]
                 if data.get("name"):
                     existing["name"] = data["name"]
-                existing["port"] = data.get("port", existing.get("port", 8009))
-                existing["isGroup"] = data.get("isGroup", existing.get("isGroup", False))
-                existing["model"] = data.get("model", existing.get("model"))
+                if existing.get("isGroup") and data.get("isGroup"):
+                    # 同名グループの候補エンドポイント（他スピーカーIP/ポート）を蓄積
+                    endpoints = existing.setdefault("candidateEndpoints", [])
+                    new_ep = {"host": data.get("host"), "port": data.get("port"), "ip": data.get("ip")}
+                    if not any(ep.get("host") == new_ep["host"] and ep.get("port") == new_ep["port"] for ep in endpoints):
+                        endpoints.append(new_ep)
+                else:
+                    existing["port"] = data.get("port", existing.get("port", 8009))
+                    existing["isGroup"] = data.get("isGroup", existing.get("isGroup", False))
+                    existing["model"] = data.get("model", existing.get("model"))
             else:
                 self.devices[key] = data
+
+    def promote_group_endpoint(self, group_name_or_id: str, new_host: str, new_port: int) -> Optional[str]:
+        """発話成功時などに、Google Cast グループの代表エンドポイントを切り替え、デフォルト端末も成り代わり更新"""
+        with self._lock:
+            target_dev = None
+            for d in self.devices.values():
+                if d.get("isGroup") and (d.get("name") == group_name_or_id or d.get("id") == group_name_or_id or d.get("ip") == group_name_or_id):
+                    target_dev = d
+                    break
+            if not target_dev:
+                return None
+
+            old_ip = target_dev.get("ip")
+            new_formatted_ip = f"{new_host}:{new_port}"
+            target_dev["host"] = new_host
+            target_dev["port"] = new_port
+            target_dev["ip"] = new_formatted_ip
+
+            # エンドポイントリストの先頭へ昇格
+            endpoints = target_dev.setdefault("candidateEndpoints", [])
+            matched_ep = next((ep for ep in endpoints if ep.get("host") == new_host and ep.get("port") == new_port), None)
+            if matched_ep:
+                endpoints.remove(matched_ep)
+                endpoints.insert(0, matched_ep)
+            else:
+                endpoints.insert(0, {"host": new_host, "port": new_port, "ip": new_formatted_ip})
+
+            # デフォルト端末として設定されていた場合は自動で成り代わり更新
+            current_default = settings_manager.get_default_device_id()
+            if current_default and (current_default == old_ip or current_default == target_dev.get("id") or current_default in [ep.get("ip") for ep in endpoints]):
+                settings_manager.set_default_device_id(new_formatted_ip)
+                log.info(f"[DeviceManager] デフォルト端末を Google Cast グループの新エンドポイント '{new_formatted_ip}' に自動成り代わり更新しました")
+
+            return new_formatted_ip
 
     def scan_google_devices(self, timeout: float = 2.0):
         """Zeroconf によるデバイス再スキャン（待機してmDNSパケット収集）"""

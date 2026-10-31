@@ -147,5 +147,30 @@ class TestDeviceLabels(unittest.TestCase):
         self.assertEqual(clear_res.json()["label"], "")
         self.assertNotIn("test_speaker_1", clear_res.json()["labels"])
 
+    def test_device_disabled_toggle_api(self):
+        """POST /api/devices/toggle-disabled によるデバイス無効化・有効化トグルの検証"""
+        target_dev = "dev_192_168_11_200"
+
+        # 1. 無効化 (初回トグル -> disabled=True)
+        res1 = self.client.post("/api/devices/toggle-disabled", json={"id": target_dev})
+        self.assertEqual(res1.status_code, 200)
+        d1 = res1.json()
+        self.assertTrue(d1["success"])
+        self.assertTrue(d1["disabled"])
+        self.assertIn(target_dev, d1["disabledDevices"])
+
+        # 2. GET /api/devices/disabled で確認
+        get_res = self.client.get("/api/devices/disabled")
+        self.assertEqual(get_res.status_code, 200)
+        self.assertIn(target_dev, get_res.json()["disabledDevices"])
+
+        # 3. 再有効化 (2回目トグル -> disabled=False)
+        res2 = self.client.post("/api/devices/toggle-disabled", json={"id": target_dev})
+        self.assertEqual(res2.status_code, 200)
+        d2 = res2.json()
+        self.assertTrue(d2["success"])
+        self.assertFalse(d2["disabled"])
+        self.assertNotIn(target_dev, d2["disabledDevices"])
+
 if __name__ == "__main__":
     unittest.main()

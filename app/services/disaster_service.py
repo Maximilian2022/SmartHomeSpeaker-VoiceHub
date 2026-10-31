@@ -436,17 +436,56 @@ class DisasterService:
         if existing and existing.get("status") == "notified":
             return # 重複発報防止
 
-        # 地域マッチング
+        # 地域および予想震度マッチング
+        target_scope = eq_config.get("targetScope", "all")
+        eew_min_scale = int(eq_config.get("eewMinScale", 30))
         target_pref = (user_area.get("prefName") or "").strip()
-        eew_areas = data.get("areas", [])
-        should_notify = (eq_config.get("targetScope") == "all" or len(eew_areas) == 0)
+        eew_areas = data.get("areas") or []
+        should_notify = False
 
-        if not should_notify and target_pref:
+        if not eew_areas:
+            # エリア情報がない速報（全国初期報等）
+            should_notify = True
+        elif target_scope == "all":
+            # 全国対象: 全エリア中の最大予想震度を判定
+            max_pred_scale = 0
             for a in eew_areas:
-                aname = (a.get("name") or a.get("pref") or "").strip()
-                if aname and (target_pref in aname or aname in target_pref):
+                s_to = a.get("scaleTo")
+                s_from = a.get("scaleFrom")
+                s = s_to if (isinstance(s_to, (int, float)) and s_to > 0) else (s_from if isinstance(s_from, (int, float)) else 0)
+                if s > max_pred_scale:
+                    max_pred_scale = s
+            if max_pred_scale >= eew_min_scale:
+                should_notify = True
+            else:
+                log.info(f"EEW ignored: nationwide max expected scale ({max_pred_scale}) is below eewMinScale ({eew_min_scale})")
+        else:
+            # 地域限定 (local)
+            matched_areas = []
+            if target_pref:
+                for a in eew_areas:
+                    aname = (a.get("name") or "").strip()
+                    apref = (a.get("pref") or "").strip()
+                    if apref and (target_pref in apref or apref in target_pref):
+                        matched_areas.append(a)
+                    elif aname and target_pref in aname:
+                        matched_areas.append(a)
+
+            if matched_areas:
+                local_max_scale = 0
+                for a in matched_areas:
+                    s_to = a.get("scaleTo")
+                    s_from = a.get("scaleFrom")
+                    s = s_to if (isinstance(s_to, (int, float)) and s_to > 0) else (s_from if isinstance(s_from, (int, float)) else 0)
+                    if s > local_max_scale:
+                        local_max_scale = s
+                if local_max_scale >= eew_min_scale:
                     should_notify = True
-                    break
+                    log.info(f"EEW matched local area: {target_pref} (expected maxScale={local_max_scale} >= {eew_min_scale})")
+                else:
+                    log.info(f"EEW ignored: local expected maxScale ({local_max_scale}) is below eewMinScale ({eew_min_scale}) for {target_pref}")
+            else:
+                log.info(f"EEW ignored: targetScope=local ({target_pref}) was not found in EEW forecast areas")
 
         if should_notify:
             self._active_eew_events[event_id] = {"notifiedAt": now_ms, "status": "notified"}

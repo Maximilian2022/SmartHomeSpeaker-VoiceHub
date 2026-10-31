@@ -46,6 +46,22 @@ def get_default_device_name() -> str:
         return f"{hostname} (Win)"
     return f"{hostname} (Linux)"
 
+def _normalize_volume(val: Optional[float]) -> tuple:
+    """音量値を比率 (0.0〜1.0) とパーセント (0〜100) に正規化"""
+    if val is None:
+        return 1.0, 100
+    try:
+        f = float(val)
+        if f > 1.0:
+            vol_ratio = max(0.0, min(1.0, f / 100.0))
+            vol_percent = int(max(0, min(100, f)))
+        else:
+            vol_ratio = max(0.0, min(1.0, f))
+            vol_percent = int(vol_ratio * 100)
+        return vol_ratio, vol_percent
+    except (ValueError, TypeError):
+        return 1.0, 100
+
 # ==============================================================================
 # クロスプラットフォーム音声再生エンジン
 # ==============================================================================
@@ -152,9 +168,10 @@ class AudioPlayer:
     def _play_mac(self, file_path: str, volume: Optional[float]) -> bool:
         """macOS: OS標準の afplay コマンドを使用（追加依存なし・極低メモリ・超低遅延）"""
         try:
+            vol_ratio, _ = _normalize_volume(volume)
             cmd = ["afplay"]
             if volume is not None:
-                cmd.extend(["-v", str(max(0.0, min(1.0, float(volume))))])
+                cmd.extend(["-v", str(vol_ratio)])
             cmd.append(file_path)
             res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return res.returncode == 0
@@ -170,31 +187,50 @@ class AudioPlayer:
         output_key: Optional[str] = None,
         output_name: Optional[str] = None
     ) -> bool:
-        """Windows: miniaudio で対象デバイスの ma_device_id を直接指定して再生"""
+        """Windows: miniaudio または PowerShell MediaPlayer で音量指定再生"""
+        vol_ratio, _ = _normalize_volume(volume)
+
         if self._miniaudio_avail:
             try:
                 import miniaudio
                 target_ma_id, resolved_name = self._resolve_miniaudio_device_id(output_key, output_name)
-                stream = miniaudio.stream_file(file_path)
-                if target_ma_id is not None:
-                    device = miniaudio.PlaybackDevice(device_id=target_ma_id)
-                else:
-                    device = miniaudio.PlaybackDevice()
-                device.start(stream)
-                while device.is_running:
-                    time.sleep(0.05)
-                device.close()
-                return True
+                try:
+                    decoded = miniaudio.decode_file(file_path)
+                    samples = decoded.samples
+                    if vol_ratio < 0.99:
+                        import array
+                        a = array.array('h', samples)
+                        for i in range(len(a)):
+                            a[i] = int(a[i] * vol_ratio)
+                        samples = a.tobytes()
+                    device = miniaudio.PlaybackDevice(device_id=target_ma_id, nchannels=decoded.nchannels, sample_rate=decoded.sample_rate, format=decoded.format) if target_ma_id is not None else miniaudio.PlaybackDevice(nchannels=decoded.nchannels, sample_rate=decoded.sample_rate, format=decoded.format)
+                    device.start(samples)
+                    while device.is_running:
+                        time.sleep(0.05)
+                    device.close()
+                    return True
+                except Exception:
+                    stream = miniaudio.stream_file(file_path)
+                    if target_ma_id is not None:
+                        device = miniaudio.PlaybackDevice(device_id=target_ma_id)
+                    else:
+                        device = miniaudio.PlaybackDevice()
+                    device.start(stream)
+                    while device.is_running:
+                        time.sleep(0.05)
+                    device.close()
+                    return True
             except Exception as e:
                 print(f"[Player] miniaudio error: {e}, falling back to PowerShell", file=sys.stderr)
 
-        # PowerShell フォールバック
+        # PowerShell フォールバック (音量指定対応)
         try:
             escaped_path = file_path.replace("'", "''")
             ps_script = f"""
             Add-Type -AssemblyName presentationCore;
             $player = New-Object System.Windows.Media.MediaPlayer;
             $player.Open([System.Uri]'{escaped_path}');
+            $player.Volume = {vol_ratio};
             $player.Play();
             Start-Sleep -Milliseconds 300;
             while ($player.NaturalDuration.HasTimeSpan -eq $false) {{ Start-Sleep -Milliseconds 100 }};
@@ -220,30 +256,45 @@ class AudioPlayer:
         output_key: Optional[str] = None,
         output_name: Optional[str] = None
     ) -> bool:
-        """Linux: miniaudio (デバイス指定対応) または paplay / mpv / ffplay / aplay"""
+        """Linux: miniaudio (デバイス指定対応) または paplay / mpv / ffplay / aplay (音量指定対応)"""
+        vol_ratio, vol_percent = _normalize_volume(volume)
+
         # 1. 個別デバイス指定時は miniaudio で対象デバイスを直接指定して再生
         if self._miniaudio_avail and (output_key or output_name):
             try:
                 import miniaudio
                 target_ma_id, _ = self._resolve_miniaudio_device_id(output_key, output_name)
-                stream = miniaudio.stream_file(file_path)
-                if target_ma_id is not None:
-                    device = miniaudio.PlaybackDevice(device_id=target_ma_id)
-                else:
-                    device = miniaudio.PlaybackDevice()
-                device.start(stream)
-                while device.is_running:
-                    time.sleep(0.05)
-                device.close()
-                return True
+                try:
+                    decoded = miniaudio.decode_file(file_path)
+                    samples = decoded.samples
+                    if vol_ratio < 0.99:
+                        import array
+                        a = array.array('h', samples)
+                        for i in range(len(a)):
+                            a[i] = int(a[i] * vol_ratio)
+                        samples = a.tobytes()
+                    device = miniaudio.PlaybackDevice(device_id=target_ma_id, nchannels=decoded.nchannels, sample_rate=decoded.sample_rate, format=decoded.format)
+                    device.start(samples)
+                    while device.is_running:
+                        time.sleep(0.05)
+                    device.close()
+                    return True
+                except Exception:
+                    stream = miniaudio.stream_file(file_path)
+                    device = miniaudio.PlaybackDevice(device_id=target_ma_id) if target_ma_id is not None else miniaudio.PlaybackDevice()
+                    device.start(stream)
+                    while device.is_running:
+                        time.sleep(0.05)
+                    device.close()
+                    return True
             except Exception as e:
                 print(f"[Player] Linux miniaudio targeted error: {e}", file=sys.stderr)
 
-        # 2. 外部CLIツールの存在確認
+        # 2. 外部CLIツールの存在確認 (音量オプション付き)
         for cmd_name, cmd_args in [
-            ("mpv", ["mpv", "--no-terminal", "--really-quiet", file_path]),
-            ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path]),
-            ("paplay", ["paplay", file_path]),
+            ("mpv", ["mpv", "--no-terminal", "--really-quiet", f"--volume={vol_percent}", file_path]),
+            ("ffplay", ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-volume", str(vol_percent), file_path]),
+            ("paplay", ["paplay", f"--volume={int(vol_ratio * 65536)}", file_path]),
             ("aplay", ["aplay", "-q", file_path])
         ]:
             if shutil.which(cmd_name):
@@ -318,6 +369,7 @@ class AutostartManager:
 
     @classmethod
     def enable(cls, server: str, name: str, token: Optional[str]) -> bool:
+        cls.save_config(server, name, token)
         script_path, args = cls.get_current_cmd_args(server, name, token)
         uv_path = cls._find_uv_path()
 
@@ -332,14 +384,37 @@ class AutostartManager:
             return False
 
     @classmethod
-    def disable(cls) -> bool:
+    def disable(cls, clean: bool = False) -> bool:
         if IS_WIN:
-            return cls._disable_windows()
+            return cls._disable_windows(clean=clean)
         elif IS_MAC:
-            return cls._disable_macos()
+            return cls._disable_macos(clean=clean)
         elif IS_LINUX:
-            return cls._disable_linux()
+            return cls._disable_linux(clean=clean)
         return False
+
+    @staticmethod
+    def load_saved_config() -> dict:
+        config_file = Path.home() / ".voicehub" / "config.json"
+        if config_file.exists():
+            try:
+                return json.loads(config_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    @staticmethod
+    def save_config(server: str, name: str, token: Optional[str] = None):
+        config_dir = Path.home() / ".voicehub"
+        try:
+            config_dir.mkdir(parents=True, exist_ok=True)
+            config_file = config_dir / "config.json"
+            data = {"server": server, "name": name}
+            if token:
+                data["token"] = token
+            config_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
 
     @classmethod
     def status(cls):
@@ -378,42 +453,114 @@ class AutostartManager:
 
     @classmethod
     def _enable_windows(cls, uv_path: str, script_path: str, args: list) -> bool:
-        vbs_path = cls._get_windows_startup_vbs()
-        vbs_path.parent.mkdir(parents=True, exist_ok=True)
-        
+        persistent_dir = Path.home() / ".voicehub"
+        persistent_dir.mkdir(parents=True, exist_ok=True)
+        vbs_path = persistent_dir / "run_silent.vbs"
+
         args_str = " ".join([f'"{a}"' if " " in a else a for a in args])
         cmd_line = f'"{uv_path}" run "{script_path}" {args_str}'
         vbs_content = f'''Set WshShell = CreateObject("WScript.Shell")
+WshShell.CurrentDirectory = "{str(persistent_dir).replace('"', '""')}"
+WScript.Sleep 15000
 WshShell.Run "{cmd_line.replace('"', '""')}", 0, False
 '''
         try:
             with open(vbs_path, "w", encoding="utf-8") as f:
                 f.write(vbs_content)
+
             cls._stop_windows_background()
+
+            # 旧スタートアップ VBS が残っていれば削除
+            old_startup = cls._get_windows_startup_vbs()
+            if old_startup.exists():
+                try:
+                    old_startup.unlink()
+                except Exception:
+                    pass
+
+            # タスクスケジューラ (schtasks) に登録 (ログオン時 + ネットワーク待機遅延20秒)
+            tr_cmd = f'wscript.exe //B "{str(vbs_path)}"'
+            sch_cmd = [
+                "schtasks", "/create",
+                "/tn", "VoiceHub_Speaker",
+                "/tr", tr_cmd,
+                "/sc", "onlogon",
+                "/delay", "0000:20",
+                "/rl", "limited",
+                "/f"
+            ]
+            res = subprocess.run(sch_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                # schtasks 権限等で失敗した場合はスタートアップフォルダへフォールバック
+                with open(old_startup, "w", encoding="utf-8") as f:
+                    f.write(vbs_content)
+
+            # 今すぐバックグラウンド常駐を開始
             subprocess.Popen(
                 ["wscript.exe", "//B", str(vbs_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
             print("=" * 65)
-            print("✅ Windows スタートアップへの登録とバックグラウンド常駐を開始しました！")
+            print("✅ Windows タスクスケジューラへの登録と常駐起動を完了しました！")
+            print("   タスク名: VoiceHub_Speaker (ログオン時・ネットワーク待機起動)")
             print(f"   登録ファイル: {vbs_path}")
-            print("   現在および次回PC起動時から、黒い画面を出さずにバックグラウンドで常駐します。")
+            print("   現在および次回PC起動時から、黒い画面を出さずに自動復帰・常駐します。")
             print("=" * 65)
             return True
         except Exception as e:
-            print(f"❌ スタートアップ登録に失敗しました: {e}")
+            print(f"❌ 自動起動登録に失敗しました: {e}")
             return False
 
     @classmethod
-    def _disable_windows(cls) -> bool:
-        vbs_path = cls._get_windows_startup_vbs()
+    def _disable_windows(cls, clean: bool = False) -> bool:
         cls._stop_windows_background()
-        if vbs_path.exists():
-            vbs_path.unlink()
-            print("✅ Windows スタートアップ登録を解除し、バックグラウンド常駐を停止しました。")
-            return True
-        print("ℹ️ スタートアップ登録はされていませんでした（実行中のプロセスがある場合は停止しました）。")
+
+        # 1. タスクスケジューラから削除
+        try:
+            subprocess.run(["schtasks", "/delete", "/tn", "VoiceHub_Speaker", "/f"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+        # 2. 旧スタートアップ VBS 削除
+        old_startup = cls._get_windows_startup_vbs()
+        if old_startup.exists():
+            try:
+                old_startup.unlink()
+            except Exception:
+                pass
+
+        # 3. run_silent.vbs 削除
+        silent_vbs = Path.home() / ".voicehub" / "run_silent.vbs"
+        if silent_vbs.exists():
+            try:
+                silent_vbs.unlink()
+            except Exception:
+                pass
+
+        print("✅ Windows タスクスケジューラおよび自動起動登録を解除し、常駐プロセスを停止しました。")
+
+        # 4. ローカル設定フォルダ (~/.voicehub) の削除確認
+        persistent_dir = Path.home() / ".voicehub"
+        if persistent_dir.exists():
+            should_clean = clean
+            if not should_clean and sys.stdin.isatty():
+                try:
+                    ans = input("\n❓ ローカル設定・キャッシュフォルダ (~/.voicehub) も完全に削除しますか？ [y/N]: ").strip().lower()
+                    if ans == "y":
+                        should_clean = True
+                except Exception:
+                    pass
+
+            if should_clean:
+                try:
+                    shutil.rmtree(persistent_dir, ignore_errors=True)
+                    print("🧹 ローカル設定・キャッシュフォルダ (~/.voicehub) を完全に削除しました。")
+                except Exception as e:
+                    print(f"⚠️ フォルダ削除エラー: {e}")
+            else:
+                print("ℹ️ ローカル設定・キャッシュフォルダ (~/.voicehub) は保持されました。")
+
         return True
 
     @classmethod
@@ -856,18 +1003,29 @@ def main():
     parser.add_argument("--id", default=None, help="一意のクライアントID (未指定時は自動生成)")
     parser.add_argument("--token", default=None, help="Webhook 認証トークン (VoiceHub でトークンが設定されている場合)")
     parser.add_argument("--autostart", choices=["enable", "disable", "status"], help="OS起動時の自動バックグラウンド起動を設定/解除/確認")
+    parser.add_argument("--clean", action="store_true", help="自動起動解除時にローカル設定・キャッシュフォルダ (~/.voicehub) も完全削除")
 
     args = parser.parse_args()
+
+    # 保存済み設定の自動ロード（引数が未指定の場合に復元）
+    saved_cfg = AutostartManager.load_saved_config()
+    if args.server == "http://localhost:8080" and saved_cfg.get("server"):
+        args.server = saved_cfg["server"]
+    if not args.token and saved_cfg.get("token"):
+        args.token = saved_cfg["token"]
 
     # 自動起動オプションの処理
     if args.autostart:
         if args.autostart == "enable":
             AutostartManager.enable(args.server, args.name, args.token)
         elif args.autostart == "disable":
-            AutostartManager.disable()
+            AutostartManager.disable(clean=args.clean)
         elif args.autostart == "status":
             AutostartManager.status()
         return
+
+    # 通常実行時も次回のために設定を保存
+    AutostartManager.save_config(args.server, args.name, args.token)
 
     # 通常のクライアント実行
     client = VoiceHubSpeakerClient(

@@ -682,7 +682,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (defIp) {
       const found = (state.devices || []).find(d => d.ip === defIp || d.host === defIp || d.id === defIp);
       if (found && found.name) {
-        const dName = formatSpeakerDisplayName(found.name);
+        const dName = found.label || formatSpeakerDisplayName(found.name);
         el.defaultDeviceText.textContent = isEn() ? `Default: ${dName}` : `デフォルト: ${dName}`;
         el.defaultDeviceText.title = isEn() ? `Default Speaker: ${dName} (${defIp})` : `標準スピーカー: ${dName} (${defIp})`;
       } else {
@@ -887,8 +887,8 @@ document.addEventListener('DOMContentLoaded', () => {
       found = (state.devices || []).find(d => d.name && d.name.toLowerCase() === t.toLowerCase());
     }
 
-    if (found && found.name) {
-      return formatSpeakerDisplayName(found.name);
+    if (found && (found.label || found.name)) {
+      return found.label ? found.label : formatSpeakerDisplayName(found.name);
     }
 
     // 4. IPエイリアス設定にあればエイリアス名
@@ -1031,6 +1031,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     state.devices.forEach(dev => {
+      if (dev.disabled) return; // 無効化 (非表示) されたスピーカーは選択肢から除外
       const isChecked = selectedValues.includes(dev.ip) ? 'checked' : '';
       const isFav = isDeviceFavorite(dev);
       const catOrder = getDeviceCategoryOrder(dev);
@@ -1045,11 +1046,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const devType = isAlexa ? 'alexa' : (isHomePod ? 'homepod' : (isDlna ? 'dlna' : (isClient ? 'client' : (isTapo ? 'tapo' : (isOnvif ? 'onvif' : 'google')))));
       let chipClass = isAlexa ? 'alexa-chip' : (isHomePod ? 'homepod-chip' : (isDlna ? 'dlna-chip' : (isClient ? 'client-chip' : (isTapo ? 'tapo-chip' : (isOnvif ? 'onvif-chip' : 'google-chip')))));
       if (isFav) chipClass += ' favorite-chip';
-      const displayName = formatSpeakerDisplayName(dev.name);
+      const rawDisplayName = formatSpeakerDisplayName(dev.name);
+      const effectiveName = dev.label ? dev.label : rawDisplayName;
 
       let badgeHtml = '';
       if (dev.label) {
-        badgeHtml += `<span class="speaker-chip-badge" style="background:rgba(59,130,246,0.2);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);font-weight:600;" title="ラベル: ${escapeHtml(dev.label)}">🏷️ ${escapeHtml(dev.label)}</span>`;
+        badgeHtml += `<span class="speaker-chip-badge" style="background:rgba(59,130,246,0.2);color:#93c5fd;border:1px solid rgba(59,130,246,0.4);font-weight:600;" title="ラベル上書き中 (元: ${escapeHtml(rawDisplayName)})">🏷️</span>`;
       }
       if (isFav) {
         badgeHtml += `<span class="speaker-chip-badge fav-badge" title="${isEn() ? 'Favorite Speaker' : 'お気に入りスピーカー'}" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.45);font-weight:700;">★</span>`;
@@ -1086,9 +1088,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       html += `
-        <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${escapeHtml(displayName)} (${escapeHtml(dev.model || dev.type)})">
+        <label class="speaker-chip ${chipClass} ${isChecked ? 'checked' : ''}" title="${dev.label ? `${escapeHtml(dev.label)} (元: ${escapeHtml(rawDisplayName)})` : escapeHtml(rawDisplayName)} (${escapeHtml(dev.model || dev.type)})">
           <input type="checkbox" name="${nameAttr}" value="${escapeHtml(dev.ip)}" data-name="${escapeHtml(dev.name || '')}" data-raw-name="${escapeHtml(dev.rawName || dev.name || '')}" data-id="${escapeHtml(dev.id || '')}" data-label="${escapeHtml(dev.label || '')}" data-type="${escapeHtml(devType)}" ${isChecked}>
-          <span class="speaker-chip-name">${escapeHtml(displayName)}</span>
+          <span class="speaker-chip-name">${escapeHtml(effectiveName)}</span>
           <span class="speaker-chip-badges">${badgeHtml}</span>
         </label>
       `;
@@ -1402,9 +1404,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderDevicesGrid() {
     const defaultIp = (state.serverInfo && state.serverInfo.defaultDeviceIp) || (state.devices[0]?.ip || '');
+    const showHidden = !!document.getElementById('toggleShowHiddenDevices')?.checked;
+
+    // 非表示（無効化）デバイス数をカウントしてバッジに反映
+    const hiddenCount = state.devices.filter(d => !!d.disabled).length;
+    const badgeHidden = document.getElementById('hiddenDevicesCountBadge');
+    if (badgeHidden) {
+      if (hiddenCount > 0) {
+        badgeHidden.textContent = `${hiddenCount}`;
+        badgeHidden.style.display = 'inline-block';
+      } else {
+        badgeHidden.style.display = 'none';
+      }
+    }
 
     let cardsHtml = '';
     state.devices.forEach(dev => {
+      const isDisabled = !!dev.disabled;
+      if (isDisabled && !showHidden) {
+        return; // 非表示モード時はスキップ
+      }
+
       const isDef = dev.ip === defaultIp;
       const isFav = isDeviceFavorite(dev);
       const catOrder = getDeviceCategoryOrder(dev);
@@ -1415,76 +1435,107 @@ document.addEventListener('DOMContentLoaded', () => {
       const isOnvif = dev.type === 'onvif' || dev.ip.startsWith('onvif:');
       const isDlna = dev.type === 'dlna' || dev.ip.startsWith('dlna:');
       const isClient = dev.type === 'client' || dev.type === 'pc' || dev.ip.startsWith('client:');
-      const displayName = formatSpeakerDisplayName(dev.name);
+      const rawDisplayName = formatSpeakerDisplayName(dev.name);
+      const effectiveName = dev.label ? dev.label : rawDisplayName;
 
       let groupBadge = '';
       if (isGroup) {
         if (isAlexa) {
-          groupBadge = '<span class="device-tag alexa" style="background:rgba(16,185,129,0.22);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-size:0.7rem;padding:2px 6px;font-weight:600;">👥 Echo グループ</span>';
+          groupBadge = '<span class="device-tag alexa" style="background:rgba(16,185,129,0.22);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-size:0.68rem;padding:1px 5px;font-weight:600;">👥 Echo G</span>';
         } else if (isHomePod) {
-          groupBadge = '<span class="device-tag homepod" style="background:rgba(236,72,153,0.22);color:#f472b6;border:1px solid rgba(236,72,153,0.4);font-size:0.7rem;padding:2px 6px;font-weight:600;">👥 HomePod グループ</span>';
+          groupBadge = '<span class="device-tag homepod" style="background:rgba(236,72,153,0.22);color:#f472b6;border:1px solid rgba(236,72,153,0.4);font-size:0.68rem;padding:1px 5px;font-weight:600;">👥 HP G</span>';
         } else {
-          groupBadge = '<span class="device-tag google" style="background:rgba(66,133,244,0.22);color:#93c5fd;border:1px solid rgba(66,133,244,0.4);font-size:0.7rem;padding:2px 6px;font-weight:600;">👥 Cast グループ</span>';
+          groupBadge = '<span class="device-tag google" style="background:rgba(66,133,244,0.22);color:#93c5fd;border:1px solid rgba(66,133,244,0.4);font-size:0.68rem;padding:1px 5px;font-weight:600;">👥 Cast G</span>';
         }
       }
 
+      const cardStyle = isDisabled
+        ? 'opacity: 0.58; border: 1px dashed rgba(239,68,68,0.4); background: rgba(15,23,42,0.45);'
+        : (isDef
+            ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);'
+            : (isFav ? 'border-color: rgba(245, 158, 11, 0.3);' : ''));
+
       cardsHtml += `
-        <div class="device-card ${isDef ? 'default-dev' : ''} ${isFav ? 'favorite-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''} ${isTapo ? 'tapo-dev' : ''} ${isOnvif ? 'onvif-dev' : ''} ${isDlna ? 'dlna-dev' : ''} ${isClient ? 'client-dev' : ''}" style="${isDef ? 'border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 15px rgba(245, 158, 11, 0.1);' : (isFav ? 'border-color: rgba(245, 158, 11, 0.3);' : '')}">
-          <div class="device-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-            <div style="min-width:0;flex:1;display:flex;align-items:center;gap:6px;">
-              <button type="button" class="btn-fav-star ${isFav ? 'active' : ''}" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" title="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}" aria-label="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}">
+        <div class="device-card ${isDef ? 'default-dev' : ''} ${isFav ? 'favorite-dev' : ''} ${isDisabled ? 'disabled-dev' : ''} ${isAlexa ? 'alexa-dev' : ''} ${isHomePod ? 'homepod-dev' : ''} ${isTapo ? 'tapo-dev' : ''} ${isOnvif ? 'onvif-dev' : ''} ${isDlna ? 'dlna-dev' : ''} ${isClient ? 'client-dev' : ''}" style="${cardStyle}">
+          <!-- ヘッダー部: 1行目に名前、2行目にバッジ群を完全に分離 -->
+          <div class="device-card-header" style="display:flex;flex-direction:column;gap:5px;">
+            <!-- 1行目: お気に入り星 ＋ デバイス名 (ラベル設定時はラベル名で上書き) -->
+            <div style="display:flex;align-items:center;gap:6px;min-width:0;width:100%;">
+              <button type="button" class="btn-fav-star ${isFav ? 'active' : ''}" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(effectiveName)}" title="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}" aria-label="${isFav ? 'お気に入りを解除' : 'お気に入りに追加'}" style="flex-shrink:0;">
                 <span class="fav-star-icon">${isFav ? '★' : '☆'}</span>
               </button>
-              <span class="device-card-title" style="font-size:1.05rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;" title="${escapeHtml(displayName)}">${escapeHtml(displayName)}</span>
+              <span class="device-card-title" style="font-size:1.02rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;" title="${dev.label ? `ラベル: ${escapeHtml(dev.label)} (元: ${escapeHtml(rawDisplayName)})` : escapeHtml(rawDisplayName)}">${escapeHtml(effectiveName)}</span>
+              ${dev.label ? `<span style="flex-shrink:0;font-size:0.82rem;opacity:0.85;" title="ラベル名で上書き中 (元の名前: ${escapeHtml(rawDisplayName)})">🏷️</span>` : ''}
             </div>
-            <div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">
-              ${isDef ? `<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.7rem;padding:2px 6px;">★ ${window.i18n && window.i18n.getLanguage() === 'en' ? 'Default' : '標準'}</span>` : ''}
-              ${isFav && !isDef ? `<span class="device-tag fav" style="background:rgba(245,158,11,0.12);color:#fbbf24;border:1px solid rgba(245,158,11,0.25);font-size:0.7rem;padding:2px 6px;">${window.t ? window.t('devices.favoriteBadge') : '★ お気に入り'}</span>` : ''}
+            <!-- 2行目: バッジ群 (横並び・必要に応じて折り返し) -->
+            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+              ${isDisabled ? `<span class="device-tag disabled" style="background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.35);font-size:0.68rem;padding:1px 5px;">🚫 非表示</span>` : ''}
+              ${isDef ? `<span class="device-tag default" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.3);font-size:0.68rem;padding:1px 5px;">👑 ${window.i18n && window.i18n.getLanguage() === 'en' ? 'Default' : '標準'}</span>` : ''}
               ${isGroup ? groupBadge : `
-                ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.7rem;padding:2px 6px;">Echo</span>' : ''}
-                ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.7rem;padding:2px 6px;">HomePod</span>' : ''}
+                ${isAlexa ? '<span class="device-tag alexa" style="font-size:0.68rem;padding:1px 5px;">Echo</span>' : ''}
+                ${isHomePod ? '<span class="device-tag homepod" style="font-size:0.68rem;padding:1px 5px;">HomePod</span>' : ''}
                 ${isClient ? (() => {
                   const p = (dev.platform || '').toLowerCase();
-                  const pLabel = p.includes('mac') || p.includes('darwin') ? '🍎 Mac' : (p.includes('win') ? '🪟 Windows' : (p.includes('linux') ? '🐧 Linux' : '💻 PC'));
+                  const pLabel = p.includes('mac') || p.includes('darwin') ? '🍎 Mac' : (p.includes('win') ? '🪟 Win' : (p.includes('linux') ? '🐧 Linux' : '💻 PC'));
                   const primBadge = dev.isPrimary
-                    ? `<span class="device-tag" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-size:0.68rem;padding:2px 5px;margin-left:4px;" title="ALL / PC:ALL 一斉発話時のメイン出力">⭐ メイン</span>`
+                    ? `<span class="device-tag" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.4);font-size:0.66rem;padding:1px 4px;margin-left:2px;" title="ALL / PC:ALL 一斉発話時のメイン出力">⭐ メイン</span>`
                     : '';
-                  return `<span class="device-tag client" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);font-size:0.7rem;padding:2px 6px;">${pLabel}</span>${primBadge}`;
+                  return `<span class="device-tag client" style="background:rgba(99,102,241,0.2);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);font-size:0.68rem;padding:1px 5px;">${pLabel}</span>${primBadge}`;
                 })() : ''}
-                ${isTapo ? '<span class="device-tag tapo" style="background:rgba(6,182,212,0.15);color:#22d3ee;border:1px solid rgba(6,182,212,0.3);font-size:0.7rem;padding:2px 6px;">📹 Tapo</span>' : ''}
-                ${isOnvif ? '<span class="device-tag onvif" style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.3);font-size:0.7rem;padding:2px 6px;">📷 ONVIF</span>' : ''}
-                ${isDlna ? '<span class="device-tag dlna" style="background:rgba(234,179,8,0.15);color:#facc15;border:1px solid rgba(234,179,8,0.3);font-size:0.7rem;padding:2px 6px;">🎵 DLNA</span>' : ''}
-                ${!isAlexa && !isHomePod && !isClient && !isTapo && !isOnvif && !isDlna ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.7rem;padding:2px 6px;">Google Home</span>' : ''}
+                ${isTapo ? '<span class="device-tag tapo" style="background:rgba(6,182,212,0.15);color:#22d3ee;border:1px solid rgba(6,182,212,0.3);font-size:0.68rem;padding:1px 5px;">📹 Tapo</span>' : ''}
+                ${isOnvif ? '<span class="device-tag onvif" style="background:rgba(168,85,247,0.15);color:#c084fc;border:1px solid rgba(168,85,247,0.3);font-size:0.68rem;padding:1px 5px;">📷 ONVIF</span>' : ''}
+                ${isDlna ? '<span class="device-tag dlna" style="background:rgba(234,179,8,0.15);color:#facc15;border:1px solid rgba(234,179,8,0.3);font-size:0.68rem;padding:1px 5px;">🎵 DLNA</span>' : ''}
+                ${!isAlexa && !isHomePod && !isClient && !isTapo && !isOnvif && !isDlna ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.68rem;padding:1px 5px;">Google Home</span>' : ''}
               `}
             </div>
           </div>
-          <div class="device-card-info" style="margin-top:8px;">
-            <span><strong>${window.i18n && window.i18n.getLanguage() === 'en' ? 'ID / IP:' : '識別子/IP:'}</strong> ${escapeHtml(dev.ip)}</span>
-            <span><strong>${window.i18n && window.i18n.getLanguage() === 'en' ? 'Model:' : 'モデル:'}</strong> ${escapeHtml(dev.model || 'Smart Speaker')}</span>
-            <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 0.82rem;">
-              <div style="min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                <strong style="color: var(--text-muted);">${window.t ? window.t('devices.labelField') : 'ラベル:'}</strong>
-                ${dev.label ? `<span class="device-label-badge" style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:12px;background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.4);font-weight:600;font-size:0.75rem;" title="${escapeHtml(dev.label)}">🏷️ ${escapeHtml(dev.label)}</span>` : `<span style="color:var(--text-muted);font-style:italic;">${window.t ? window.t('devices.labelNone') : '未設定'}</span>`}
-              </div>
-              <button type="button" class="btn btn-secondary btn-sm btn-edit-device-label" data-dev-id="${escapeHtml(dev.id || dev.ip || '')}" data-ip="${escapeHtml(dev.ip || '')}" data-name="${escapeHtml(displayName)}" data-label="${escapeHtml(dev.label || '')}" style="padding: 2px 8px; font-size: 0.75rem; flex-shrink: 0;" title="${dev.label ? (window.t ? window.t('devices.btnEditLabel') : '編集') : (window.t ? window.t('devices.btnSetLabel') : '+ ラベル設定')}">
-                ${dev.label ? (window.t ? window.t('devices.btnEditLabel') : '編集') : (window.t ? window.t('devices.btnSetLabel') : '+ ラベル設定')}
-              </button>
+          <!-- デバイス情報部: 識別子やモデルが長すぎても1行省略(ellipsis)で表示崩れを防止 -->
+          <div class="device-card-info" style="margin-top:10px;display:flex;flex-direction:column;gap:3px;font-size:0.83rem;">
+            <div style="min-width:0;display:flex;align-items:baseline;gap:6px;">
+              <strong style="flex-shrink:0;color:var(--text-muted);font-size:0.8rem;">${window.i18n && window.i18n.getLanguage() === 'en' ? 'ID / IP:' : '識別子/IP:'}</strong>
+              <span style="font-family:monospace;font-size:0.77rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;" title="${escapeHtml(dev.ip)}">${escapeHtml(dev.ip)}</span>
             </div>
+            <div style="min-width:0;display:flex;align-items:baseline;gap:6px;">
+              <strong style="flex-shrink:0;color:var(--text-muted);font-size:0.8rem;">${window.i18n && window.i18n.getLanguage() === 'en' ? 'Model:' : 'モデル:'}</strong>
+              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;" title="${escapeHtml(dev.model || 'Smart Speaker')}">${escapeHtml(dev.model || 'Smart Speaker')}</span>
+            </div>
+            ${dev.label ? `
+            <div style="min-width:0;display:flex;align-items:baseline;gap:6px;font-size:0.77rem;color:var(--text-muted);">
+              <strong style="flex-shrink:0;color:var(--text-muted);font-size:0.77rem;">${window.i18n && window.i18n.getLanguage() === 'en' ? 'Original:' : '元の名前:'}</strong>
+              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;" title="${escapeHtml(rawDisplayName)}">${escapeHtml(rawDisplayName)}</span>
+            </div>
+            ` : ''}
           </div>
-          <div class="device-card-actions" style="display:flex;flex-direction:column;gap:8px;margin-top:14px;">
-            <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" style="width:100%;justify-content:center;">
+          <!-- 記号化された横並びボタングループ -->
+          <div class="device-card-actions" style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);">
+            <!-- テスト発音 -->
+            <button type="button" class="btn btn-secondary btn-sm btn-quick-ping" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(effectiveName)}" title="${window.t ? window.t('devices.testSpeak') : 'テスト発音'}" style="flex:1;justify-content:center;padding:5px 8px;font-size:0.85rem;" aria-label="テスト発音">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              ${window.t ? window.t('devices.testSpeak') : 'テスト発声'}
             </button>
+            <!-- デフォルト設定 / 表示 (王冠アイコン: 塗りつぶしゴールド vs 線画アウトライン) -->
             ${isDef ? `
-              <div style="display:flex;align-items:center;justify-content:center;gap:6px;width:100%;color:#fbbf24;font-size:0.82rem;font-weight:600;padding:7px 12px;border-radius:var(--radius-sm);background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);box-sizing:border-box;">
-                ${window.i18n && window.i18n.getLanguage() === 'en' ? '★ Default Speaker' : '★ デフォルト (標準) 端末'}
-              </div>
+              <button type="button" class="btn btn-sm btn-is-default-badge" title="${window.i18n && window.i18n.getLanguage() === 'en' ? 'Default Speaker (Active)' : '標準 (デフォルト) 端末'}" style="background:rgba(245,158,11,0.22);color:#fbbf24;border:1px solid rgba(245,158,11,0.5);padding:5px 11px;cursor:default;display:inline-flex;align-items:center;justify-content:center;" aria-label="標準端末">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="#fbbf24" stroke="#d97706" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/>
+                  <path d="M4 19h16" stroke-width="2"/>
+                </svg>
+              </button>
             ` : `
-              <button type="button" class="btn btn-outline-gold btn-sm btn-set-default" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(displayName)}" title="${window.i18n && window.i18n.getLanguage() === 'en' ? 'Set as default speaker' : 'このスピーカーをデフォルト端末に設定します'}" style="width:100%;justify-content:center;">
-                ${window.i18n && window.i18n.getLanguage() === 'en' ? '★ Set as Default' : '★ デフォルトに設定'}
+              <button type="button" class="btn btn-secondary btn-sm btn-set-default" data-ip="${escapeHtml(dev.ip)}" data-name="${escapeHtml(effectiveName)}" title="${window.i18n && window.i18n.getLanguage() === 'en' ? 'Set as default speaker' : '標準 (デフォルト) 端末に設定'}" style="padding:5px 11px;color:var(--text-muted);display:inline-flex;align-items:center;justify-content:center;" aria-label="標準端末に設定">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.65;">
+                  <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/>
+                  <path d="M4 19h16"/>
+                </svg>
               </button>
             `}
+            <!-- ラベル設定 (デバイス名変更) -->
+            <button type="button" class="btn btn-secondary btn-sm btn-edit-device-label" data-dev-id="${escapeHtml(dev.id || dev.ip || '')}" data-ip="${escapeHtml(dev.ip || '')}" data-name="${escapeHtml(rawDisplayName)}" data-effective-name="${escapeHtml(effectiveName)}" data-label="${escapeHtml(dev.label || '')}" title="${dev.label ? (window.i18n && window.i18n.getLanguage() === 'en' ? 'Rename device' : 'デバイス名変更 (ラベル)') : (window.i18n && window.i18n.getLanguage() === 'en' ? 'Rename device' : 'デバイス名変更 (ラベル)')}" style="padding:5px 10px;" aria-label="デバイス名変更">
+              🏷️
+            </button>
+            <!-- 非表示 (無効化) / 再表示 (有効化) -->
+            <button type="button" class="btn btn-secondary btn-sm btn-toggle-device-disabled" data-dev-id="${escapeHtml(dev.id || '')}" data-ip="${escapeHtml(dev.ip || '')}" data-name="${escapeHtml(effectiveName)}" title="${isDisabled ? 'このデバイスを再表示 (有効化)' : 'このデバイスを非表示 (無効化)'}" style="padding:5px 10px;color:${isDisabled ? '#34d399' : 'var(--text-muted)'};" aria-label="表示切り替え">
+              ${isDisabled ? '👁️' : '🚫'}
+            </button>
           </div>
         </div>
       `;
@@ -1563,6 +1614,31 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.warn('お気に入りサーバー同期エラー (ローカルでは保持されています):', err);
+    }
+  }
+
+  // デバイス非表示 (無効化) / 再表示 (有効化) 切り替え処理
+  async function toggleDeviceDisabled(devId, ip, name) {
+    const target = devId || ip;
+    if (!target) return;
+    try {
+      const res = await fetch('/api/devices/toggle-disabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: devId, ip })
+      });
+      if (!res.ok) throw new Error('通信エラー');
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '切り替え失敗');
+
+      const isDis = !!data.disabled;
+      const msg = isDis
+        ? (isEn() ? `Hidden/Disabled "${name}"` : `「${name}」を非表示 (無効化) にしました`)
+        : (isEn() ? `Restored/Enabled "${name}"` : `「${name}」を再表示 (有効化) にしました`);
+      showToast(msg, 'success');
+      await loadDevices();
+    } catch (err) {
+      showToast(`切り替えエラー: ${err.message}`, 'error');
     }
   }
 
@@ -2349,7 +2425,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // デバイス一覧内クイックテストボタン (イベント委譲)
     el.devicesGrid.addEventListener('click', async (e) => {
-      // 0-A. ラベル編集ボタン
+      // 0-A. ラベル編集ボタン (デバイス名変更)
       const labelBtn = e.target.closest('.btn-edit-device-label');
       if (labelBtn) {
         e.preventDefault();
@@ -2357,8 +2433,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const devId = labelBtn.getAttribute('data-dev-id');
         const ip = labelBtn.getAttribute('data-ip');
         const name = labelBtn.getAttribute('data-name');
+        const effName = labelBtn.getAttribute('data-effective-name') || name;
         const label = labelBtn.getAttribute('data-label') || '';
-        openDeviceLabelModal(devId, ip, name, label);
+        openDeviceLabelModal(devId, ip, name, label, effName);
         return;
       }
 
@@ -2370,6 +2447,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const ip = favBtn.getAttribute('data-ip');
         const name = favBtn.getAttribute('data-name') || ip;
         await toggleDeviceFavorite(ip, name);
+        return;
+      }
+
+      // 0-C. デバイス非表示 (無効化) / 再表示 (有効化) 切り替えボタン
+      const disBtn = e.target.closest('.btn-toggle-device-disabled');
+      if (disBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const devId = disBtn.getAttribute('data-dev-id');
+        const ip = disBtn.getAttribute('data-ip');
+        const name = disBtn.getAttribute('data-name') || devId || ip;
+        await toggleDeviceDisabled(devId, ip, name);
         return;
       }
 
@@ -2401,7 +2490,7 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast(`送信エラー: ${err.message}`, 'error');
         } finally {
           pingBtn.disabled = false;
-          pingBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> ${isEn() ? 'Test Voice' : 'テスト発声'}`;
+          pingBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         }
         return;
       }
@@ -2444,6 +2533,11 @@ document.addEventListener('DOMContentLoaded', () => {
           defBtn.textContent = isEn() ? '★ Set as Default' : '★ デフォルトに設定';
         }
       }
+    });
+
+    // 非表示デバイス表示切り替えトグル
+    document.getElementById('toggleShowHiddenDevices')?.addEventListener('change', () => {
+      renderDevicesGrid();
     });
 
     // 全デバイス一括再スキャン (Google Home / Alexa / HomePod / ONVIF)
@@ -6463,7 +6557,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ================= デバイスラベル設定モーダル関連 =================
-  function openDeviceLabelModal(deviceId, ip, name, currentLabel = '') {
+  function openDeviceLabelModal(deviceId, ip, name, currentLabel = '', effectiveName = '') {
     const modal = document.getElementById('modalDeviceLabel');
     const nameEl = document.getElementById('labelTargetDeviceName');
     const idEl = document.getElementById('labelTargetDeviceId');
@@ -6474,7 +6568,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!modal) return;
 
-    if (nameEl) nameEl.textContent = name || 'Smart Speaker';
+    if (nameEl) {
+      if (currentLabel && name && currentLabel !== name) {
+        nameEl.textContent = `${currentLabel} (元の名前: ${name})`;
+      } else {
+        nameEl.textContent = name || 'Smart Speaker';
+      }
+    }
     if (idEl) {
       const showId = ip ? `${ip}${deviceId && deviceId !== ip ? ' (' + deviceId + ')' : ''}` : (deviceId || '-');
       idEl.textContent = showId;
@@ -8555,6 +8655,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (elEewEnabled) elEewEnabled.checked = data.earthquake?.eewEnabled !== false;
       const elEewUrgent = document.getElementById('settingEewUrgent');
       if (elEewUrgent) elEewUrgent.checked = data.earthquake?.eewUrgent !== false;
+      const elEewMinScale = document.getElementById('settingEewMinScale');
+      if (elEewMinScale) elEewMinScale.value = String(data.earthquake?.eewMinScale || 30);
       const elEewVolume = document.getElementById('settingEewVolume');
       const elEewVolumeDisplay = document.getElementById('eewVolumeDisplay');
       if (elEewVolume) {
@@ -9028,6 +9130,7 @@ document.addEventListener('DOMContentLoaded', () => {
             enabled: document.getElementById('settingQuakeReportEnabled')?.checked !== false || document.getElementById('settingEewEnabled')?.checked !== false,
             eewEnabled: document.getElementById('settingEewEnabled')?.checked !== false,
             eewUrgent: document.getElementById('settingEewUrgent')?.checked !== false,
+            eewMinScale: parseInt(document.getElementById('settingEewMinScale')?.value || 30, 10),
             eewVolume: parseInt(document.getElementById('settingEewVolume')?.value || 80, 10),
             reportEnabled: document.getElementById('settingQuakeReportEnabled')?.checked !== false,
             minScale: parseInt(document.getElementById('settingQuakeMinScale')?.value || 30, 10),

@@ -19,6 +19,10 @@ class DeviceFavoriteToggleRequest(BaseModel):
     ip: Optional[str] = None
     id: Optional[str] = None
 
+class DeviceDisabledToggleRequest(BaseModel):
+    ip: Optional[str] = None
+    id: Optional[str] = None
+
 class DeviceLabelRequest(BaseModel):
     id: Optional[str] = None
     deviceId: Optional[str] = None
@@ -32,6 +36,7 @@ async def get_devices():
         "devices": devs,
         "defaultIp": device_manager.get_default_device_ip(),
         "favorites": settings_manager.get_favorite_devices(),
+        "disabledDevices": settings_manager.get_disabled_devices(),
         "labels": settings_manager.get_device_labels()
     }
 
@@ -46,6 +51,7 @@ async def rescan_all_devices():
         "devices": devs,
         "defaultIp": device_manager.get_default_device_ip(),
         "favorites": settings_manager.get_favorite_devices(),
+        "disabledDevices": settings_manager.get_disabled_devices(),
         "labels": settings_manager.get_device_labels()
     }
 
@@ -79,6 +85,24 @@ async def toggle_favorite_device(req: DeviceFavoriteToggleRequest):
         "target": target,
         "isFavorite": is_fav,
         "favorites": settings_manager.get_favorite_devices()
+    }
+
+@router.get("/api/devices/disabled")
+async def get_disabled_devices():
+    return {"disabledDevices": settings_manager.get_disabled_devices()}
+
+@router.post("/api/devices/disabled/toggle")
+@router.post("/api/devices/toggle-disabled")
+async def toggle_disabled_device(req: DeviceDisabledToggleRequest):
+    target = req.id or req.ip or ""
+    if not target:
+        return {"success": False, "error": "id or ip is required"}
+    is_dis = settings_manager.toggle_disabled_device(target)
+    return {
+        "success": True,
+        "target": target,
+        "disabled": is_dis,
+        "disabledDevices": settings_manager.get_disabled_devices()
     }
 
 @router.get("/api/devices/labels")
@@ -143,6 +167,9 @@ async def set_device_volume(req: DeviceVolumeRequest, device_id: Optional[str] =
     elif dtype == "homepod":
         raw_ip = dev.get("rawIp") or dev.get("ip", "")
         success = await homepod_service.set_volume(raw_ip, vol_percent)
+    elif dtype in ("client", "pc"):
+        # クライアントスピーカー: 個別音量を保存（次回発話時の音量指示に反映）
+        success = True
     else:
         success = True
 

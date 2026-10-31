@@ -10,4 +10,5 @@ services:
       - ./app:/app/app
       - ./public:/app/public
       - ./tests:/app/tests
+      - ./clients:/app/clients
 
