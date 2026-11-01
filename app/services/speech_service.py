@@ -105,14 +105,42 @@ class SpeechService:
                 if found:
                     expanded_devices.append(found)
 
-        # 重複排除 (同一IDまたは同一IP:Port)
+        # 物理エンドポイントに基づく厳格な重複排除
+        # (同一IPへの二重送信による途中上書き・再生キャンセルを防止)
         unique_targets: List[Dict[str, Any]] = []
         seen_keys = set()
         for d in expanded_devices:
-            key = d.get("id") or f"{d.get('ip')}:{d.get('port', 8009)}"
+            dtype = d.get("type", "google")
+            is_grp = bool(d.get("isGroup"))
+            if dtype == "google":
+                if is_grp:
+                    key = f"google_group:{d.get('name') or d.get('id')}"
+                else:
+                    host = d.get("host") or str(d.get("ip", "")).split(":")[0]
+                    key = f"google_host:{host}"
+            elif dtype in ("client", "pc"):
+                key = f"client:{d.get('id') or d.get('ip')}"
+            elif dtype == "alexa":
+                key = f"alexa:{d.get('name') or d.get('id')}"
+            else:
+                raw_ip = str(d.get("ip", "")).split(":")[0]
+                key = f"{dtype}:{raw_ip}"
+
             if key not in seen_keys:
                 seen_keys.add(key)
                 unique_targets.append(d)
+
+        def _get_unique_google_members(devs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            """Google Cast 個別端末一覧から同一IP（物理端末）の重複を完全排除"""
+            seen_hosts = set()
+            res = []
+            for d in devs:
+                if d.get("type") == "google" and not d.get("isGroup"):
+                    h = d.get("host") or str(d.get("ip", "")).split(":")[0]
+                    if h and h not in seen_hosts:
+                        seen_hosts.add(h)
+                        res.append(d)
+            return res
 
         # Google Cast ネイティブグループ集約 (失敗時の個別フォールバック用に元リストも保持)
         has_all = any(t.upper() in ("ALL", "*", "GH:ALL", "GOOGLE:ALL") for t in target_list)
@@ -120,14 +148,14 @@ class SpeechService:
         if has_all and len(google_devs) > 1:
             cast_group = next((d for d in google_devs if d.get("isGroup")), None)
             if cast_group:
-                individual_devs = [d for d in google_devs if not d.get("isGroup")]
+                individual_devs = _get_unique_google_members(google_devs)
                 cast_group["_fallback_members"] = individual_devs
                 unique_targets = [d for d in unique_targets if d.get("type") != "google" or d == cast_group]
 
-        # 直接キャストグループが指定された場合でも個別スピーカー群を _fallback_members に必ず紐付ける
+        # 直接キャストグループが指定された場合でも個別スピーカー群を _fallback_members に必ず紐付ける (IP重複排除)
         for d in unique_targets:
             if d.get("type") == "google" and d.get("isGroup") and not d.get("_fallback_members"):
-                d["_fallback_members"] = [dev for dev in all_devices if dev.get("type") == "google" and not dev.get("isGroup")]
+                d["_fallback_members"] = _get_unique_google_members(all_devices)
 
         return unique_targets
 
@@ -571,14 +599,25 @@ class SpeechService:
             res_val = results[i] if i < len(results) else False
             is_ok = (res_val is True or (isinstance(res_val, dict) and res_val.get("status") != "error"))
             if fallback_members and not is_ok:
-                log.warning(f"[Speech] ⚠️ Google Cast グループ '{dev.get('name') or dev.get('ip')}' (2回試行) 失敗のため、個別スピーカー {len(fallback_members)} 台へ自動フォールバックします")
+                # 実行時にも IP 重複を完全排除（同一スピーカーへの二重送信による途中上書きキャンセルを防止）
+                seen_fb_hosts = set()
+                deduped_members = []
+                for fbm in fallback_members:
+                    f_host = fbm.get("host") or str(fbm.get("ip", "")).split(":")[0]
+                    if f_host and f_host not in seen_fb_hosts:
+                        seen_fb_hosts.add(f_host)
+                        deduped_members.append(fbm)
+                    elif f_host in seen_fb_hosts:
+                        log.warning(f"[Speech] ⚠️ 同一IP ({f_host}) への重複送信をスキップ: {fbm.get('name')}")
+
+                log.warning(f"[Speech] ⚠️ Google Cast グループ '{dev.get('name') or dev.get('ip')}' (全試行) 失敗のため、重複排除済み個別スピーカー {len(deduped_members)} 台へ自動フォールバックします")
                 fb_tasks = []
-                for fb_dev in fallback_members:
+                for fb_dev in deduped_members:
                     fb_tasks.append(_run_delayed(google_delay, _dispatch_google_with_retries(fb_dev)))
                 if fb_tasks:
                     fb_results = await asyncio.gather(*fb_tasks, return_exceptions=True)
                     has_any_fb_ok = False
-                    for j, fb_dev in enumerate(fallback_members):
+                    for j, fb_dev in enumerate(deduped_members):
                         fb_name = fb_dev.get("name") or fb_dev.get("ip")
                         fb_val = fb_results[j] if j < len(fb_results) else False
                         fb_ok = (fb_val is True or (isinstance(fb_val, dict) and fb_val.get("status") != "error"))

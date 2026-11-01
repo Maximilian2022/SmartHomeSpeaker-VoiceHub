@@ -3952,7 +3952,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <button type="button" class="btn btn-secondary btn-sm btn-edit-cal" data-id="${escapedCid}" style="font-size: 0.8rem; padding: 5px 10px;" title="このカレンダーの通知先・ボイス・リマインドを個別設定">
               ⚙️ 個別設定
             </button>
-            <label class="switch" style="width: 36px; height: 20px;">
+            <label class="switch switch-sm" title="${isChecked ? 'カレンダー有効' : 'カレンダー無効'}">
               <input type="checkbox" class="cal-toggle-item" data-id="${escapedCid}" ${isChecked}>
               <span class="slider round"></span>
             </label>
@@ -9677,7 +9677,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <code style="font-size: 0.82rem; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px;">${escapeHtml(eng.baseUrl || '')}</code>
           </td>
           <td style="text-align: center;">
-            <label class="switch" title="このエンジンを有効化/無効化">
+            <label class="switch switch-sm" title="このエンジンを有効化/無効化">
               <input type="checkbox" class="eng-enable-toggle" data-eng-id="${escapeHtml(eng.id)}" ${isEnabled ? 'checked' : ''}>
               <span class="slider round"></span>
             </label>
@@ -9754,46 +9754,76 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedback = document.getElementById('newEngTestFeedback');
     const btnCheckAll = document.getElementById('btnCheckAllVoiceEngines');
 
+    // 初期状態はDisabled（接続テスト成功前は非活性カラーで操作不可）
+    const setRegisterButtonState = (enabled) => {
+      if (!btnRegister) return;
+      btnRegister.disabled = !enabled;
+      btnRegister.title = enabled
+        ? (isEn() ? 'Click to register this voice engine' : 'クリックしてこの音声エンジンを登録します')
+        : (isEn() ? 'Please complete the connection test first' : '先に「🔌 接続テスト」を完了してください');
+    };
+
+    setRegisterButtonState(false);
+
     const resetRegistrationState = () => {
       tempTestedNewEngine = null;
-      if (btnRegister) btnRegister.disabled = true;
+      setRegisterButtonState(false);
       if (feedback) {
         feedback.style.display = 'none';
         feedback.innerHTML = '';
       }
     };
 
+    // URLやエンジン種別が変更された場合は再テストが必要なためDisabledに戻す
     if (inpType) inpType.addEventListener('change', resetRegistrationState);
-    if (inpName) inpName.addEventListener('input', resetRegistrationState);
     if (inpUrl) inpUrl.addEventListener('input', resetRegistrationState);
-    if (inpTimeout) inpTimeout.addEventListener('input', resetRegistrationState);
+
+    // 表示名やタイムアウトの微調整ではテスト結果・Disabled状態を維持（最新値で登録）
+    if (inpName) {
+      inpName.addEventListener('input', () => {
+        if (tempTestedNewEngine) {
+          tempTestedNewEngine.name = inpName.value.trim();
+        }
+      });
+    }
+    if (inpTimeout) {
+      inpTimeout.addEventListener('input', () => {
+        if (tempTestedNewEngine) {
+          tempTestedNewEngine.timeoutSeconds = parseFloat(inpTimeout.value) || 5.0;
+        }
+      });
+    }
 
     // 接続テスト
     if (btnTest) {
       btnTest.addEventListener('click', async () => {
         const type = inpType?.value || 'voicevox';
         const name = inpName?.value?.trim();
-        const url = inpUrl?.value?.trim();
+        let url = inpUrl?.value?.trim() || '';
         const timeout = parseFloat(inpTimeout?.value) || 5.0;
 
         if (!name) {
-          showToast('管理用表示名を入力してください（例: メインGPU機）', 'warning');
+          showToast(isEn() ? 'Please enter a display name (e.g. Main GPU)' : '管理用表示名を入力してください（例: メインGPU機）', 'warning');
           inpName?.focus();
           return;
         }
         if (!url) {
-          showToast('接続先 URL を入力してください（例: http://192.168.1.xxx:50021）', 'warning');
+          showToast(isEn() ? 'Please enter a URL (e.g. http://192.168.1.xxx:50021)' : '接続先 URL を入力してください（例: http://192.168.1.xxx:50021）', 'warning');
           inpUrl?.focus();
           return;
+        }
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          url = 'http://' + url;
+          if (inpUrl) inpUrl.value = url;
         }
 
         btnTest.disabled = true;
         const origText = btnTest.textContent;
-        btnTest.textContent = '⏳ テスト中...';
+        btnTest.textContent = isEn() ? '⏳ Testing...' : '⏳ テスト中...';
         if (feedback) {
           feedback.style.display = 'block';
           feedback.style.color = 'var(--text-muted)';
-          feedback.innerHTML = '接続先へ問い合わせ中...';
+          feedback.innerHTML = isEn() ? 'Connecting to voice engine...' : '接続先へ問い合わせ中...';
         }
 
         try {
@@ -9831,31 +9861,31 @@ document.addEventListener('DOMContentLoaded', () => {
             if (feedback) {
               feedback.style.display = 'block';
               feedback.style.color = '#34d399';
-              feedback.innerHTML = `✅ 接続テストに成功しました！ (${data.voicesCount || 0}話者認識) [${hwDesc}${latencyDesc}]<br>「＋ 登録する」ボタンを押して登録を完了してください。`;
+              feedback.innerHTML = `✅ ${isEn() ? 'Connection successful!' : '接続テストに成功しました！'} (${data.voicesCount || 0}話者認識) [${hwDesc}${latencyDesc}]<br>${isEn() ? 'Click "+ Register" to complete.' : '「＋ 登録する」ボタンが有効化されました。押して登録を完了してください。'}`;
             }
-            if (btnRegister) {
-              btnRegister.disabled = false;
-            }
-            showToast('接続テストに成功しました！', 'success');
+
+            // 接続成功で登録ボタンを活性化（鮮やかなカラーに変化）
+            setRegisterButtonState(true);
+            showToast(isEn() ? 'Connection test succeeded! You can now register.' : '接続テストに成功しました！「＋ 登録する」から登録できます', 'success');
           } else {
             tempTestedNewEngine = null;
-            if (btnRegister) btnRegister.disabled = true;
+            setRegisterButtonState(false);
             if (feedback) {
               feedback.style.display = 'block';
               feedback.style.color = '#f87171';
-              feedback.innerHTML = `❌ 接続テスト失敗: ${escapeHtml(data.message || '接続できませんでした')}`;
+              feedback.innerHTML = `❌ ${isEn() ? 'Connection test failed' : '接続テスト失敗'}: ${escapeHtml(data.message || '接続できませんでした')}`;
             }
-            showToast(data.message || '接続テストに失敗しました', 'error');
+            showToast(data.message || (isEn() ? 'Connection test failed' : '接続テストに失敗しました'), 'error');
           }
         } catch (err) {
           tempTestedNewEngine = null;
-          if (btnRegister) btnRegister.disabled = true;
+          setRegisterButtonState(false);
           if (feedback) {
             feedback.style.display = 'block';
             feedback.style.color = '#f87171';
-            feedback.innerHTML = `❌ 通信エラー: ${escapeHtml(err.message)}`;
+            feedback.innerHTML = `❌ ${isEn() ? 'Communication error' : '通信エラー'}: ${escapeHtml(err.message)}`;
           }
-          showToast('通信エラー: ' + err.message, 'error');
+          showToast((isEn() ? 'Communication error: ' : '通信エラー: ') + err.message, 'error');
         } finally {
           btnTest.disabled = false;
           btnTest.textContent = origText;
@@ -9867,26 +9897,47 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnRegister) {
       btnRegister.addEventListener('click', async () => {
         if (!tempTestedNewEngine) {
-          showToast('先に「🔌 接続テスト」を実行してください', 'warning');
+          showToast(isEn() ? 'Please run and pass connection test first' : '先に「🔌 接続テスト」を成功させてください', 'warning');
           return;
         }
 
-        const engineToRegister = { ...tempTestedNewEngine };
-        const engines = state.voiceEngines || [];
-        engines.push(engineToRegister);
-        state.voiceEngines = engines;
+        const name = inpName?.value?.trim() || tempTestedNewEngine.name;
+        const timeout = parseFloat(inpTimeout?.value) || tempTestedNewEngine.timeoutSeconds || 5.0;
 
-        // フォームリセット
-        if (inpName) inpName.value = '';
-        if (inpUrl) inpUrl.value = '';
-        resetRegistrationState();
+        const engineToRegister = {
+          ...tempTestedNewEngine,
+          name: name,
+          timeoutSeconds: timeout
+        };
 
-        renderVoiceEnginesTable();
-        await saveTtsProvidersSettings(true);
-        showToast(`音声エンジン「${engineToRegister.name}」を登録しました`, 'success');
+        btnRegister.disabled = true;
+        const origRegisterText = btnRegister.textContent;
+        btnRegister.textContent = isEn() ? '⏳ Saving...' : '⏳ 保存中...';
 
-        if (typeof loadVoices === 'function') {
-          await loadVoices();
+        try {
+          const engines = state.voiceEngines || [];
+          engines.push(engineToRegister);
+          state.voiceEngines = engines;
+
+          // フォームリセット
+          if (inpName) inpName.value = '';
+          if (inpUrl) inpUrl.value = '';
+          resetRegistrationState();
+
+          renderVoiceEnginesTable();
+          await saveTtsProvidersSettings(true);
+
+          const statusNotice = engineToRegister.isGpu ? ' (🚀 GPU検出)' : ' (🐢 CPU)';
+          showToast(`音声エンジン「${engineToRegister.name}」を登録しました${statusNotice}`, 'success');
+
+          if (typeof loadVoices === 'function') {
+            await loadVoices();
+          }
+        } catch (err) {
+          showToast('登録保存エラー: ' + err.message, 'error');
+          setRegisterButtonState(true);
+        } finally {
+          btnRegister.textContent = origRegisterText;
         }
       });
     }

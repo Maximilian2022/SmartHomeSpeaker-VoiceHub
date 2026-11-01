@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3.6">
+  <link rel="stylesheet" href="style.css?v=3.8">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 </head>
 <body>
@@ -926,7 +926,7 @@
                         <button type="button" id="btnTestNewEng" class="btn btn-secondary" style="height: 38px; white-space: nowrap; flex: 1;">
                           <span data-i18n="settingsTts.btnTestEngine">🔌 接続テスト</span>
                         </button>
-                        <button type="button" id="btnRegisterNewEng" class="btn btn-primary" style="height: 38px; white-space: nowrap; flex: 1;" disabled>
+                        <button type="button" id="btnRegisterNewEng" class="btn btn-primary" style="height: 38px; white-space: nowrap; flex: 1;" disabled title="先に「🔌 接続テスト」を実行してください">
                           <span data-i18n="settingsTts.btnRegisterEngine">＋ 登録する</span>
                         </button>
                       </div>
@@ -3832,7 +3832,7 @@ Body:
                 <div style="display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.3); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08);">
                   <span id="logsLiveDot" class="live-pulse-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;"></span>
                   <label for="switchLogsAutoRefresh" style="font-size: 0.8rem; margin: 0; cursor: pointer; user-select: none;" data-i18n="logs.autoRefresh">自動<span data-i18n="common.refresh">更新</span> (3秒)</label>
-                  <label class="switch" style="transform: scale(0.75); margin: 0;">
+                  <label class="switch switch-sm" style="margin: 0;">
                     <input type="checkbox" id="switchLogsAutoRefresh" checked>
                     <span class="slider round"></span>
                   </label>
@@ -4230,115 +4230,117 @@ Body:
 
     <!-- カレンダー個別設定モーダル (リマインド・朝まとめ・通知先・ボイス・音量をカレンダーごとに個別指定) -->
     <div id="calendarModal" class="modal-backdrop" style="display: none;">
-      <div class="modal-content glass-card" style="max-width: 650px;">
-        <div class="modal-header">
+      <div class="modal-content glass-card" style="max-width: 650px; max-height: 88vh; display: flex; flex-direction: column;">
+        <div class="modal-header" style="flex-shrink: 0;">
           <h3 id="calendarModalTitle" data-i18n="modals.calendarModal.title"><span data-i18n="history.filterCalendar">カレンダー</span>個別設定</h3>
-          <button type="button" id="btnCloseCalModal" class="btn-close" data-i18n-aria-label="common.close" aria-label="閉じる">&times;</button>
+          <button type="button" id="btnCloseCalModal" class="modal-close" data-i18n-aria-label="common.close" aria-label="閉じる">&times;</button>
         </div>
 
-        <form id="calendarModalForm">
-          <input type="hidden" id="editCalId" value="">
+        <form id="calendarModalForm" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; margin: 0;">
+          <div class="modal-body" style="overflow-y: auto; flex: 1; min-height: 0; padding: 20px 24px;">
+            <input type="hidden" id="editCalId" value="">
 
-          <!-- 基本情報 -->
-          <div class="form-group">
-            <label for="modalCalName" class="form-label" data-i18n="modals.calendarModal.nameLabel"><span data-i18n="history.filterCalendar">カレンダー</span><span data-i18n="settingsFeatures.thAliasName">表示名</span> *</label>
-            <input type="text" id="modalCalName" class="form-input" required data-i18n-placeholder="modals.calendarModal.namePlaceholder" placeholder="例: 仕事用, プライベート, 家族">
-          </div>
+            <!-- 基本情報 -->
+            <div class="form-group">
+              <label for="modalCalName" class="form-label" data-i18n="modals.calendarModal.nameLabel"><span data-i18n="history.filterCalendar">カレンダー</span><span data-i18n="settingsFeatures.thAliasName">表示名</span> *</label>
+              <input type="text" id="modalCalName" class="form-input" required data-i18n-placeholder="modals.calendarModal.namePlaceholder" placeholder="例: 仕事用, プライベート, 家族">
+            </div>
 
-          <div class="form-group">
-            <label for="modalCalUrl" class="form-label" data-i18n="modals.calendarModal.urlLabel">iCal (ICS) 非公開 URL *</label>
-            <input type="url" id="modalCalUrl" class="form-input" required placeholder="https://calendar.google.com/calendar/ical/.../basic.ics">
-            <small class="help-text" data-i18n="modals.calendarModal.urlHelp">※Google <span data-i18n="history.filterCalendar">カレンダー</span>の「設定」>「カレンダーの統合」><span data-i18n="calendar.guideStep2">「iCal 形式の非公開 URL」</span></small>
-          </div>
+            <div class="form-group">
+              <label for="modalCalUrl" class="form-label" data-i18n="modals.calendarModal.urlLabel">iCal (ICS) 非公開 URL *</label>
+              <input type="url" id="modalCalUrl" class="form-input" required placeholder="https://calendar.google.com/calendar/ical/.../basic.ics">
+              <small class="help-text" data-i18n="modals.calendarModal.urlHelp">※Google <span data-i18n="history.filterCalendar">カレンダー</span>の「設定」>「カレンダーの統合」><span data-i18n="calendar.guideStep2">「iCal 形式の非公開 URL」</span></small>
+            </div>
 
-          <!-- 1. 直前リマインド個別設定 -->
-          <div class="form-group" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-top: 14px;">
-            <div class="flex-between" style="align-items: center;">
-              <div>
-                <strong style="font-size: 0.92rem;" data-i18n="modals.calendarModal.remindTitle">🔔 予定開始前の直前リマインド</strong>
-                <span style="font-size: 0.78rem; color: var(--text-muted); display: block;" data-i18n="modals.calendarModal.remindDesc">この<span data-i18n="history.filterCalendar">カレンダー</span>の予定が始まる直前にスピーカーから自動通知します</span>
+            <!-- 1. 直前リマインド個別設定 -->
+            <div class="form-group" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-top: 14px;">
+              <div class="flex-between" style="align-items: center;">
+                <div>
+                  <strong style="font-size: 0.92rem;" data-i18n="modals.calendarModal.remindTitle">🔔 予定開始前の直前リマインド</strong>
+                  <span style="font-size: 0.78rem; color: var(--text-muted); display: block;" data-i18n="modals.calendarModal.remindDesc">この<span data-i18n="history.filterCalendar">カレンダー</span>の予定が始まる直前にスピーカーから自動通知します</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="modalCalRemindEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
               </div>
-              <label class="switch">
-                <input type="checkbox" id="modalCalRemindEnabled" checked>
-                <span class="slider round"></span>
-              </label>
-            </div>
-            <div id="modalCalRemindWrapper" style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
-              <label for="modalCalRemindMinutes" class="form-label" style="margin: 0; font-size: 0.85rem;" data-i18n="modals.calendarModal.timingLabel"><span data-i18n="calendar.timingLabel">通知タイミング</span>:</label>
-              <select id="modalCalRemindMinutes" class="form-select" style="max-width: 170px;">
-                <option value="5" data-i18n="modals.calendarModal.timing5m">5分前</option>
-                <option value="10" selected data-i18n="modals.calendarModal.timing10m">10分前 (推奨)</option>
-                <option value="15" data-i18n="modals.calendarModal.timing15m">1<span data-i18n="modals.calendarModal.timing5m">5分前</span></option>
-                <option value="30" data-i18n="modals.calendarModal.timing30m">30分前</option>
-                <option value="60" data-i18n="modals.calendarModal.timing60m">60分前 (1時間前)</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- 2. 朝の予定まとめ個別設定 -->
-          <div class="form-group" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-top: 12px;">
-            <div class="flex-between" style="align-items: center;">
-              <div>
-                <strong style="font-size: 0.92rem;" data-i18n="modals.calendarModal.morningTitle">☀️ 朝の予定まとめアナウンス</strong>
-                <span style="font-size: 0.78rem; color: var(--text-muted); display: block;" data-i18n="modals.calendarModal.morningDesc">毎朝指定した<span data-i18n="modals.scheduleTime">時刻</span>にこの<span data-i18n="history.filterCalendar">カレンダー</span>の予定をまとめて読み上げます</span>
+              <div id="modalCalRemindWrapper" style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
+                <label for="modalCalRemindMinutes" class="form-label" style="margin: 0; font-size: 0.85rem;" data-i18n="modals.calendarModal.timingLabel"><span data-i18n="calendar.timingLabel">通知タイミング</span>:</label>
+                <select id="modalCalRemindMinutes" class="form-select" style="max-width: 170px;">
+                  <option value="5" data-i18n="modals.calendarModal.timing5m">5分前</option>
+                  <option value="10" selected data-i18n="modals.calendarModal.timing10m">10分前 (推奨)</option>
+                  <option value="15" data-i18n="modals.calendarModal.timing15m">1<span data-i18n="modals.calendarModal.timing5m">5分前</span></option>
+                  <option value="30" data-i18n="modals.calendarModal.timing30m">30分前</option>
+                  <option value="60" data-i18n="modals.calendarModal.timing60m">60分前 (1時間前)</option>
+                </select>
               </div>
-              <label class="switch">
-                <input type="checkbox" id="modalCalDailySummaryEnabled" checked>
-                <span class="slider round"></span>
-              </label>
             </div>
-            <div id="modalCalDailyWrapper" style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
-              <label for="modalCalDailySummaryTime" class="form-label" style="margin: 0; font-size: 0.85rem;" data-i18n="modals.calendarModal.broadcastTimeLabel"><span data-i18n="calendar.broadcastTimeLabel">放送<span data-i18n="modals.scheduleTime">時刻</span></span>:</label>
-              <input type="time" id="modalCalDailySummaryTime" class="form-input" style="max-width: 170px;" value="07:30">
+
+            <!-- 2. 朝の予定まとめ個別設定 -->
+            <div class="form-group" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 14px; margin-top: 12px;">
+              <div class="flex-between" style="align-items: center;">
+                <div>
+                  <strong style="font-size: 0.92rem;" data-i18n="modals.calendarModal.morningTitle">☀️ 朝の予定まとめアナウンス</strong>
+                  <span style="font-size: 0.78rem; color: var(--text-muted); display: block;" data-i18n="modals.calendarModal.morningDesc">毎朝指定した<span data-i18n="modals.scheduleTime">時刻</span>にこの<span data-i18n="history.filterCalendar">カレンダー</span>の予定をまとめて読み上げます</span>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="modalCalDailySummaryEnabled" checked>
+                  <span class="slider round"></span>
+                </label>
+              </div>
+              <div id="modalCalDailyWrapper" style="margin-top: 10px; display: flex; align-items: center; gap: 12px;">
+                <label for="modalCalDailySummaryTime" class="form-label" style="margin: 0; font-size: 0.85rem;" data-i18n="modals.calendarModal.broadcastTimeLabel"><span data-i18n="calendar.broadcastTimeLabel">放送<span data-i18n="modals.scheduleTime">時刻</span></span>:</label>
+                <input type="time" id="modalCalDailySummaryTime" class="form-input" style="max-width: 170px;" value="07:30">
+              </div>
+            </div>
+
+            <!-- 3. 通知先スピーカー個別設定 -->
+            <div class="form-group" style="margin-top: 16px;">
+              <div class="flex-between" style="margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
+                <label class="form-label" style="margin: 0;" data-i18n="modals.calendarModal.speakersLabel">🔊 <span data-i18n="calendar.targetsLabel">通知先スピーカー (複数選択可)</span></label>
+                <div id="modalCalMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+              </div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">
+                <span data-i18n="modals.calendarModal.speakersHelp">※未選択の場合はカレンダー全体の共通設定スピーカーで鳴らします</span>
+              </div>
+              <div id="modalCalSpeakersContainer" class="builder-speakers-grid">
+                <!-- JS動的生成 -->
+              </div>
+            </div>
+
+            <!-- 4. 音声・音量個別設定 (話者・話速・音高・音量) -->
+            <div class="settings-grid" style="margin-top: 14px; margin-bottom: 8px;">
+              <div class="form-group">
+                <label for="modalCalVoice" class="form-label" data-i18n="modals.calendarModal.voiceLabel"><span data-i18n="say.voiceLabel">話者</span> (声色)</label>
+                <select id="modalCalVoice" class="form-select">
+                  <option value="ja-JP-NanamiNeural" selected data-i18n="modals.calendarModal.voiceNanami">七海 (Nanami) - 女性</option>
+                  <option value="ja-JP-KeitaNeural" data-i18n="modals.calendarModal.voiceKeita">圭太 (Keita) - 男性</option>
+                  <option value="ja-JP-AoiNeural" data-i18n="modals.calendarModal.voiceAoi">碧 (Aoi) - 落ち着いた女性</option>
+                  <option value="ja-JP-DaichiNeural" data-i18n="modals.calendarModal.voiceDaichi">大地 (Daichi) - 落ち着いた男性</option>
+                  <option value="ja-JP-MayuNeural" data-i18n="modals.calendarModal.voiceMayu">真夕 (Mayu) - 明るい女性</option>
+                  <option value="ja-JP-NaokiNeural" data-i18n="modals.calendarModal.voiceNaoki">直樹 (Naoki) - アナウンス調男性</option>
+                  <option value="ja-JP-ShioriNeural" data-i18n="modals.calendarModal.voiceShiori">詩織 (Shiori) - アナウンス調女性</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="modalCalVolumeRange" class="form-label"><span data-i18n="modals.calendarModal.volumeLabel">発言<span data-i18n="say.volumeLabel">音量:</span></span> <span id="modalCalVolumeDisplay" data-i18n="modals.calendarModal.volumeFollowGlobal">全体設定に従う</span></label>
+                <input type="range" id="modalCalVolumeRange" min="0" max="100" step="5" value="0" class="form-range">
+              </div>
+
+              <div class="form-group">
+                <label for="modalCalRateRange" class="form-label"><span data-i18n="modals.calendarModal.rateLabel">話速:</span> <span id="modalCalRateDisplay" data-i18n="modals.calendarModal.rateStandard">標準 (0%)</span></label>
+                <input type="range" id="modalCalRateRange" min="-30" max="50" step="5" value="0" class="form-range">
+              </div>
+
+              <div class="form-group">
+                <label for="modalCalPitchRange" class="form-label"><span data-i18n="modals.calendarModal.pitchLabel">音高:</span> <span id="modalCalPitchDisplay" data-i18n="modals.calendarModal.pitchStandard">標準 (0Hz)</span></label>
+                <input type="range" id="modalCalPitchRange" min="-20" max="20" step="2" value="0" class="form-range">
+              </div>
             </div>
           </div>
 
-          <!-- 3. 通知先スピーカー個別設定 -->
-          <div class="form-group" style="margin-top: 16px;">
-            <div class="flex-between" style="margin-bottom: 6px; flex-wrap: wrap; gap: 8px;">
-              <label class="form-label" style="margin: 0;" data-i18n="modals.calendarModal.speakersLabel">🔊 <span data-i18n="calendar.targetsLabel">通知先スピーカー (複数選択可)</span></label>
-              <div id="modalCalMacroButtons" class="macro-select-buttons" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
-            </div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">
-              <span data-i18n="modals.calendarModal.speakersHelp">※未選択の場合はカレンダー全体の共通設定スピーカーで鳴らします</span>
-            </div>
-            <div id="modalCalSpeakersContainer" class="builder-speakers-grid">
-              <!-- JS動的生成 -->
-            </div>
-          </div>
-
-          <!-- 4. 音声・音量個別設定 (話者・話速・音高・音量) -->
-          <div class="settings-grid" style="margin-top: 14px; margin-bottom: 16px;">
-            <div class="form-group">
-              <label for="modalCalVoice" class="form-label" data-i18n="modals.calendarModal.voiceLabel"><span data-i18n="say.voiceLabel">話者</span> (声色)</label>
-              <select id="modalCalVoice" class="form-select">
-                <option value="ja-JP-NanamiNeural" selected data-i18n="modals.calendarModal.voiceNanami">七海 (Nanami) - 女性</option>
-                <option value="ja-JP-KeitaNeural" data-i18n="modals.calendarModal.voiceKeita">圭太 (Keita) - 男性</option>
-                <option value="ja-JP-AoiNeural" data-i18n="modals.calendarModal.voiceAoi">碧 (Aoi) - 落ち着いた女性</option>
-                <option value="ja-JP-DaichiNeural" data-i18n="modals.calendarModal.voiceDaichi">大地 (Daichi) - 落ち着いた男性</option>
-                <option value="ja-JP-MayuNeural" data-i18n="modals.calendarModal.voiceMayu">真夕 (Mayu) - 明るい女性</option>
-                <option value="ja-JP-NaokiNeural" data-i18n="modals.calendarModal.voiceNaoki">直樹 (Naoki) - アナウンス調男性</option>
-                <option value="ja-JP-ShioriNeural" data-i18n="modals.calendarModal.voiceShiori">詩織 (Shiori) - アナウンス調女性</option>
-              </select>
-            </div>
-
-            <div class="form-group">
-              <label for="modalCalVolumeRange" class="form-label"><span data-i18n="modals.calendarModal.volumeLabel">発言<span data-i18n="say.volumeLabel">音量:</span></span> <span id="modalCalVolumeDisplay" data-i18n="modals.calendarModal.volumeFollowGlobal">全体設定に従う</span></label>
-              <input type="range" id="modalCalVolumeRange" min="0" max="100" step="5" value="0" class="form-range">
-            </div>
-
-            <div class="form-group">
-              <label for="modalCalRateRange" class="form-label"><span data-i18n="modals.calendarModal.rateLabel">話速:</span> <span id="modalCalRateDisplay" data-i18n="modals.calendarModal.rateStandard">標準 (0%)</span></label>
-              <input type="range" id="modalCalRateRange" min="-30" max="50" step="5" value="0" class="form-range">
-            </div>
-
-            <div class="form-group">
-              <label for="modalCalPitchRange" class="form-label"><span data-i18n="modals.calendarModal.pitchLabel">音高:</span> <span id="modalCalPitchDisplay" data-i18n="modals.calendarModal.pitchStandard">標準 (0Hz)</span></label>
-              <input type="range" id="modalCalPitchRange" min="-20" max="20" step="2" value="0" class="form-range">
-            </div>
-          </div>
-
-          <div class="modal-footer">
+          <div class="modal-footer" style="flex-shrink: 0; padding: 14px 24px; border-top: 1px solid rgba(255,255,255,0.08); background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(8px); margin: 0; display: flex; justify-content: flex-end; gap: 12px;">
             <button type="button" id="btnCancelCalModal" class="btn btn-secondary" data-i18n="settingsIntegrations.alexaProxyCancelBtn">キャンセル</button>
             <button type="submit" class="btn btn-primary" data-i18n="modals.calendarModal.btnSave"><span data-i18n="history.filterCalendar">カレンダー</span><span data-i18n="settings.btnSave">設定を<span data-i18n="common.save">保存</span></span></button>
           </div>
@@ -4414,6 +4416,6 @@ Body:
 
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="i18n.js?v=1.0.10"></script>
-  <script src="app.js?v=1.0.28"></script>
+  <script src="app.js?v=1.0.31"></script>
 </body>
 </html>
