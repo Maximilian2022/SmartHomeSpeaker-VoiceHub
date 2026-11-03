@@ -515,7 +515,8 @@ class SpeechService:
                                         matched = ld
                                         break
                                 elif not is_group and not ld.get("isGroup"):
-                                    if ld.get("name") == dev.get("name") or ld.get("rawName") == dev.get("rawName"):
+                                    # rawName 未設定の端末同士が None == None で一致しないよう、値がある場合のみ比較
+                                    if ld.get("name") == dev.get("name") or (dev.get("rawName") and ld.get("rawName") == dev.get("rawName")):
                                         matched = ld
                                         break
 
