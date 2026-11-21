@@ -453,16 +453,16 @@ def check_admin_auth(request: Request):
     if not path.startswith("/api/"):
         return True
 
-    # 8. 認証失敗: 不正な認証情報が送られていた場合 (Bearer/Header/Cookie/Query) に失敗を記録してブルートフォースを防止
-    has_credentials = bool(
+    # 8. 認証失敗: 明示的な認証情報 (Bearer/Header/Query) が誤っていた場合のみ失敗を記録してブルートフォースを防止
+    #    ※ 期限切れのセッション Cookie (auth_token) のみが残っているブラウザ開けっ放し状態では 401 のみ返して誤IPロックを防ぐ
+    has_explicit_credentials = bool(
         auth_header
         or x_admin_pass
-        or request.cookies.get("auth_token")
         or request.headers.get("x-webhook-token")
         or request.headers.get("x-api-key")
         or request.query_params.get("token")
     )
-    if has_credentials:
+    if has_explicit_credentials:
         now_locked, lock_sec = login_rate_limiter.record_failure(client_ip)
         if now_locked:
             raise HTTPException(

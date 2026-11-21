@@ -132,7 +132,7 @@ class TtsService:
         self._cached_voices_time: float = 0.0
 
         # 設定のロードと適用
-        self.sync_settings()
+        self.sync_settings(trigger_warmup=False)
 
     def invalidate_voices_cache(self):
         """話者キャッシュを破棄"""
@@ -143,7 +143,7 @@ class TtsService:
         """Azure Speech が有効かつ API キーが設定されているかを判定"""
         return bool(self.azure_provider.enabled and self.azure_provider.api_key.strip())
 
-    def sync_settings(self):
+    def sync_settings(self, trigger_warmup: bool = True):
         """settings_manager の設定を各プロバイダーに反映（動的エンジン群の追加・更新・削除を含む）"""
         self.invalidate_voices_cache()
         conf = settings_manager.get().get("tts_providers", {})
@@ -235,12 +235,13 @@ class TtsService:
             elif f"{etype}_default" in self.providers:
                 self.providers[etype] = self.providers[f"{etype}_default"]
 
-        # バックグラウンドで有効なローカルモデルの事前初期化をトリガー（イベントループ稼働時のみ）
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(self.warmup_enabled_speakers())
-        except RuntimeError:
-            pass
+        # バックグラウンドで有効なローカルモデルの事前初期化をトリガー（設定更新・起動時かつイベントループ稼働時のみ）
+        if trigger_warmup:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.warmup_enabled_speakers())
+            except RuntimeError:
+                pass
 
     async def warmup_enabled_speakers(self):
         """有効な音声エンジンの推奨デフォルトモデルをバックグラウンド事前初期化 (並列実行・高速化)"""
@@ -248,11 +249,16 @@ class TtsService:
             if not p.enabled:
                 return
             try:
-                # 接続確認: initialize_speaker と get_voices (タイムアウトを3秒に抑えてオフライン待機を防止)
-                await asyncio.wait_for(p.initialize_speaker(p.default_voice_id), timeout=3.0)
-                await asyncio.wait_for(p.get_voices(), timeout=4.0)
+                # 接続確認 + モデル初期化 (オフライン時は2〜3秒で抜け、オンラインCOEIROINKの大容量話者JSON取得には余裕を持たせる)
+                is_coeiroink = getattr(p, "engine_type", "") == "coeiroink"
+                init_timeout = 12.0 if is_coeiroink else 4.0
+                voices_timeout = 12.0 if is_coeiroink else 4.0
+                ok = await asyncio.wait_for(p.initialize_speaker(p.default_voice_id), timeout=init_timeout)
+                if ok:
+                    await asyncio.wait_for(p.get_voices(), timeout=voices_timeout)
             except Exception as e:
-                log.warning(f"[TtsService] {p.display_name} 事前初期化スキップ (オフラインまたは応答なし): {e}")
+                err_txt = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+                log.warning(f"[TtsService] {p.display_name} 事前初期化スキップ (オフラインまたは応答なし): {err_txt}")
 
         tasks = [_warmup_single(p) for p in self.voice_engine_providers if p.enabled]
         if tasks:
@@ -301,7 +307,7 @@ class TtsService:
         if not force_refresh and self._cached_voices is not None and (now - self._cached_voices_time < cache_ttl):
             return self._cached_voices
 
-        self.sync_settings()
+        self.sync_settings(trigger_warmup=False)
         azure_active = self.is_azure_active()
 
         tasks = []
@@ -517,27 +523,49 @@ class TtsService:
                 log.info(f"[TtsService] 緊急速報最速並行生成 (Fastest Wins) 開始: 対象プロバイダー {len(active_providers)}件")
                 tasks = []
                 provider_map = {}
+
+                async def _synth_race_item(prov: BaseTtsProvider, v_id: str) -> bytes:
+                    return await asyncio.wait_for(
+                        prov.synthesize(text, v_id, rate, pitch),
+                        timeout=prov.timeout_seconds
+                    )
+
                 for p in active_providers:
                     target_voice = p.default_voice_id
-                    t = asyncio.create_task(p.synthesize(text, target_voice, rate, pitch))
+                    t = asyncio.create_task(_synth_race_item(p, target_voice))
                     tasks.append(t)
                     provider_map[t] = (p, target_voice)
 
-                while tasks:
-                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                    for completed_task in done:
+                def _drain_cancelled(fut: asyncio.Task):
+                    if not fut.cancelled():
                         try:
-                            audio_bytes = completed_task.result()
-                            if audio_bytes and len(audio_bytes) > 0:
+                            fut.exception()
+                        except Exception:
+                            pass
+
+                try:
+                    while tasks:
+                        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                        for completed_task in done:
+                            try:
+                                audio_bytes = completed_task.result()
+                                if audio_bytes and len(audio_bytes) > 0:
+                                    p, v_id = provider_map[completed_task]
+                                    log.info(f"[TtsService] ★ 最速生成完了プロバイダー: {p.display_name} ({v_id})")
+                                    for pt in pending:
+                                        pt.add_done_callback(_drain_cancelled)
+                                        pt.cancel()
+                                    return audio_bytes, v_id, False
+                            except Exception as e:
                                 p, v_id = provider_map[completed_task]
-                                log.info(f"[TtsService] ★ 最速生成完了プロバイダー: {p.display_name} ({v_id})")
-                                for pt in pending:
-                                    pt.cancel()
-                                return audio_bytes, v_id, False
-                        except Exception as e:
-                            p, v_id = provider_map[completed_task]
-                            log.warning(f"[TtsService] 最速並行生成タスク失敗 ({p.display_name}): {e}")
-                    tasks = list(pending)
+                                err_desc = f"タイムアウト ({p.timeout_seconds}s)" if isinstance(e, asyncio.TimeoutError) else str(e)
+                                log.warning(f"[TtsService] 最速並行生成タスク失敗 ({p.display_name}): {err_desc}")
+                        tasks = list(pending)
+                except asyncio.CancelledError:
+                    for t in tasks:
+                        t.add_done_callback(_drain_cancelled)
+                        t.cancel()
+                    raise
 
                 log.warning("[TtsService] 最速並行生成タスクがすべて失敗したため、段階的フォールバックを開始します")
 

@@ -130,8 +130,10 @@ class DeviceManager:
         favs = set(settings_manager.get_favorite_devices())
         results: List[Dict[str, Any]] = []
 
-        # 1. Google Cast デバイス
-        for dev in self.devices.values():
+        # 1. Google Cast デバイス (バックグラウンドZeroconfスレッドと競合しないようロック下でスナップショット取得)
+        with self._lock:
+            google_snapshot = list(self.devices.values())
+        for dev in google_snapshot:
             d = dict(dev)
             d["isDefault"] = (d["ip"] == default_ip)
             d["isFavorite"] = (d.get("ip") in favs or d.get("id") in favs or d.get("name") in favs)
@@ -397,22 +399,24 @@ class DeviceManager:
         if c_dev_by_name:
             return c_dev_by_name
 
-        # Google Cast IP / 完全一致 (グループ優先)
-        if norm in self.devices:
-            return self.devices[norm]
+        # Google Cast IP / 完全一致 (グループ優先: Zeroconf更新スレッドとの競合防止のためロック下でスナップショット取得)
+        with self._lock:
+            if norm in self.devices:
+                return dict(self.devices[norm])
+            google_snapshot = [dict(d) for d in self.devices.values()]
 
-        for dev in self.devices.values():
+        for dev in google_snapshot:
             if dev.get("isGroup") and (dev.get("name", "").lower() == norm_lower or dev.get("ip") == norm or dev.get("id") == norm):
                 return dev
-        for dev in self.devices.values():
+        for dev in google_snapshot:
             if not dev.get("isGroup") and (dev.get("name", "").lower() == norm_lower or dev.get("ip") == norm or dev.get("id") == norm):
                 return dev
 
         # 部分一致
-        for dev in self.devices.values():
+        for dev in google_snapshot:
             if dev.get("isGroup") and (norm_lower in dev.get("name", "").lower() or dev.get("name", "").lower() in norm_lower):
                 return dev
-        for dev in self.devices.values():
+        for dev in google_snapshot:
             if not dev.get("isGroup") and (norm_lower in dev.get("name", "").lower()):
                 return dev
 

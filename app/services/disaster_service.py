@@ -244,6 +244,14 @@ class DisasterService:
         if self._poll_task is None or self._poll_task.done():
             self._poll_task = asyncio.create_task(self._run_warning_poll_loop())
 
+    def stop(self):
+        for t in (self._ws_task, self._poll_task, self._eew_auto_off_task, self._test_warning_task):
+            if t and not t.done():
+                t.cancel()
+        self._ws_task = None
+        self._poll_task = None
+        self.is_ws_connected = False
+
     async def load_area_master(self):
         """気象庁エリアマスター (area.json) の取得・キャッシュ"""
         try:

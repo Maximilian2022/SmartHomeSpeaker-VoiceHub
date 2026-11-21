@@ -81,18 +81,20 @@ async def lifespan(app: FastAPI):
         while True:
             try:
                 await calendar_service.sync_all()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 log.warning(f"Calendar sync error: {e}")
             await asyncio.sleep(15 * 60)
 
-    asyncio.create_task(calendar_loop())
+    calendar_sync_task = asyncio.create_task(calendar_loop())
 
     # MQTT サービスのバックグラウンドワーカー開始
     mqtt_service.start()
 
     # 外部 TTS エンジン (VOICEVOX等) の事前初期化・ウォームアップ
     from app.services.tts_service import tts_service
-    asyncio.create_task(tts_service.warmup_enabled_speakers())
+    warmup_task = asyncio.create_task(tts_service.warmup_enabled_speakers())
 
     # 雨アラーム・雨雲接近監視サービス開始
     from app.services.rain_alarm_service import rain_alarm_service
@@ -105,8 +107,16 @@ async def lifespan(app: FastAPI):
 
     # 終了時処理 (明示的なシステム終了/シャットダウンバナーログ)
     sys_log.info("🛑 [VoiceHub] システム終了 / シャットダウン処理開始 (Shutting down...)")
+    for t in (calendar_sync_task, warmup_task):
+        if t and not t.done():
+            t.cancel()
     update_service.stop()
     rain_alarm_service.stop()
+    calendar_service.stop()
+    dnd_service.stop()
+    disaster_service.stop()
+    scheduler_service.stop()
+    scheduled_speech_service.stop()
     await mqtt_service.stop()
     from app.services.devices_service import device_manager
     device_manager.close()

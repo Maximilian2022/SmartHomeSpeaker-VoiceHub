@@ -259,6 +259,11 @@ class SchedulerService:
             return
         self._bg_task = asyncio.create_task(self._cron_loop())
 
+    def stop(self):
+        if self._bg_task and not self._bg_task.done():
+            self._bg_task.cancel()
+        self._bg_task = None
+
     async def _cron_loop(self):
         last_minute = -1
         while True:

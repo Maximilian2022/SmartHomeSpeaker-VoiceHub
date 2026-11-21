@@ -7224,6 +7224,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function updateMqttStatus() {
+    if (isAuthExpiredHandled) return;
     const dot = document.getElementById('mqttStatusDot');
     const text = document.getElementById('mqttStatusText');
     const detail = document.getElementById('mqttStatusDetail');
@@ -10238,7 +10239,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   async function loadSystemLogs(forceScroll = false) {
-    if (logsState.isLoading) return;
+    if (isAuthExpiredHandled || logsState.isLoading) return;
     const terminal = document.getElementById('logsTerminal');
     if (!terminal) return;
 

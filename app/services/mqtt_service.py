@@ -254,7 +254,12 @@ class MQTTBrokerWorker:
         return {"success": True, "count": count, "action": action_label, "prefix": ha_prefix, "broker": self.name}
 
     async def _run_loop(self):
-        reconnect_delay = 5
+        base_delay = 5
+        max_delay = 60
+        reconnect_delay = base_delay
+        consecutive_failures = 0
+        last_err_key = ""
+
         while self._running:
             broker = (self.conf.get("broker") or "").strip()
             port = int(self.conf.get("port") or 1883)
@@ -288,7 +293,8 @@ class MQTTBrokerWorker:
                 if resolved_broker != broker:
                     log.info(f"[MQTT Worker:{self.name}] Resolved '{broker}' to '{resolved_broker}' via mDNS")
 
-                log.info(f"[MQTT Worker:{self.name}] Connecting to broker {broker}:{port} (target={resolved_broker}, tls={use_tls}, client_id={client_id})...")
+                if consecutive_failures == 0:
+                    log.info(f"[MQTT Worker:{self.name}] Connecting to broker {broker}:{port} (target={resolved_broker}, tls={use_tls}, client_id={client_id})...")
                 self.last_error = None
 
                 async with aiomqtt.Client(
@@ -304,6 +310,9 @@ class MQTTBrokerWorker:
                 ) as client:
                     self._client = client
                     self.is_connected = True
+                    reconnect_delay = base_delay
+                    consecutive_failures = 0
+                    last_err_key = ""
                     log.info(f"[MQTT Worker:{self.name}] Connected successfully to {broker}:{port} ({resolved_broker})")
 
                     # オンラインステータスを発行 (Retain)
@@ -337,13 +346,25 @@ class MQTTBrokerWorker:
             except aiomqtt.MqttError as e:
                 self.is_connected = False
                 self.last_error = f"MQTT error: {e}"
-                log.warning(f"[MQTT Worker:{self.name}] Connection lost / error: {e}. Reconnecting in {reconnect_delay}s...")
+                consecutive_failures += 1
+                err_key = str(e)
+                if consecutive_failures == 1 or err_key != last_err_key or consecutive_failures % 10 == 0:
+                    log.warning(
+                        f"[MQTT Worker:{self.name}] Connection lost / error ({consecutive_failures}x): {e}. "
+                        f"Reconnecting in {reconnect_delay}s..."
+                    )
+                    last_err_key = err_key
+                else:
+                    log.debug(f"[MQTT Worker:{self.name}] Reconnect attempt #{consecutive_failures} failed: {e}")
                 await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(max_delay, reconnect_delay * 2)
             except Exception as e:
                 self.is_connected = False
                 self.last_error = f"Unexpected error: {e}"
+                consecutive_failures += 1
                 log.error(f"[MQTT Worker:{self.name}] Exception in MQTT loop: {e}", exc_info=True)
                 await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(max_delay, reconnect_delay * 2)
             finally:
                 self.is_connected = False
                 self._client = None

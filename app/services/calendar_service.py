@@ -25,6 +25,11 @@ class CalendarService:
         if self._scheduler_task is None or self._scheduler_task.done():
             self._scheduler_task = asyncio.create_task(self._scheduler_loop())
 
+    def stop(self):
+        if self._scheduler_task and not self._scheduler_task.done():
+            self._scheduler_task.cancel()
+        self._scheduler_task = None
+
     async def fetch_and_parse(self, ical_url: str) -> List[Dict[str, Any]]:
         if not ical_url:
             return []
@@ -74,6 +79,9 @@ class CalendarService:
 
             parsed_list.sort(key=lambda x: x["start"])
             return parsed_list
+        except httpx.RequestError as e:
+            log.warning(f"Calendar network fetch error: {type(e).__name__}: {e}")
+            return []
         except Exception as e:
             log.error(f"Calendar fetch/parse error: {e}", exc_info=True)
             return []

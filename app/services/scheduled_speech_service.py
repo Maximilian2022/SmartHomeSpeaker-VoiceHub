@@ -350,6 +350,11 @@ class ScheduledSpeechService:
         self._bg_task = asyncio.create_task(self._worker_loop())
         log.info("Scheduled speech worker loop started")
 
+    def stop(self):
+        if self._bg_task and not self._bg_task.done():
+            self._bg_task.cancel()
+        self._bg_task = None
+
     async def _worker_loop(self):
         """予約発声の期日判定・実行ワーカー"""
         while True:

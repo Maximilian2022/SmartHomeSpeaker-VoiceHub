@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import urllib.parse
 from typing import List, Dict, Any, Optional
 import httpx
@@ -7,6 +8,8 @@ from app.services.tts.base import BaseTtsProvider
 from app.core.logger import get_logger
 
 log = get_logger("TTS.VoiceEngine")
+
+_UUID_PREFIX_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 class VoicevoxFamilyProvider(BaseTtsProvider):
     """VOICEVOX / SHAREVOX / COEIROINK 共通エンジンプロバイダー"""
@@ -29,6 +32,30 @@ class VoicevoxFamilyProvider(BaseTtsProvider):
         )
         self.base_url = base_url.rstrip("/")
         self._cached_voices: List[Dict[str, Any]] = []
+
+    def extract_raw_voice_id(self, prefixed_id: str) -> str:
+        """エンジン固有IDや汎用種別プレフィックス（voicevox:, sharevox:, coeiroink:）を安全に除去"""
+        val = str(prefixed_id or "").strip()
+        prefix = f"{self.provider_id}:"
+        if val.startswith(prefix):
+            return val[len(prefix):]
+        for known in ("voicevox:", "sharevox:", "coeiroink:"):
+            if val.startswith(known):
+                return val[len(known):]
+        if ":" in val:
+            head, tail = val.split(":", 1)
+            # COEIROINK の "<UUID>:<styleId>" 形式だけは UUID を壊さないよう保持
+            if not _UUID_PREFIX_RE.match(head):
+                return tail
+        return val
+
+    def _resolve_speaker_int(self, voice_id: str) -> int:
+        for cand in (self.extract_raw_voice_id(voice_id), self.extract_raw_voice_id(self.default_voice_id), "2"):
+            try:
+                return int(str(cand).strip())
+            except (TypeError, ValueError):
+                continue
+        return 2
 
     def update_config(self, base_url: Optional[str] = None, enabled: Optional[bool] = None, timeout_seconds: Optional[float] = None, default_voice_id: Optional[str] = None):
         if base_url is not None:
@@ -161,11 +188,7 @@ class VoicevoxFamilyProvider(BaseTtsProvider):
         rate: str = "+0%",
         pitch: str = "+0Hz"
     ) -> bytes:
-        raw_speaker_id = self.extract_raw_voice_id(voice_id)
-        try:
-            speaker_int = int(raw_speaker_id)
-        except ValueError:
-            speaker_int = int(self.extract_raw_voice_id(self.default_voice_id) or "2")
+        speaker_int = self._resolve_speaker_int(voice_id)
 
         # 1. 話速スケールの計算 (Edge TTS互換 "+20%" -> 1.2, "-10%" -> 0.9)
         speed_scale = 1.0
@@ -295,7 +318,7 @@ class CoeiroinkProvider(VoicevoxFamilyProvider):
             return self._cached_voices
 
         try:
-            async with httpx.AsyncClient(timeout=max(self.timeout_seconds, 15.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(max(self.timeout_seconds, 15.0), connect=3.0)) as client:
                 res = await client.get(f"{self.base_url}/v1/speakers")
                 if res.status_code != 200:
                     log.error(f"[{self.display_name}] /v1/speakers 取得失敗: {res.status_code}")
@@ -322,13 +345,13 @@ class CoeiroinkProvider(VoicevoxFamilyProvider):
                         except (ValueError, TypeError):
                             pass
 
-                    # 識別子フォーマット: coeiroink:{style_id} または coeiroink:{uuid}:{style_id}
+                    # 識別子フォーマット: <provider_id>:<uuid>:<style_id> または <provider_id>:<style_id>
                     voice_key = f"{speaker_uuid}:{style_id}" if speaker_uuid else str(style_id)
                     voices.append({
-                        "id": f"coeiroink:{voice_key}",
+                        "id": f"{self.provider_id}:{voice_key}",
                         "name": voice_label,
                         "gender": "Unknown",
-                        "provider": "coeiroink",
+                        "provider": self.provider_id,
                         "providerName": "COEIROINK",
                         "style": style_name
                     })
@@ -350,26 +373,33 @@ class CoeiroinkProvider(VoicevoxFamilyProvider):
 
         # 1. 話者UUIDとスタイルIDの解決
         speaker_uuid = ""
-        style_id = 0
+        style_id = self._fallback_style_id if self._fallback_style_id is not None else 0
         if ":" in raw_id:
             parts = raw_id.split(":", 1)
-            speaker_uuid = parts[0]
+            if _UUID_PREFIX_RE.match(parts[0].strip()):
+                speaker_uuid = parts[0].strip()
             try:
                 style_id = int(parts[1])
             except ValueError:
-                style_id = self._fallback_style_id or 140
+                style_id = self._fallback_style_id if self._fallback_style_id is not None else 0
         else:
             try:
                 style_id = int(raw_id)
-                speaker_uuid = self._style_to_uuid.get(style_id, self._fallback_uuid or "")
             except ValueError:
-                style_id = self._fallback_style_id or 140
-                speaker_uuid = self._fallback_uuid or ""
+                style_id = self._fallback_style_id if self._fallback_style_id is not None else 0
 
-        # キャッシュが空でUUIDが取れなかった場合は一度話者一覧を引く
-        if not speaker_uuid and not self._style_to_uuid:
-            await self.get_voices()
-            speaker_uuid = self._style_to_uuid.get(style_id, self._fallback_uuid or "")
+        # キャッシュが空またはUUID未特定なら一度話者一覧を引いて実在する(UUID, styleId)ペアへ解決する
+        if not speaker_uuid:
+            if not self._style_to_uuid:
+                await self.get_voices()
+            if style_id in self._style_to_uuid:
+                speaker_uuid = self._style_to_uuid[style_id]
+            elif self._fallback_uuid and self._fallback_style_id is not None:
+                speaker_uuid = self._fallback_uuid
+                style_id = self._fallback_style_id
+
+        if not speaker_uuid:
+            raise RuntimeError(f"[{self.display_name}] 有効な speakerUuid を解決できませんでした (voice_id={voice_id})")
 
         # 2. 話速スケールの計算
         speed_scale = 1.0

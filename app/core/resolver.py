@@ -1,5 +1,6 @@
 import asyncio
 import ipaddress
+import socket
 import threading
 import time
 from typing import Dict, Tuple, Optional
@@ -14,7 +15,6 @@ class MDNSResolver:
     def __init__(self, ttl: float = 60.0):
         self.ttl = ttl
         self._cache: Dict[str, Tuple[str, float]] = {}
-        self._lock = asyncio.Lock()
         self._sync_lock = threading.Lock()
         self._internal_zc: Optional[Zeroconf] = None
 
@@ -52,7 +52,8 @@ class MDNSResolver:
 
     async def resolve_host(self, host: str, timeout: float = 3.0) -> str:
         """ホスト名を解決して IP アドレス (文字列) を返却。
-        .local の場合は mDNS (Zeroconf) で動的解決し、失敗時は元の host にフォールバックする。
+        .local の場合は別スレッド経由の同期解決 (Zeroconf + OS DNSフォールバック) に委譲し、
+        FastAPI メインループと Zeroconf 内部イベントループの衝突を完全に回避する。
         """
         if not host:
             return ""
@@ -68,8 +69,7 @@ class MDNSResolver:
         norm_key = clean_host.lower().rstrip(".")
         now = time.monotonic()
 
-        # 1. キャッシュ確認
-        async with self._lock:
+        with self._sync_lock:
             if norm_key in self._cache:
                 cached_ip, expire_at = self._cache[norm_key]
                 if now < expire_at:
@@ -78,32 +78,19 @@ class MDNSResolver:
                 else:
                     del self._cache[norm_key]
 
-        # 2. mDNS (Zeroconf) 問い合わせ
-        query_fqdn = f"{norm_key}."
-        zc = self._get_zeroconf()
+        return await asyncio.to_thread(self.resolve_host_sync, clean_host, timeout)
 
+    def _resolve_via_os(self, host_name: str) -> Optional[str]:
+        """OS の getaddrinfo による IPv4 名前解決フォールバック"""
         try:
-            resolver = AddressResolver(query_fqdn)
-            # async_request の timeout はミリ秒指定
-            success = await resolver.async_request(zc, int(timeout * 1000))
-            if success:
-                # IPv4 を最優先で取得
-                addrs = resolver.parsed_addresses(IPVersion.V4Only)
-                if not addrs:
-                    addrs = [a for a in resolver.parsed_addresses() if "." in a]
-
-                if addrs:
-                    resolved_ip = addrs[0]
-                    async with self._lock:
-                        self._cache[norm_key] = (resolved_ip, now + self.ttl)
-                    log.info(f"[Resolver] mDNS resolved '{clean_host}' -> {resolved_ip} (ttl={int(self.ttl)}s)")
-                    return resolved_ip
-
-            log.warning(f"[Resolver] mDNS query timed out or not found for '{clean_host}'. Falling back to original.")
-            return clean_host
-        except Exception as e:
-            log.warning(f"[Resolver] Error resolving mDNS for '{clean_host}': {e}. Falling back to original.")
-            return clean_host
+            infos = socket.getaddrinfo(host_name, None, socket.AF_INET, socket.SOCK_STREAM)
+            for info in infos:
+                addr = info[4][0]
+                if addr and self.is_ip_address(addr):
+                    return addr
+        except OSError:
+            pass
+        return None
 
     def resolve_host_sync(self, host: str, timeout: float = 3.0) -> str:
         """同期コンテキスト用の名前解決メソッド"""
@@ -125,6 +112,8 @@ class MDNSResolver:
                 cached_ip, expire_at = self._cache[norm_key]
                 if now < expire_at:
                     return cached_ip
+                else:
+                    del self._cache[norm_key]
 
         query_fqdn = f"{norm_key}."
         zc = self._get_zeroconf()
@@ -140,11 +129,26 @@ class MDNSResolver:
                     resolved_ip = addrs[0]
                     with self._sync_lock:
                         self._cache[norm_key] = (resolved_ip, now + self.ttl)
-                    log.info(f"[Resolver] mDNS sync resolved '{clean_host}' -> {resolved_ip}")
+                    log.info(f"[Resolver] mDNS resolved '{clean_host}' -> {resolved_ip} (ttl={int(self.ttl)}s)")
                     return resolved_ip
+
+            # Zeroconf 応答が得られなかった場合は OS / Avahi / hosts 解決を試行
+            os_ip = self._resolve_via_os(norm_key)
+            if os_ip:
+                with self._sync_lock:
+                    self._cache[norm_key] = (os_ip, now + self.ttl)
+                log.info(f"[Resolver] OS resolved '{clean_host}' -> {os_ip} (ttl={int(self.ttl)}s)")
+                return os_ip
+
+            log.warning(f"[Resolver] mDNS query timed out or not found for '{clean_host}'. Falling back to original.")
             return clean_host
         except Exception as e:
-            log.warning(f"[Resolver] Error sync resolving '{clean_host}': {e}")
+            os_ip = self._resolve_via_os(norm_key)
+            if os_ip:
+                with self._sync_lock:
+                    self._cache[norm_key] = (os_ip, now + self.ttl)
+                return os_ip
+            log.warning(f"[Resolver] Error resolving '{clean_host}': {e}. Falling back to original.")
             return clean_host
 
     def clear_cache(self):

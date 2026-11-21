@@ -342,6 +342,14 @@ class RainAlarmService:
             curr_rain, timeline, used_provider = await self.fetch_forecast(
                 lat, lon, provider, yahoo_app_id
             )
+        except httpx.RequestError as e:
+            log.warning(f"[RainAlarm] 天気データ取得通信エラー: {type(e).__name__}: {e}")
+            self._last_status.update({
+                "status": "error",
+                "lastChecked": datetime.now().isoformat(),
+                "error": "Failed to fetch weather forecast"
+            })
+            return {"status": "error", "error": "Failed to fetch weather forecast"}
         except Exception as e:
             log.error(f"[RainAlarm] 天気データ取得失敗: {e}", exc_info=True)
             self._last_status.update({

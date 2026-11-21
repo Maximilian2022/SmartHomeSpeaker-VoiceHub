@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import pychromecast
 from pychromecast.controllers.media import MediaController
 from typing import Dict, Any, Optional
@@ -9,44 +10,62 @@ log = get_logger("Cast")
 class CastService:
     def __init__(self):
         self._cast_cache: Dict[str, pychromecast.Chromecast] = {}
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _safe_disconnect(cast: Optional[pychromecast.Chromecast]):
+        """Chromecast インスタンスのソケットスレッドを確実に終了・解放する"""
+        if not cast:
+            return
+        try:
+            cast.disconnect(timeout=0.5)
+        except Exception:
+            pass
 
     def _get_cast(self, host: str, port: int = 8009) -> Optional[pychromecast.Chromecast]:
         key = f"{host}:{port}"
-        if key in self._cast_cache:
-            try:
-                c = self._cast_cache[key]
-                if c.socket_client and c.socket_client.is_connected:
-                    return c
-                # 切断されている古いインスタンスのワーカースレッドを明示的に解放
+        with self._lock:
+            if key in self._cast_cache:
                 try:
-                    c.disconnect(timeout=1.0)
+                    c = self._cast_cache[key]
+                    if c.socket_client and c.socket_client.is_connected:
+                        return c
                 except Exception:
-                    pass
-            except Exception:
-                pass
-            self._cast_cache.pop(key, None)
+                    c = self._cast_cache.get(key)
+                self._cast_cache.pop(key, None)
+                self._safe_disconnect(c)
 
         is_group = (port != 8009)
         conn_timeout = 3.0 if is_group else 3.5
+        cast = None
         try:
-            cast = pychromecast.get_chromecast_from_host((host, port, None, None, None), timeout=conn_timeout)
+            # tries=1 により接続失敗時のバックグラウンド無限リトライスレッド蓄積を防止
+            cast = pychromecast.get_chromecast_from_host(
+                (host, port, None, None, None),
+                tries=1,
+                retry_wait=1.0,
+                timeout=conn_timeout
+            )
             cast.start()
             cast.wait(timeout=conn_timeout)
-            self._cast_cache[key] = cast
+            with self._lock:
+                old = self._cast_cache.pop(key, None)
+                if old and old is not cast:
+                    self._safe_disconnect(old)
+                self._cast_cache[key] = cast
             return cast
         except Exception as e:
-            self._cast_cache.pop(key, None)
+            self._safe_disconnect(cast)
+            with self._lock:
+                self._cast_cache.pop(key, None)
             log.warning(f"Connect failed to {host}:{port}: {e}")
             return None
 
     def purge_cache(self, host: str, port: int = 8009):
         key = f"{host}:{port}"
-        cast = self._cast_cache.pop(key, None)
-        if cast:
-            try:
-                cast.disconnect(timeout=1.0)
-            except Exception:
-                pass
+        with self._lock:
+            cast = self._cast_cache.pop(key, None)
+        self._safe_disconnect(cast)
 
     def _sync_play(self, host: str, port: int, media_url: str, volume_level: Optional[float] = None) -> bool:
         key = f"{host}:{port}"
@@ -57,10 +76,11 @@ class CastService:
         try:
             if volume_level is not None:
                 try:
-                    vol_f = float(volume_level)
-                    cast.set_volume(max(0.0, min(1.0, vol_f)), timeout=2.0)
-                except (ValueError, TypeError):
-                    pass
+                    vol_f = max(0.0, min(1.0, float(volume_level)))
+                    cast.set_volume(vol_f, timeout=2.0)
+                except Exception as ve:
+                    # 音量設定タイムアウト等が発生しても音声再生自体は中断せず続行する
+                    log.warning(f"Volume adjustment skipped on {host}:{port}: {ve}")
 
             mc: MediaController = cast.media_controller
             mc.play_media(media_url, "audio/mpeg")
@@ -68,7 +88,9 @@ class CastService:
             log.info(f"Playback started on {host}:{port}: {media_url}")
             return True
         except Exception as e:
-            self._cast_cache.pop(key, None)
+            with self._lock:
+                popped = self._cast_cache.pop(key, None)
+            self._safe_disconnect(popped or cast)
             log.error(f"Play failed on {host}:{port}: {e}")
             return False
 

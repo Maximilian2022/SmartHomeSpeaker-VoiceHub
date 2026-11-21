@@ -32,6 +32,7 @@ class DndService:
         self.was_dnd_active: bool = False
         self._speaker_executor: Optional[Callable] = None
         self._tick_task: Optional[asyncio.Task] = None
+        self._flush_lock = asyncio.Lock()
 
     def set_speaker_executor(self, executor: Callable):
         self._speaker_executor = executor
@@ -40,14 +41,22 @@ class DndService:
         if self._tick_task is None or self._tick_task.done():
             self._tick_task = asyncio.create_task(self._tick_loop())
 
+    def stop(self):
+        if self._tick_task and not self._tick_task.done():
+            self._tick_task.cancel()
+        self._tick_task = None
+
     async def _tick_loop(self):
         log.info("Starting DND background monitor loop...")
         while True:
             try:
                 await self.tick()
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 log.error(f"Error in DND tick: {e}", exc_info=True)
-            await asyncio.sleep(60)
+                await asyncio.sleep(60)
 
     async def tick(self):
         status = self.get_global_status()
@@ -99,8 +108,10 @@ class DndService:
     def _save_queue(self):
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            with open(DND_QUEUE_FILE, "w", encoding="utf-8") as f:
+            tmp_path = DND_QUEUE_FILE.with_suffix(".tmp")
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(self.queue, f, ensure_ascii=False, indent=2)
+            tmp_path.replace(DND_QUEUE_FILE)
         except Exception as e:
             log.error(f"Queue save error: {e}")
 
@@ -266,68 +277,69 @@ class DndService:
         return await self._speaker_executor(**filtered)
 
     async def check_and_flush_queue(self) -> int:
-        if not self.queue or not self._speaker_executor:
-            return 0
+        async with self._flush_lock:
+            if not self.queue or not self._speaker_executor:
+                return 0
 
-        items = self.clear_queue()
-        log.info(f"Flushing {len(items)} queued messages after DND release...")
+            items = self.clear_queue()
+            log.info(f"Flushing {len(items)} queued messages after DND release...")
 
-        from app.services.ai_service import ai_service
-        dnd_conf = settings_manager.get().get("dnd", {})
-        ai_enabled = dnd_conf.get("aiSummaryEnabled", True)
-        threshold = int(dnd_conf.get("aiSummaryThreshold", 2))
+            from app.services.ai_service import ai_service
+            dnd_conf = settings_manager.get().get("dnd", {})
+            ai_enabled = dnd_conf.get("aiSummaryEnabled", True)
+            threshold = int(dnd_conf.get("aiSummaryThreshold", 2))
 
-        # 宛先ごとにグループ化 (キュー投入順を保持)
-        groups: Dict[Tuple[str, ...], List[Dict[str, Any]]] = {}
-        for item in items:
-            k = _normalize_target_key(item.get("targets"))
-            if k not in groups:
-                groups[k] = []
-            groups[k].append(item)
+            # 宛先ごとにグループ化 (キュー投入順を保持)
+            groups: Dict[Tuple[str, ...], List[Dict[str, Any]]] = {}
+            for item in items:
+                k = _normalize_target_key(item.get("targets"))
+                if k not in groups:
+                    groups[k] = []
+                groups[k].append(item)
 
-        for target_key, group_items in groups.items():
-            # 発話宛先 (元のリクエストで指定されていた targets を尊重。未指定の場合は None のまま)
-            target_speaker = None if target_key == ("__default__",) else group_items[0].get("targets")
-            messages = [it.get("text", "") for it in group_items if it.get("text")]
-            hist_ids = [it.get("history_id") for it in group_items if it.get("history_id")]
+            for target_key, group_items in groups.items():
+                # 発話宛先 (元のリクエストで指定されていた targets を尊重。未指定の場合は None のまま)
+                target_speaker = None if target_key == ("__default__",) else group_items[0].get("targets")
+                messages = [it.get("text", "") for it in group_items if it.get("text")]
+                hist_ids = [it.get("history_id") for it in group_items if it.get("history_id")]
 
-            if ai_enabled and len(messages) >= threshold:
-                try:
-                    summary_text = await ai_service.summarize_dnd_messages(messages)
-                    if summary_text:
-                        announce_text = f"おやすみ・会議モードが終了しました。保留されていた {len(group_items)} 件の通知をAIが要約してお知らせします。{summary_text}"
+                if ai_enabled and len(messages) >= threshold:
+                    try:
+                        summary_text = await ai_service.summarize_dnd_messages(messages)
+                        if summary_text:
+                            announce_text = f"おやすみ・会議モードが終了しました。保留されていた {len(group_items)} 件の通知をAIが要約してお知らせします。{summary_text}"
+                            await self._call_speaker(
+                                text=announce_text,
+                                targets=target_speaker,
+                                urgent=True,
+                                source="dnd_queue",
+                                source_label="DND保留再生",
+                                was_queued=True
+                            )
+                            # 保留されていた元エントリのステータスを「送信成功（DND保留再生）」に更新
+                            from app.services.history_service import history_manager
+                            history_manager.mark_queued_as_released(hist_ids, note=f"AI要約により保留再生完了 ({len(group_items)}件)")
+                            await asyncio.sleep(0.5)
+                            continue
+                    except Exception as e:
+                        log.warning(f"AI summarization failed for target {target_key}, falling back to sequential play: {e}")
+
+                # AI要約無効、閾値未満、または要約失敗時は個別再生
+                for it in group_items:
+                    t = it.get("text", "")
+                    if t:
                         await self._call_speaker(
-                            text=announce_text,
-                            targets=target_speaker,
+                            text=t,
+                            targets=it.get("targets"),
                             urgent=True,
                             source="dnd_queue",
                             source_label="DND保留再生",
-                            was_queued=True
+                            was_queued=True,
+                            existing_history_id=it.get("history_id")
                         )
-                        # 保留されていた元エントリのステータスを「送信成功（DND保留再生）」に更新
-                        from app.services.history_service import history_manager
-                        history_manager.mark_queued_as_released(hist_ids, note=f"AI要約により保留再生完了 ({len(group_items)}件)")
                         await asyncio.sleep(0.5)
-                        continue
-                except Exception as e:
-                    log.warning(f"AI summarization failed for target {target_key}, falling back to sequential play: {e}")
 
-            # AI要約無効、閾値未満、または要約失敗時は個別再生
-            for it in group_items:
-                t = it.get("text", "")
-                if t:
-                    await self._call_speaker(
-                        text=t,
-                        targets=it.get("targets"),
-                        urgent=True,
-                        source="dnd_queue",
-                        source_label="DND保留再生",
-                        was_queued=True,
-                        existing_history_id=it.get("history_id")
-                    )
-                    await asyncio.sleep(0.5)
-
-        return len(items)
+            return len(items)
 
     # エイリアス
     get_status = get_global_status
