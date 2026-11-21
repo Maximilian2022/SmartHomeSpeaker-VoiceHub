@@ -223,7 +223,7 @@ async def api_preview_get(
             pitch=pitch or "+0Hz",
             chime="none"
         )
-        return FileResponse(speech["filepath"], media_type="audio/mp3")
+        return FileResponse(speech["filepath"], media_type="audio/mpeg")
     except Exception as e:
         log.error(f"TTS preview synthesis error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to synthesize speech preview")

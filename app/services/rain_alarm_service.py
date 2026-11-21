@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 import httpx
-from app.services.settings_service import settings_manager
+from app.services.settings_service import settings_manager, normalize_rain_alarm_lead_minutes
 from app.services.speech_service import speech_service
 from app.services.dnd_service import dnd_service
 from app.core.logger import get_logger
@@ -329,6 +329,7 @@ class RainAlarmService:
         threshold = float(conf.get("thresholdMm", 0.5))
         heavy_threshold = float(conf.get("heavyThresholdMm", 10.0))
         cooldown_sec = int(conf.get("cooldownMinutes", 30)) * 60
+        approaching_lead_min = normalize_rain_alarm_lead_minutes(conf.get("approachingLeadMinutes", 20))
 
         notify_approaching = conf.get("notifyApproaching", True)
         notify_heavy = conf.get("notifyHeavy", True)
@@ -381,10 +382,15 @@ class RainAlarmService:
 
         # 2. 雨雲接近・降り始め判定 (notifyApproaching)
         if not alert_triggered and notify_approaching and (now - self._last_approaching_notify_time > cooldown_sec):
-            # 現在実況が雨なし (curr_rain < threshold) で、未来に threshold 以上の雨雲があるか
+            # 現在実況が雨なし (curr_rain < threshold) で、指定リードタイム以内に threshold 以上の雨雲があるか
             if curr_rain < threshold:
                 first_rain_point = next(
-                    (p for p in timeline if not p["isObservation"] and p["rainfall"] >= threshold),
+                    (
+                        p for p in timeline
+                        if not p["isObservation"]
+                        and 0 < p.get("minutesAhead", 0) <= approaching_lead_min
+                        and p["rainfall"] >= threshold
+                    ),
                     None
                 )
                 if first_rain_point:
@@ -508,6 +514,7 @@ class RainAlarmService:
                 "thresholdMm": conf.get("thresholdMm", 0.5),
                 "heavyThresholdMm": conf.get("heavyThresholdMm", 10.0),
                 "notifyApproaching": conf.get("notifyApproaching", True),
+                "approachingLeadMinutes": normalize_rain_alarm_lead_minutes(conf.get("approachingLeadMinutes", 20)),
                 "notifyHeavy": conf.get("notifyHeavy", True),
                 "notifyClearing": conf.get("notifyClearing", True),
                 "targetScope": conf.get("targetScope", "all"),

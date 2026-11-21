@@ -63,7 +63,7 @@ class CastService:
                     pass
 
             mc: MediaController = cast.media_controller
-            mc.play_media(media_url, "audio/mp3")
+            mc.play_media(media_url, "audio/mpeg")
             mc.block_until_active(timeout=4.0)
             log.info(f"Playback started on {host}:{port}: {media_url}")
             return True

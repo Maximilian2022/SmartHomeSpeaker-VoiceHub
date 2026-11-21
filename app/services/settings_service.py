@@ -1,10 +1,25 @@
 import os
 import json
+import math
 import shutil
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from app.config import DATA_DIR, settings
+
+
+def normalize_rain_alarm_lead_minutes(raw_val: Any, default: int = 20) -> int:
+    """雨アラームの雨雲接近通知リードタイム（分）を安全な 5〜60 の整数に正規化する。"""
+    if raw_val is None or raw_val == "" or isinstance(raw_val, bool):
+        return default
+    try:
+        num = float(raw_val)
+        if not math.isfinite(num):
+            return default
+        val = int(num)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return max(5, min(60, val))
 
 SETTINGS_FILE = DATA_DIR / "settings.json"
 SETTINGS_BAK_FILE = DATA_DIR / "settings.json.bak"
@@ -153,6 +168,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "thresholdMm": 0.5,
         "heavyThresholdMm": 10.0,
         "notifyApproaching": True,
+        "approachingLeadMinutes": 20,
         "notifyHeavy": True,
         "notifyClearing": True,
         "targetScope": "all",
@@ -320,6 +336,16 @@ class SettingsManager:
         if not model or any(p in model for p in deprecated_patterns):
             ai_conf["geminiModel"] = "gemini-2.5-flash"
 
+    def _normalize_rain_alarm(self, data: Dict[str, Any]):
+        """雨アラーム設定の欠損値補完と異常値の安全クランプ"""
+        if "rainAlarm" not in data or not isinstance(data["rainAlarm"], dict):
+            data["rainAlarm"] = deepcopy(DEFAULT_SETTINGS["rainAlarm"])
+            return
+        ra = data["rainAlarm"]
+        ra["approachingLeadMinutes"] = normalize_rain_alarm_lead_minutes(
+            ra.get("approachingLeadMinutes", 20)
+        )
+
     def _normalize_tts_providers(self, data: Dict[str, Any]):
         """TTS プロバイダー設定の初期化・マージ補正および動的音声エンジン群のマイグレーション"""
         if "tts_providers" not in data or not isinstance(data["tts_providers"], dict):
@@ -436,6 +462,7 @@ class SettingsManager:
                     self._normalize_mqtt(merged)
                     self._normalize_ai(merged)
                     self._normalize_tts_providers(merged)
+                    self._normalize_rain_alarm(merged)
                     return merged
             except Exception as e:
                 print(f"[SettingsManager] settings.json ロード失敗 (破損の可能性): {e}")
@@ -455,6 +482,7 @@ class SettingsManager:
                     self._normalize_mqtt(merged)
                     self._normalize_ai(merged)
                     self._normalize_tts_providers(merged)
+                    self._normalize_rain_alarm(merged)
                     print("[SettingsManager] バックアップからの復元に成功しました")
                     return merged
             except Exception as be:
@@ -514,6 +542,7 @@ class SettingsManager:
         self._normalize_mqtt(self.settings)
         self._normalize_ai(self.settings)
         self._normalize_tts_providers(self.settings)
+        self._normalize_rain_alarm(self.settings)
         self._save(self.settings)
         return self.settings
 

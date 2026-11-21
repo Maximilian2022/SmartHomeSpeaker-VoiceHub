@@ -3149,6 +3149,19 @@ Body:
                           <span class="slider round"></span>
                         </label>
                       </div>
+                      <!-- 雨雲接近 通知タイミング (何分後以内) -->
+                      <div id="rainAlarmApproachingLeadGroup" style="margin: -2px 0 6px 12px; padding: 10px 12px; background: rgba(255,255,255,0.02); border-left: 2px solid rgba(56, 189, 248, 0.45); border-radius: 0 8px 8px 0;">
+                        <div class="flex-between" style="gap: 12px; flex-wrap: wrap;">
+                          <div style="flex: 1; min-width: 200px;">
+                            <label for="settingRainAlarmApproachingLeadMinutes" style="font-weight: 500; font-size: 0.85rem; display: block;" data-i18n="settingsDisaster.approachingLeadMinutesTitle">⏱️ 通知タイミング (何分後以内の雨を通知するか)</label>
+                            <small style="color: var(--text-muted); display: block; margin-top: 2px; line-height: 1.4;" data-i18n="settingsDisaster.approachingLeadMinutesHelp">指定した分数（5〜60分）以内に雨が降り始める予報がある場合のみ通知します（デフォルト: 20分）。※Yahoo! APIは10分刻み・Open-Meteoは15分刻みで判定され、大雨・豪雨警戒は従来通り60分先まで対象です。</small>
+                          </div>
+                          <div style="display: flex; align-items: center; gap: 6px; white-space: nowrap;">
+                            <input type="number" id="settingRainAlarmApproachingLeadMinutes" class="form-input" min="5" max="60" step="1" value="20" style="width: 82px; text-align: right;">
+                            <span style="font-size: 0.85rem; color: var(--text-muted);" data-i18n="settingsDisaster.minutesAheadUnit">分後以内</span>
+                          </div>
+                        </div>
+                      </div>
                       <!-- 強い雨・豪雨警戒 -->
                       <div class="flex-between" style="padding: 6px 0;">
                         <div>
@@ -4415,7 +4428,7 @@ Body:
   </div>
 
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="i18n.js?v=1.0.10"></script>
-  <script src="app.js?v=1.0.31"></script>
+  <script src="i18n.js?v=1.0.11"></script>
+  <script src="app.js?v=1.0.32"></script>
 </body>
 </html>

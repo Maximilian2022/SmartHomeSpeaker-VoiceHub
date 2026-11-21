@@ -257,7 +257,7 @@ async def serve_voice_file(filename: str):
 
     return FileResponse(
         path=fullpath,
-        media_type="audio/mp3",
+        media_type="audio/mpeg",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",

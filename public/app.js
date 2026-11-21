@@ -8704,6 +8704,9 @@ document.addEventListener('DOMContentLoaded', () => {
           }
           const elNotifyApp = document.getElementById('settingRainAlarmNotifyApproaching');
           if (elNotifyApp) elNotifyApp.checked = rConf.notifyApproaching !== false;
+          const elApproachingLead = document.getElementById('settingRainAlarmApproachingLeadMinutes');
+          if (elApproachingLead) elApproachingLead.value = rConf.approachingLeadMinutes ?? 20;
+          syncRainApproachingLeadUI();
           const elNotifyHeavy = document.getElementById('settingRainAlarmNotifyHeavy');
           if (elNotifyHeavy) elNotifyHeavy.checked = rConf.notifyHeavy !== false;
           const elNotifyClear = document.getElementById('settingRainAlarmNotifyClearing');
@@ -9082,6 +9085,20 @@ document.addEventListener('DOMContentLoaded', () => {
       if (eewVolDisplay) eewVolDisplay.textContent = `${e.target.value}%`;
     });
 
+    function syncRainApproachingLeadUI() {
+      const enabled = document.getElementById('settingRainAlarmNotifyApproaching')?.checked !== false;
+      const group = document.getElementById('rainAlarmApproachingLeadGroup');
+      const input = document.getElementById('settingRainAlarmApproachingLeadMinutes');
+      if (group) {
+        group.style.opacity = enabled ? '1' : '0.45';
+      }
+      if (input) {
+        input.disabled = !enabled;
+      }
+    }
+
+    document.getElementById('settingRainAlarmNotifyApproaching')?.addEventListener('change', syncRainApproachingLeadUI);
+
     // 通知先スピーカーのスコープラジオ切り替え
     document.querySelectorAll('input[name="disasterTargetScope"]').forEach(radio => {
       radio.addEventListener('change', (e) => {
@@ -9114,6 +9131,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const targetScope = document.querySelector('input[name="disasterTargetScope"]:checked')?.value || 'all';
         const targetDevices = getSelectedSpeakers(document.getElementById('disasterSpeakersContainer'));
+
+        const elApproachingLeadInput = document.getElementById('settingRainAlarmApproachingLeadMinutes');
+        const rawLeadMin = parseInt(elApproachingLeadInput?.value ?? '20', 10);
+        const approachingLeadMinutes = Number.isFinite(rawLeadMin) ? Math.min(60, Math.max(5, rawLeadMin)) : 20;
+        if (elApproachingLeadInput) elApproachingLeadInput.value = approachingLeadMinutes;
 
         const payload = {
           enabled: document.getElementById('settingDisasterEnabled')?.checked !== false,
@@ -9153,6 +9175,7 @@ document.addEventListener('DOMContentLoaded', () => {
             longitude: parseFloat(document.getElementById('settingRainAlarmLon')?.value || 139.7671),
             locationName: document.getElementById('settingRainAlarmLocName')?.value || '登録地点',
             notifyApproaching: document.getElementById('settingRainAlarmNotifyApproaching')?.checked !== false,
+            approachingLeadMinutes,
             notifyHeavy: document.getElementById('settingRainAlarmNotifyHeavy')?.checked !== false,
             notifyClearing: document.getElementById('settingRainAlarmNotifyClearing')?.checked !== false,
             targetScope,
