@@ -14,6 +14,7 @@ HOMEPOD_CACHE_FILE = DATA_DIR / "homepod_devices.json"
 class HomePodService:
     def __init__(self):
         self.devices_cache: List[Dict[str, Any]] = self._load_cache()
+        self._active_streams: Dict[str, Dict[str, Any]] = {}
 
     def _load_cache(self) -> List[Dict[str, Any]]:
         if HOMEPOD_CACHE_FILE.exists():
@@ -185,13 +186,65 @@ class HomePodService:
                         log.warning(f"Failed to set volume on HomePod before stream: {ve}")
 
                 log.info(f"Streaming file to HomePod ({selected.name or target_host})...")
+                cur_task = asyncio.current_task()
+                self._active_streams[target_host] = {"task": cur_task, "atv": atv}
                 await atv.stream.stream_file(audio_path)
                 log.info(f"✅ HomePod stream completed successfully on {selected.name or target_host}")
                 return True
+            except asyncio.CancelledError:
+                log.info(f"⏹️ HomePod stream cancelled on {selected.name or target_host}")
+                return False
             finally:
+                self._active_streams.pop(target_host, None)
                 atv.close()
+        except asyncio.CancelledError:
+            log.info(f"⏹️ HomePod playback task cancelled on {target_host}")
+            return False
         except Exception as e:
             log.error(f"❌ Failed to stream to HomePod {target_host}: {e}")
             return False
+
+    async def stop_playback(self, target_ip_or_id: str) -> bool:
+        """再生中の HomePod AirPlay ストリームを即時中断する"""
+        clean_target = str(target_ip_or_id or "").replace("homepod:", "").strip()
+        if clean_target.upper() == "ALL":
+            keys = list(self._active_streams.keys())
+            results = await asyncio.gather(*(self.stop_playback(k) for k in keys), return_exceptions=True)
+            return any(r is True for r in results)
+
+        found = next((
+            d for d in self.devices_cache
+            if d.get("mac") == clean_target
+            or d.get("rawIp") == clean_target
+            or d.get("rawName") == clean_target
+            or d.get("name") == clean_target
+            or d.get("ip") == f"homepod:{clean_target}"
+            or d.get("id") == target_ip_or_id
+        ), None)
+        target_host = found.get("rawIp") if found and found.get("rawIp") else clean_target
+
+        entry = self._active_streams.pop(target_host, None)
+        if not entry:
+            return False
+
+        atv = entry.get("atv")
+        task = entry.get("task")
+        try:
+            if atv and hasattr(atv, "remote_control") and atv.remote_control:
+                try:
+                    await asyncio.wait_for(atv.remote_control.stop(), timeout=2.0)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        if task and not task.done():
+            task.cancel()
+        if atv:
+            try:
+                atv.close()
+            except Exception:
+                pass
+        log.info(f"⏹️ Stopped HomePod playback on {target_host}")
+        return True
 
 homepod_service = HomePodService()

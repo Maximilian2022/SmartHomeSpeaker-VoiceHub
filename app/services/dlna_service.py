@@ -255,4 +255,37 @@ class DlnaService:
                 log.error(f"DLNA Play request failed on {dev_name}: {e}")
                 return False
 
+    async def stop_playback(self, dev: Dict[str, Any]) -> bool:
+        """DLNA デバイスへ AVTransport Stop SOAP リクエストを送信して即時停止"""
+        control_url = dev.get("controlUrl")
+        dev_name = dev.get("name", dev.get("ip", "DLNA"))
+        if not control_url:
+            return False
+        soap_stop = """<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:Stop xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+    </u:Stop>
+  </s:Body>
+</s:Envelope>"""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                res = await client.post(
+                    control_url,
+                    content=soap_stop.encode("utf-8"),
+                    headers={
+                        "Content-Type": 'text/xml; charset="utf-8"',
+                        "SOAPAction": '"urn:schemas-upnp-org:service:AVTransport:1#Stop"',
+                    },
+                )
+                if res.status_code < 400:
+                    log.info(f"⏹️ Stopped DLNA playback on '{dev_name}'")
+                    return True
+                log.warning(f"DLNA Stop HTTP {res.status_code} on '{dev_name}'")
+                return False
+        except Exception as e:
+            log.warning(f"DLNA Stop failed on '{dev_name}': {e}")
+            return False
+
 dlna_service = DlnaService()

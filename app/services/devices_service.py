@@ -204,6 +204,7 @@ class DeviceManager:
         # ソート: 有効端末優先 -> お気に入り最優先 -> カテゴリ順 -> デフォルト優先 -> 名前順
         for d in results:
             d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+            d["roomTag"] = settings_manager.get_room_tag_for_device(d.get("id"), d.get("ip"), d.get("clientId"))
             d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
 
         results.sort(key=lambda d: (
@@ -225,6 +226,7 @@ class DeviceManager:
             for dev in self.devices.values():
                 d = dict(dev)
                 d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                d["roomTag"] = settings_manager.get_room_tag_for_device(d.get("id"), d.get("ip"))
                 d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
                 results.append(d)
 
@@ -233,6 +235,7 @@ class DeviceManager:
             for ad in alexa_service.devices_cache:
                 d = dict(ad)
                 d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                d["roomTag"] = settings_manager.get_room_tag_for_device(d.get("id"), d.get("ip"))
                 d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
                 results.append(d)
 
@@ -241,6 +244,7 @@ class DeviceManager:
             for hd in homepod_service.devices_cache:
                 d = dict(hd)
                 d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+                d["roomTag"] = settings_manager.get_room_tag_for_device(d.get("id"), d.get("ip"))
                 d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
                 results.append(d)
 
@@ -263,6 +267,7 @@ class DeviceManager:
                         "model": dev.get("model", ""),
                         "type": dtype,
                         "label": settings_manager.get_label_for_device(dev_id, prefix),
+                        "roomTag": settings_manager.get_room_tag_for_device(dev_id, prefix),
                         "disabled": settings_manager.is_device_disabled(dev_id, prefix, dev_name)
                     }
                     results.append(d)
@@ -271,6 +276,7 @@ class DeviceManager:
         for cd in client_speaker_service.get_active_devices(include_disabled=True):
             d = dict(cd)
             d["label"] = settings_manager.get_label_for_device(d.get("id"), d.get("ip"))
+            d["roomTag"] = settings_manager.get_room_tag_for_device(d.get("id"), d.get("ip"), d.get("clientId"))
             d["disabled"] = settings_manager.is_device_disabled(d.get("id"), d.get("ip"), d.get("name"))
             results.append(d)
 

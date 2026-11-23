@@ -32,6 +32,10 @@ class ClientSpeakerInfo:
         self.script_hash: str = str(script_hash or "")
         self.connected_at = time.time()
         self.last_seen = time.time()
+        self.in_vc: bool = False
+        self.vc_app: str = ""
+        self.vc_detail: str = ""
+        self.vc_updated_at: float = 0.0
 
     def touch(self):
         self.last_seen = time.time()
@@ -228,21 +232,129 @@ class ClientSpeakerService:
         log.info(f"🔊 Updated audio outputs for client '{client.name}' (id={client_id}): {len(client.outputs)} output(s)")
         return True
 
-    async def unregister(self, client_id: str):
-        """クライアントの切断を処理"""
+    async def unregister(self, client_id: str) -> List[str]:
+        """クライアントの切断を処理し、これにより VC 参加がいなくなった部屋タグのリストを返却"""
+        prev_vc_rooms: set[str] = set()
         async with self._lock:
+            prev_vc_rooms = self._get_vc_rooms_unlocked()
             removed = self._clients.pop(client_id, None)
             count = len(self._clients)
+            new_vc_rooms = self._get_vc_rooms_unlocked()
 
+        released_rooms = sorted(prev_vc_rooms - new_vc_rooms) if (removed and removed.in_vc) else []
         if removed:
-            log.info(f"💻 Client speaker disconnected: '{removed.name}' (id={client_id}). Active client PCs: {count}")
+            log.info(
+                f"💻 Client speaker disconnected: '{removed.name}' (id={client_id}, was_vc={removed.in_vc}). "
+                f"Active client PCs: {count}"
+            )
+        return released_rooms
+
+    def _get_client_room_tags(self, client: ClientSpeakerInfo) -> set[str]:
+        """クライアント本体またはその有効な出力に割り当てられている部屋タグ集合を取得"""
+        rooms: set[str] = set()
+        base_tag = settings_manager.get_room_tag_for_device(f"client:{client.id}", client.id, client.id)
+        if base_tag:
+            rooms.add(base_tag)
+        for out in client.outputs or []:
+            if isinstance(out, dict):
+                out_key = str(out.get("key") or "").strip()
+                if out_key:
+                    t = settings_manager.get_room_tag_for_device(None, f"client:{client.id}@{out_key}", client.id)
+                    if t:
+                        rooms.add(t)
+        return rooms
+
+    def _get_vc_rooms_unlocked(self) -> set[str]:
+        rooms: set[str] = set()
+        for c in self._clients.values():
+            if c.in_vc:
+                rooms.update(self._get_client_room_tags(c))
+        return rooms
+
+    def get_vc_muted_rooms(self) -> set[str]:
+        """現在 VC 参加中のクライアントにより自動ミュート対象の部屋タグ集合を取得"""
+        rooms: set[str] = set()
+        for c in list(self._clients.values()):
+            if c.in_vc:
+                rooms.update(self._get_client_room_tags(c))
+        return rooms
+
+    def get_vc_active_details(self) -> Dict[str, List[Dict[str, str]]]:
+        """部屋タグ -> VC 参加中クライアント情報リストのマップ"""
+        details: Dict[str, List[Dict[str, str]]] = {}
+        for c in list(self._clients.values()):
+            if not c.in_vc:
+                continue
+            for r in self._get_client_room_tags(c):
+                details.setdefault(r, []).append({
+                    "clientId": c.id,
+                    "name": c.name,
+                    "app": c.vc_app or "VC",
+                    "detail": c.vc_detail or "",
+                })
+        return details
+
+    async def update_vc_state(
+        self,
+        client_id: str,
+        in_vc: bool,
+        app: str = "",
+        detail: str = ""
+    ) -> Dict[str, Any]:
+        """PC クライアントの VC 参加状態を更新し、部屋単位の遷移結果を返却"""
+        new_in_vc = bool(in_vc)
+        clean_app = str(app or "").strip()
+        clean_detail = str(detail or "").strip()
+
+        async with self._lock:
+            client = self._clients.get(client_id)
+            if not client:
+                return {"found": False, "changed": False, "activatedRooms": [], "releasedRooms": []}
+
+            prev_rooms = self._get_vc_rooms_unlocked()
+            prev_in_vc = client.in_vc
+            changed = (prev_in_vc != new_in_vc) or (client.vc_app != clean_app and new_in_vc)
+
+            client.in_vc = new_in_vc
+            client.vc_app = clean_app if new_in_vc else ""
+            client.vc_detail = clean_detail if new_in_vc else ""
+            client.vc_updated_at = time.time()
+            client.touch()
+
+            after_rooms = self._get_vc_rooms_unlocked()
+
+        activated_rooms = sorted(after_rooms - prev_rooms)
+        released_rooms = sorted(prev_rooms - after_rooms)
+        client_rooms = sorted(self._get_client_room_tags(client))
+
+        if prev_in_vc != new_in_vc:
+            state_label = f"JOINED ({clean_app or 'VC'})" if new_in_vc else "LEFT"
+            log.info(
+                f"🎙️ Client VC state changed: '{client.name}' (id={client_id}) -> {state_label} "
+                f"[rooms={client_rooms}, activated={activated_rooms}, released={released_rooms}]"
+            )
+
+        return {
+            "found": True,
+            "changed": changed,
+            "previousInVc": prev_in_vc,
+            "inVc": new_in_vc,
+            "app": client.vc_app,
+            "clientRooms": client_rooms,
+            "activatedRooms": activated_rooms,
+            "releasedRooms": released_rooms,
+        }
 
     def get_active_devices(self, include_disabled: bool = False) -> List[Dict[str, Any]]:
         """現在接続中の全クライアントスピーカーの出力デバイスリストを取得"""
         clients = list(self._clients.values())
         result: List[Dict[str, Any]] = []
         for c in clients:
-            result.extend(c.to_device_dicts(include_disabled=include_disabled))
+            devs = c.to_device_dicts(include_disabled=include_disabled)
+            for d in devs:
+                d["inVc"] = c.in_vc
+                d["vcApp"] = c.vc_app
+            result.extend(devs)
         return result
 
     def get_connected_clients_summary(self, server_script_hash: str = "") -> List[Dict[str, Any]]:
@@ -251,15 +363,28 @@ class ClientSpeakerService:
         summaries: List[Dict[str, Any]] = []
         for c in clients:
             all_outs = c.to_device_dicts(include_disabled=True)
+            room_tag = settings_manager.get_room_tag_for_device(f"client:{c.id}", c.id, c.id)
             summaries.append({
                 "clientId": c.id,
                 "name": c.name,
                 "ip": c.ip,
                 "platform": c.platform,
                 "scriptHash": c.script_hash,
-                "isUpToDate": bool(c.script_hash and server_script_hash and c.script_hash == server_script_hash),
+                "isUpToDate": bool(
+                    c.script_hash
+                    and server_script_hash
+                    and (
+                        c.script_hash == server_script_hash
+                        or c.script_hash.startswith(server_script_hash)
+                        or server_script_hash.startswith(c.script_hash)
+                    )
+                ),
                 "connectedAt": c.connected_at,
                 "lastSeen": c.last_seen,
+                "roomTag": room_tag,
+                "inVc": c.in_vc,
+                "vcApp": c.vc_app,
+                "vcDetail": c.vc_detail,
                 "outputs": all_outs
             })
         return summaries

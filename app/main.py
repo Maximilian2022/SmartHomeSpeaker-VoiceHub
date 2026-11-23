@@ -70,6 +70,7 @@ async def lifespan(app: FastAPI):
     # DND サービスのバックグラウンドタスク開始
     from app.services.dnd_service import dnd_service
     dnd_service.set_speaker_executor(speech_service.speak)
+    dnd_service.set_stop_executor(speech_service.stop_active_playbacks)
     dnd_service.start_background_tasks()
 
     # カレンダーサービスの初期化とバックグラウンドスケジューラー開始

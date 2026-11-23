@@ -94,6 +94,41 @@ class CastService:
             log.error(f"Play failed on {host}:{port}: {e}")
             return False
 
+    def _sync_stop(self, host: str, port: int, expected_media_url: Optional[str] = None) -> bool:
+        """現在再生中のメディアを即停止する（VoiceHub配信音声以外を誤停止しないよう可能な範囲で照合）"""
+        key = f"{host}:{port}"
+        cast = None
+        with self._lock:
+            c = self._cast_cache.get(key)
+            try:
+                if c and c.socket_client and c.socket_client.is_connected:
+                    cast = c
+            except Exception:
+                cast = None
+        if not cast:
+            cast = self._get_cast(host, port)
+        if not cast:
+            return False
+        try:
+            mc: MediaController = cast.media_controller
+            status = getattr(mc, "status", None)
+            content_id = getattr(status, "content_id", None) if status else None
+            # 既に他のコンテンツ (YouTube / Spotify 等) を再生中なら停止しない
+            if expected_media_url and content_id and expected_media_url != content_id:
+                c_str = str(content_id)
+                if "/voice/" not in c_str and "/sound/" not in c_str:
+                    log.info(f"Skip stop on {host}:{port}: active content_id does not match VoiceHub ({content_id})")
+                    return False
+            mc.stop()
+            log.info(f"⏹️ Stopped Cast playback on {host}:{port}")
+            return True
+        except Exception as e:
+            log.warning(f"Stop failed on {host}:{port}: {e}")
+            return False
+
+    async def stop_playback(self, host: str, port: int = 8009, expected_media_url: Optional[str] = None) -> bool:
+        return await asyncio.to_thread(self._sync_stop, host, port, expected_media_url)
+
     def _sync_set_volume(self, host: str, port: int, volume_level: float) -> bool:
         cast = self._get_cast(host, port)
         if not cast:

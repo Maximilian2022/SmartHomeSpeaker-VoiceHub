@@ -1437,6 +1437,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const isClient = dev.type === 'client' || dev.type === 'pc' || dev.ip.startsWith('client:');
       const rawDisplayName = formatSpeakerDisplayName(dev.name);
       const effectiveName = dev.label ? dev.label : rawDisplayName;
+      const roomTag = (dev.roomTag || '').trim();
+      const vcMutedRooms = Array.isArray(state.dndStatus?.vcMutedRooms) ? state.dndStatus.vcMutedRooms : [];
+      const isVcRoomMuted = !!(roomTag && vcMutedRooms.includes(roomTag));
 
       let groupBadge = '';
       if (isGroup) {
@@ -1487,6 +1490,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${isDlna ? '<span class="device-tag dlna" style="background:rgba(234,179,8,0.15);color:#facc15;border:1px solid rgba(234,179,8,0.3);font-size:0.68rem;padding:1px 5px;">🎵 DLNA</span>' : ''}
                 ${!isAlexa && !isHomePod && !isClient && !isTapo && !isOnvif && !isDlna ? '<span class="device-tag google" style="background:rgba(66,133,244,0.15);color:#8ab4f8;border:1px solid rgba(66,133,244,0.3);font-size:0.68rem;padding:1px 5px;">Google Home</span>' : ''}
               `}
+              ${roomTag ? `<span class="device-tag room-tag" style="background:rgba(14,165,233,0.16);color:#38bdf8;border:1px solid rgba(14,165,233,0.35);font-size:0.68rem;padding:1px 6px;" title="設置場所・部屋タグ: ${escapeHtml(roomTag)}">📍 ${escapeHtml(roomTag)}</span>` : ''}
+              ${isVcRoomMuted ? `<span class="device-tag vc-muted-tag" style="background:rgba(168,85,247,0.2);color:#d8b4fe;border:1px solid rgba(168,85,247,0.45);font-size:0.68rem;padding:1px 6px;" title="同部屋のPCがVC参加中のため自動ミュート連動中">🎙️ VC自動ミュート</span>` : ''}
             </div>
           </div>
           <!-- デバイス情報部: 識別子やモデルが長すぎても1行省略(ellipsis)で表示崩れを防止 -->
@@ -1528,8 +1533,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </svg>
               </button>
             `}
-            <!-- ラベル設定 (デバイス名変更) -->
-            <button type="button" class="btn btn-secondary btn-sm btn-edit-device-label" data-dev-id="${escapeHtml(dev.id || dev.ip || '')}" data-ip="${escapeHtml(dev.ip || '')}" data-name="${escapeHtml(rawDisplayName)}" data-effective-name="${escapeHtml(effectiveName)}" data-label="${escapeHtml(dev.label || '')}" title="${dev.label ? (window.i18n && window.i18n.getLanguage() === 'en' ? 'Rename device' : 'デバイス名変更 (ラベル)') : (window.i18n && window.i18n.getLanguage() === 'en' ? 'Rename device' : 'デバイス名変更 (ラベル)')}" style="padding:5px 10px;" aria-label="デバイス名変更">
+            <!-- ラベル・部屋タグ設定 (デバイス設定) -->
+            <button type="button" class="btn btn-secondary btn-sm btn-edit-device-label" data-dev-id="${escapeHtml(dev.id || dev.ip || '')}" data-ip="${escapeHtml(dev.ip || '')}" data-client-id="${escapeHtml(dev.clientId || '')}" data-name="${escapeHtml(rawDisplayName)}" data-effective-name="${escapeHtml(effectiveName)}" data-label="${escapeHtml(dev.label || '')}" data-room-tag="${escapeHtml(roomTag)}" title="デバイス名・部屋タグ設定" style="padding:5px 10px;" aria-label="デバイス名・部屋タグ設定">
               🏷️
             </button>
             <!-- 非表示 (無効化) / 再表示 (有効化) -->
@@ -2425,17 +2430,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // デバイス一覧内クイックテストボタン (イベント委譲)
     el.devicesGrid.addEventListener('click', async (e) => {
-      // 0-A. ラベル編集ボタン (デバイス名変更)
+      // 0-A. ラベル・部屋タグ編集ボタン
       const labelBtn = e.target.closest('.btn-edit-device-label');
       if (labelBtn) {
         e.preventDefault();
         e.stopPropagation();
         const devId = labelBtn.getAttribute('data-dev-id');
         const ip = labelBtn.getAttribute('data-ip');
+        const clientId = labelBtn.getAttribute('data-client-id') || '';
         const name = labelBtn.getAttribute('data-name');
         const effName = labelBtn.getAttribute('data-effective-name') || name;
         const label = labelBtn.getAttribute('data-label') || '';
-        openDeviceLabelModal(devId, ip, name, label, effName);
+        const roomTag = labelBtn.getAttribute('data-room-tag') || '';
+        openDeviceLabelModal(devId, ip, name, label, effName, roomTag, clientId);
         return;
       }
 
@@ -4479,6 +4486,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const data = JSON.parse(e.data);
           state.dndStatus = data;
           renderDndStatus();
+          if (typeof renderDevicesGrid === 'function') renderDevicesGrid();
+          if (typeof loadPcSpeakerClients === 'function') loadPcSpeakerClients();
         } catch (err) {
           console.warn('[SSE] dnd_status parse error:', err);
         }
@@ -4568,11 +4577,23 @@ document.addEventListener('DOMContentLoaded', () => {
           headerChip.style.color = '#f87171';
         }
       } else {
-        headerText.textContent = s.enabled ? (isEn() ? 'DND: Monitoring' : 'DND: 監視中') : (isEn() ? 'DND: Disabled' : 'DND: 無効');
-        if (headerChip) {
-          headerChip.title = s.enabled ? (isEn() ? 'DND Auto-monitoring active (Click to configure)' : 'DND自動監視中 (クリックでおやすみ・会議モード設定へ)') : (isEn() ? 'DND is globally disabled (Click to configure)' : 'DND機能は無効です (クリックでおやすみ・会議モード設定へ)');
-          headerChip.style.borderColor = '';
-          headerChip.style.color = '';
+        const vcRooms = Array.isArray(s.vcMutedRooms) ? s.vcMutedRooms : [];
+        if (vcRooms.length > 0) {
+          headerText.textContent = isEn() ? `VC Mute: ${vcRooms.join(', ')}` : `🎙️ VCミュート: ${vcRooms.join(', ')}`;
+          if (headerChip) {
+            headerChip.title = isEn()
+              ? `Auto-muting room(s) during PC VC: ${vcRooms.join(', ')}`
+              : `PC通話連動により自動ミュート中の部屋: ${vcRooms.join(', ')} (クリックで設定へ)`;
+            headerChip.style.borderColor = 'rgba(168, 85, 247, 0.55)';
+            headerChip.style.color = '#d8b4fe';
+          }
+        } else {
+          headerText.textContent = s.enabled ? (isEn() ? 'DND: Monitoring' : 'DND: 監視中') : (isEn() ? 'DND: Disabled' : 'DND: 無効');
+          if (headerChip) {
+            headerChip.title = s.enabled ? (isEn() ? 'DND Auto-monitoring active (Click to configure)' : 'DND自動監視中 (クリックでおやすみ・会議モード設定へ)') : (isEn() ? 'DND is globally disabled (Click to configure)' : 'DND機能は無効です (クリックでおやすみ・会議モード設定へ)');
+            headerChip.style.borderColor = '';
+            headerChip.style.color = '';
+          }
         }
       }
     }
@@ -4736,6 +4757,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const aiSummaryThres = document.getElementById('dndAiSummaryThreshold');
       if (aiSummaryThres) aiSummaryThres.value = String(dnd.aiSummaryThreshold || 2);
 
+      // ミュート時の再生中音声即停止
+      const stopOnMuteEl = document.getElementById('dndStopOnMute');
+      if (stopOnMuteEl) stopOnMuteEl.checked = dnd.stopOnMute !== false;
+
       // AI要約ラッパーの表示制御 (action === 'queue' のときに表示)
       const queueAiWrapper = document.getElementById('dndQueueAiWrapper');
       if (queueAiWrapper) queueAiWrapper.style.display = (dnd.action === 'queue') ? 'block' : 'none';
@@ -4885,6 +4910,7 @@ document.addEventListener('DOMContentLoaded', () => {
         targetScope: document.querySelector('input[name="dndTargetScope"]:checked')?.value || 'all',
         targetDevices: spk,
         topMuteDuration: document.querySelector('input[name="dndTopMuteDuration"]:checked')?.value || 'indefinite',
+        stopOnMute: document.getElementById('dndStopOnMute')?.checked !== false,
         aiSummaryEnabled: document.getElementById('dndAiSummaryEnabled')?.checked !== false,
         aiSummaryThreshold: parseInt(document.getElementById('dndAiSummaryThreshold')?.value || '2', 10),
         manualUntil: dnd.manualUntil !== undefined ? dnd.manualUntil : null,
@@ -4914,6 +4940,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('dndMasterEnabled')?.addEventListener('change', async () => {
       await saveDndSettingsInternal();
       showToast('おやすみ・会議モードの全体設定を更新しました', 'success');
+      loadDndStatus();
+    });
+
+    // ミュート時即停止トグル
+    document.getElementById('dndStopOnMute')?.addEventListener('change', async () => {
+      await saveDndSettingsInternal();
+      showToast('再生中音声の即時停止設定を更新しました', 'success');
       loadDndStatus();
     });
 
@@ -6299,14 +6332,27 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }).join('');
 
+      const pcRoomTag = (c.roomTag || '').trim();
+      const pcRoomBadge = pcRoomTag
+        ? `<span style="font-size:0.72rem; padding:2px 7px; border-radius:999px; background:rgba(14,165,233,0.16); color:#38bdf8; border:1px solid rgba(14,165,233,0.35);">📍 ${escapeHtml(pcRoomTag)}</span>`
+        : '';
+      const pcVcBadge = c.inVc
+        ? `<span style="font-size:0.72rem; padding:2px 7px; border-radius:999px; background:rgba(168,85,247,0.22); color:#e9d5ff; border:1px solid rgba(168,85,247,0.5);">🎙️ VC中 (${escapeHtml(c.vcApp || 'VC')})</span>`
+        : '';
+
       return `
         <div style="background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 12px; margin-bottom:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.06);">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <strong style="font-size:0.9rem; color:#e2e8f0;">${escapeHtml(c.name)}</strong>
               <span style="font-size:0.75rem; color:var(--text-muted);">(${osIcon} · IP: ${escapeHtml(c.ip)})</span>
+              ${pcRoomBadge}
+              ${pcVcBadge}
             </div>
-            <div>${scriptBadge}</div>
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary btn-xs btn-edit-pc-room-tag" data-client-id="${escapeHtml(c.clientId)}" data-name="${escapeHtml(c.name)}" data-room-tag="${escapeHtml(pcRoomTag)}" style="font-size:0.74rem; padding:2px 8px;">📍 ${pcRoomTag ? '部屋変更' : '部屋タグ設定'}</button>
+              ${scriptBadge}
+            </div>
           </div>
           <div style="display:flex; flex-direction:column; gap:6px;">
             ${rowsHtml}
@@ -6314,6 +6360,16 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `;
     }).join('');
+
+    // イベントバインド: PC本体の部屋タグ編集ボタン
+    listEl.querySelectorAll('.btn-edit-pc-room-tag').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const clientId = btn.getAttribute('data-client-id') || '';
+        const name = btn.getAttribute('data-name') || clientId;
+        const roomTag = btn.getAttribute('data-room-tag') || '';
+        openDeviceLabelModal('', `client:${clientId}`, name, '', name, roomTag, clientId, true);
+      });
+    });
 
     // イベントバインド: 有効/無効トグル
     listEl.querySelectorAll('.chk-pc-output-enable').forEach(chk => {
@@ -6556,17 +6612,55 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => nameInput?.focus(), 50);
   }
 
-  // ================= デバイスラベル設定モーダル関連 =================
-  function openDeviceLabelModal(deviceId, ip, name, currentLabel = '', effectiveName = '') {
+  // ================= デバイスラベル・部屋タグ設定モーダル関連 =================
+  function refreshRoomTagSuggestions() {
+    const dl = document.getElementById('roomTagSuggestions');
+    if (!dl) return;
+    const rooms = new Set();
+    if (Array.isArray(state.devices)) {
+      state.devices.forEach(d => {
+        const rt = (d.roomTag || '').trim();
+        if (rt) rooms.add(rt);
+      });
+    }
+    if (Array.isArray(state.dndStatus?.vcMutedRooms)) {
+      state.dndStatus.vcMutedRooms.forEach(r => {
+        const rt = (r || '').trim();
+        if (rt) rooms.add(rt);
+      });
+    }
+    dl.innerHTML = Array.from(rooms).sort().map(r => `<option value="${escapeHtml(r)}">`).join('');
+  }
+
+  function openDeviceLabelModal(deviceId, ip, name, currentLabel = '', effectiveName = '', currentRoomTag = '', clientId = '', roomOnly = false) {
     const modal = document.getElementById('modalDeviceLabel');
+    const titleEl = document.getElementById('modalDeviceLabelTitle');
     const nameEl = document.getElementById('labelTargetDeviceName');
     const idEl = document.getElementById('labelTargetDeviceId');
     const hiddenDevId = document.getElementById('labelTargetDevIdHidden');
     const hiddenIp = document.getElementById('labelTargetDevIpHidden');
+    const hiddenClientId = document.getElementById('labelTargetClientIdHidden');
+    const hiddenOrigLabel = document.getElementById('labelOrigLabelHidden');
+    const hiddenOrigRoomTag = document.getElementById('labelOrigRoomTagHidden');
     const inputLabel = document.getElementById('inputDeviceLabel');
+    const inputRoomTag = document.getElementById('inputDeviceRoomTag');
+    const labelGroup = inputLabel?.closest('.form-group');
+    const btnClear = document.getElementById('btnClearDeviceLabel');
     const errorMsg = document.getElementById('deviceLabelErrorMsg');
 
     if (!modal) return;
+    refreshRoomTagSuggestions();
+
+    modal.dataset.roomOnly = roomOnly ? '1' : '0';
+    if (titleEl) {
+      titleEl.textContent = roomOnly ? '📍 PC の部屋・設置場所タグ設定' : '🏷️ デバイス名・部屋タグ設定';
+    }
+    if (labelGroup) {
+      labelGroup.style.display = roomOnly ? 'none' : '';
+    }
+    if (btnClear) {
+      btnClear.textContent = roomOnly ? '部屋タグを解除' : '元の名前に戻す';
+    }
 
     if (nameEl) {
       if (currentLabel && name && currentLabel !== name) {
@@ -6581,7 +6675,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (hiddenDevId) hiddenDevId.value = deviceId || '';
     if (hiddenIp) hiddenIp.value = ip || '';
+    if (hiddenClientId) hiddenClientId.value = clientId || '';
+    if (hiddenOrigLabel) hiddenOrigLabel.value = currentLabel || '';
+    if (hiddenOrigRoomTag) hiddenOrigRoomTag.value = currentRoomTag || '';
     if (inputLabel) inputLabel.value = currentLabel || '';
+    if (inputRoomTag) inputRoomTag.value = currentRoomTag || '';
     if (errorMsg) {
       errorMsg.textContent = '';
       errorMsg.style.display = 'none';
@@ -6589,9 +6687,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     modal.style.display = 'flex';
     setTimeout(() => {
-      if (inputLabel) {
-        inputLabel.focus();
-        inputLabel.select();
+      const targetFocus = roomOnly ? inputRoomTag : inputLabel;
+      if (targetFocus) {
+        targetFocus.focus();
+        targetFocus.select();
       }
     }, 50);
   }
@@ -6608,9 +6707,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSave = document.getElementById('btnSaveDeviceLabel');
     const btnClear = document.getElementById('btnClearDeviceLabel');
     const inputLabel = document.getElementById('inputDeviceLabel');
+    const inputRoomTag = document.getElementById('inputDeviceRoomTag');
     const errorMsg = document.getElementById('deviceLabelErrorMsg');
     const hiddenDevId = document.getElementById('labelTargetDevIdHidden');
     const hiddenIp = document.getElementById('labelTargetDevIpHidden');
+    const hiddenClientId = document.getElementById('labelTargetClientIdHidden');
+    const hiddenOrigLabel = document.getElementById('labelOrigLabelHidden');
+    const hiddenOrigRoomTag = document.getElementById('labelOrigRoomTagHidden');
 
     if (!modal) return;
 
@@ -6624,17 +6727,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Enterキー押下で保存
-    inputLabel?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        btnSave?.click();
-      }
+    [inputLabel, inputRoomTag].forEach(inp => {
+      inp?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          btnSave?.click();
+        }
+      });
     });
 
-    const submitLabel = async (labelToSet) => {
+    const submitSettings = async (labelToSet, roomTagToSet) => {
+      const isRoomOnly = modal.dataset.roomOnly === '1';
       const devId = hiddenDevId?.value || '';
       const ip = hiddenIp?.value || '';
-      if (!devId && !ip) {
+      const clientId = hiddenClientId?.value || '';
+      const origLabel = hiddenOrigLabel?.value || '';
+      const origRoomTag = hiddenOrigRoomTag?.value || '';
+
+      if (!devId && !ip && !clientId) {
         if (errorMsg) {
           errorMsg.textContent = '対象デバイスが指定されていません';
           errorMsg.style.display = 'block';
@@ -6650,34 +6760,62 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       try {
-        const res = await fetch('/api/devices/label', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            deviceId: devId,
-            ip: ip,
-            label: labelToSet
-          })
-        });
+        let updatedAnything = false;
 
-        const data = await res.json().catch(() => ({}));
-
-        if (!res.ok || !data.success) {
-          const errMsg = data.error || data.detail || 'デバイスラベルの設定に失敗しました';
-          if (errorMsg) {
-            errorMsg.textContent = errMsg;
-            errorMsg.style.display = 'block';
+        // 1. ラベル保存 (roomOnly でなく、変更がある場合)
+        if (!isRoomOnly && labelToSet !== origLabel) {
+          const res = await fetch('/api/devices/label', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              deviceId: devId,
+              ip: ip,
+              label: labelToSet
+            })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) {
+            const errMsg = data.error || data.detail || 'デバイスラベルの設定に失敗しました';
+            if (errorMsg) {
+              errorMsg.textContent = errMsg;
+              errorMsg.style.display = 'block';
+            }
+            return;
           }
-          return;
+          updatedAnything = true;
+        }
+
+        // 2. 部屋タグ保存 (変更がある場合)
+        if (roomTagToSet !== origRoomTag) {
+          const resRoom = await fetch('/api/devices/room-tag', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              deviceId: devId || null,
+              ip: ip || null,
+              clientId: clientId || null,
+              roomTag: roomTagToSet
+            })
+          });
+          const dataRoom = await resRoom.json().catch(() => ({}));
+          if (!resRoom.ok || !dataRoom.success) {
+            const errMsg = dataRoom.error || dataRoom.detail || '部屋タグの設定に失敗しました';
+            if (errorMsg) {
+              errorMsg.textContent = errMsg;
+              errorMsg.style.display = 'block';
+            }
+            return;
+          }
+          updatedAnything = true;
         }
 
         closeDeviceLabelModal();
-        const toastMsg = labelToSet
-          ? (window.t ? window.t('devices.labelSavedToast') : 'デバイスラベルを設定しました')
-          : (window.t ? window.t('devices.labelClearedToast') : 'デバイスラベルを解除しました');
-        showToast(toastMsg, 'success');
-
-        await loadDevices();
+        if (updatedAnything) {
+          showToast('デバイス設定を保存しました', 'success');
+          await loadDevices();
+          if (typeof loadPcSpeakerClients === 'function') await loadPcSpeakerClients();
+          if (typeof loadDndStatus === 'function') await loadDndStatus();
+        }
       } catch (err) {
         if (errorMsg) {
           errorMsg.textContent = `エラー: ${err.message}`;
@@ -6691,11 +6829,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnSave?.addEventListener('click', async () => {
       const label = (inputLabel?.value || '').trim();
-      await submitLabel(label);
+      const roomTag = (inputRoomTag?.value || '').trim();
+      await submitSettings(label, roomTag);
     });
 
     btnClear?.addEventListener('click', async () => {
-      await submitLabel('');
+      const isRoomOnly = modal.dataset.roomOnly === '1';
+      if (isRoomOnly) {
+        await submitSettings('', '');
+      } else {
+        const roomTag = (inputRoomTag?.value || '').trim();
+        await submitSettings('', roomTag);
+      }
     });
   }
 

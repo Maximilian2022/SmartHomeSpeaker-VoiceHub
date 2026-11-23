@@ -239,6 +239,18 @@ class AlexaService:
             log.error(f"❌ Failed to speak to Alexa device {clean_name}: {e}")
             return False
 
+    async def stop_playback(self, device_name: str) -> bool:
+        """Alexa デバイスへ停止/一時停止コマンドを送信（ベストエフォート）"""
+        clean_name = device_name.replace("alexa:", "").strip()
+        clean_name = re.sub(r"^Alexa \((.+)\)$", r"\1", clean_name)
+        try:
+            await self._run_command(["-d", clean_name, "-e", "pause"], retry_on_rate_limit=False)
+            log.info(f"⏹️ Sent pause command to Alexa device: {clean_name}")
+            return True
+        except Exception as e:
+            log.warning(f"Alexa stop/pause warning for {clean_name}: {e}")
+            return False
+
     async def set_volume(self, device_name: str, volume: int) -> bool:
         clean_name = device_name.replace("alexa:", "").strip()
         clean_name = re.sub(r"^Alexa \((.+)\)$", r"\1", clean_name)

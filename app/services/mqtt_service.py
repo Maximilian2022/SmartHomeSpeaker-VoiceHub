@@ -397,6 +397,7 @@ class MQTTBrokerWorker:
                     }
                 })
                 log.info(f"[MQTT Worker:{self.name} -> DND] Enabled DND mode")
+                asyncio.create_task(dnd_service.notify_dnd_activated())
             elif cmd.isdigit() and int(cmd) > 0:
                 mins = int(cmd)
                 now_ts = time.time()
@@ -409,6 +410,7 @@ class MQTTBrokerWorker:
                     }
                 })
                 log.info(f"[MQTT Worker:{self.name} -> DND] Enabled DND mode for {mins} minutes")
+                asyncio.create_task(dnd_service.notify_dnd_activated())
             elif cmd in ("OFF", "FALSE", "0", "DISABLE"):
                 settings_manager.update({
                     "dnd": {

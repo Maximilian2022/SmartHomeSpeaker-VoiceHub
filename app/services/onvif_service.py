@@ -42,6 +42,7 @@ class OnvifService:
         self.go2rtc_api_url = settings.go2rtc_api_url
         # カメラ複数台同時再生時の go2rtc / ネットワーク飽和防止用セマフォ
         self._semaphore = asyncio.Semaphore(3)
+        self._cleanup_tasks: Dict[str, asyncio.Task] = {}
 
     async def send_soap(
         self,
@@ -419,7 +420,7 @@ class OnvifService:
 
         # 再生完了待機後にセッション安全切断
         play_sec = max(3.0, duration + 1.5)
-        asyncio.create_task(self._cleanup_stream_session(stream_name, play_sec))
+        self._schedule_cleanup(stream_name, play_sec)
 
         return {"success": True, "message": "Playback started"}
 
@@ -491,7 +492,7 @@ class OnvifService:
                 raise last_err
 
         play_sec = max(3.0, duration + 1.5)
-        asyncio.create_task(self._cleanup_stream_session(stream_name, play_sec))
+        self._schedule_cleanup(stream_name, play_sec)
         return {"success": True, "message": "Tapo playback started"}
 
     async def _ensure_go2rtc_tapo_stream(self, stream_name: str, tapo_url: str):
@@ -502,8 +503,31 @@ class OnvifService:
         except Exception as e:
             log.warning(f"go2rtc Tapo Stream Register Warning for {stream_name}: {e}")
 
+    def _schedule_cleanup(self, stream_name: str, delay_sec: float):
+        old_task = self._cleanup_tasks.pop(stream_name, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+        self._cleanup_tasks[stream_name] = asyncio.create_task(
+            self._cleanup_stream_session(stream_name, delay_sec)
+        )
+
+    async def stop_playback(self, camera: Dict[str, Any]) -> bool:
+        """再生中の ONVIF / Tapo カメラ音声セッションを即時切断して停止"""
+        raw_ip = str(camera.get("rawIp") or camera.get("ip", "")).replace("onvif:", "").replace("tapo:", "").strip()
+        if not raw_ip:
+            return False
+        dev_type = camera.get("type", "onvif")
+        stream_name = f"{'tapo' if dev_type == 'tapo' else 'onvif'}_{raw_ip.replace('.', '_')}"
+        old_task = self._cleanup_tasks.pop(stream_name, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+        await self._cleanup_stream_session(stream_name, 0.0)
+        log.info(f"⏹️ Stopped {dev_type.upper()} playback stream: {stream_name}")
+        return True
+
     async def _cleanup_stream_session(self, stream_name: str, delay_sec: float):
-        await asyncio.sleep(delay_sec)
+        if delay_sec > 0:
+            await asyncio.sleep(delay_sec)
         try:
             async with httpx.AsyncClient(timeout=4.0) as client:
                 # 1. アクティブなコンシューマ切断
@@ -511,8 +535,14 @@ class OnvifService:
                 # 2. カメラのRTSP認証情報を含むストリーム定義自体の削除 (情報漏洩防止)
                 await client.delete(f"{self.go2rtc_api_url}/api/streams", params={"src": stream_name})
                 log.info(f"Stream session and definition cleared for {stream_name}")
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             log.warning(f"ONVIF stream cleanup warning for {stream_name}: {e}")
+        finally:
+            cur = asyncio.current_task()
+            if self._cleanup_tasks.get(stream_name) is cur:
+                self._cleanup_tasks.pop(stream_name, None)
 
     async def _ensure_go2rtc_stream(self, stream_name: str, rtsp_url: str, onvif_url: str):
         try:

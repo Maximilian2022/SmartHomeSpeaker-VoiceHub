@@ -29,6 +29,13 @@ class DeviceLabelRequest(BaseModel):
     ip: Optional[str] = None
     label: Optional[str] = None
 
+class DeviceRoomTagRequest(BaseModel):
+    id: Optional[str] = None
+    deviceId: Optional[str] = None
+    ip: Optional[str] = None
+    clientId: Optional[str] = None
+    roomTag: Optional[str] = None
+
 @router.get("/api/devices")
 async def get_devices():
     devs = await device_manager.get_devices()
@@ -37,7 +44,8 @@ async def get_devices():
         "defaultIp": device_manager.get_default_device_ip(),
         "favorites": settings_manager.get_favorite_devices(),
         "disabledDevices": settings_manager.get_disabled_devices(),
-        "labels": settings_manager.get_device_labels()
+        "labels": settings_manager.get_device_labels(),
+        "roomTags": settings_manager.get_device_room_tags()
     }
 
 @router.post("/api/devices/rescan-all")
@@ -52,7 +60,8 @@ async def rescan_all_devices():
         "defaultIp": device_manager.get_default_device_ip(),
         "favorites": settings_manager.get_favorite_devices(),
         "disabledDevices": settings_manager.get_disabled_devices(),
-        "labels": settings_manager.get_device_labels()
+        "labels": settings_manager.get_device_labels(),
+        "roomTags": settings_manager.get_device_room_tags()
     }
 
 @router.get("/api/devices/default")
@@ -125,6 +134,36 @@ async def set_device_label(req: DeviceLabelRequest):
         "deviceId": dev_id,
         "label": result_or_err,
         "labels": settings_manager.get_device_labels()
+    }
+
+@router.get("/api/devices/room-tags")
+async def get_device_room_tags():
+    tags = settings_manager.get_device_room_tags()
+    unique_rooms = sorted({v for v in tags.values() if isinstance(v, str) and v.strip()})
+    return {"roomTags": tags, "rooms": unique_rooms}
+
+@router.post("/api/devices/room-tag")
+async def set_device_room_tag(req: DeviceRoomTagRequest):
+    # PCクライアントは本体単位 (client:{clientId}) を優先キーにしつつ指定IDも解決
+    dev_id = req.deviceId or req.id or req.ip or (f"client:{req.clientId}" if req.clientId else "")
+    alt_id = req.ip if (req.deviceId or req.id) and req.ip != dev_id else (req.id if req.ip and req.id != dev_id else None)
+    if not dev_id:
+        return JSONResponse(status_code=400, content={"success": False, "error": "deviceId または ip が指定されていません"})
+
+    saved_tag = settings_manager.set_device_room_tag(
+        dev_id,
+        req.roomTag,
+        alt_id=alt_id,
+        client_id=req.clientId,
+    )
+    tags = settings_manager.get_device_room_tags()
+    unique_rooms = sorted({v for v in tags.values() if isinstance(v, str) and v.strip()})
+    return {
+        "success": True,
+        "deviceId": dev_id,
+        "roomTag": saved_tag,
+        "roomTags": tags,
+        "rooms": unique_rooms,
     }
 
 @router.get("/api/groups")

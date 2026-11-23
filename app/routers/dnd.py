@@ -224,6 +224,7 @@ async def mute_dnd(req: MuteRequest = MuteRequest()):
         }
     })
     log.info(f"DND muted until {until_ts} (reason: {req.reason})")
+    asyncio.create_task(dnd_service.notify_dnd_activated())
     asyncio.create_task(mqtt_service.publish_dnd_state())
     asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
     return {"success": True, "manualUntil": until_ts}
@@ -281,6 +282,7 @@ async def quick_dnd(req: Dict[str, Any]):
         }
     })
     log.info(f"Quick DND enabled: minutes={raw_minutes}, until={until_ts}, reason={reason}")
+    asyncio.create_task(dnd_service.notify_dnd_activated())
     asyncio.create_task(mqtt_service.publish_dnd_state())
     asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
     return {"success": True, "manualUntil": until_ts, "reason": reason}

@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple, Callable
+from typing import List, Dict, Any, Optional, Tuple, Callable, Set
 from app.config import DATA_DIR
 from app.services.settings_service import settings_manager
 from app.services.calendar_service import calendar_service
@@ -31,11 +31,37 @@ class DndService:
         self.history: List[Dict[str, Any]] = []
         self.was_dnd_active: bool = False
         self._speaker_executor: Optional[Callable] = None
+        self._stop_executor: Optional[Callable] = None
         self._tick_task: Optional[asyncio.Task] = None
         self._flush_lock = asyncio.Lock()
 
     def set_speaker_executor(self, executor: Callable):
         self._speaker_executor = executor
+
+    def set_stop_executor(self, executor: Callable):
+        self._stop_executor = executor
+
+    async def notify_dnd_activated(self, room_tags: Optional[Set[str]] = None) -> int:
+        """
+        DND または部屋単位 VC 自動ミュートが有効化された瞬間に呼び出され、
+        stopOnMute 設定が有効なら再生中のアクティブな音声を即中断する。
+        """
+        dnd_conf = settings_manager.get().get("dnd", {})
+        if not dnd_conf.get("stopOnMute", True):
+            return 0
+        if not self._stop_executor:
+            return 0
+        try:
+            import inspect
+            sig = inspect.signature(self._stop_executor)
+            if "room_tags" in sig.parameters:
+                stopped = await self._stop_executor(room_tags=room_tags)
+            else:
+                stopped = await self._stop_executor()
+            return int(stopped or 0)
+        except Exception as e:
+            log.warning(f"Failed to stop active playbacks on DND activation: {e}")
+            return 0
 
     def start_background_tasks(self):
         if self._tick_task is None or self._tick_task.done():
@@ -65,6 +91,9 @@ class DndService:
         if self.was_dnd_active and not is_active:
             log.info("DND mode deactivated. Flushing queued notifications...")
             await self.check_and_flush_queue()
+        elif not self.was_dnd_active and is_active:
+            log.info(f"DND mode activated ({status.get('reason') or 'auto'}). Stopping active playbacks if enabled...")
+            await self.notify_dnd_activated()
         self.was_dnd_active = is_active
         if status_changed:
             from app.services.event_service import event_service
@@ -235,6 +264,10 @@ class DndService:
                 "isAllDay": False
             }
 
+        from app.services.client_speaker_service import client_speaker_service
+        vc_muted_rooms = sorted(client_speaker_service.get_vc_muted_rooms())
+        vc_details = client_speaker_service.get_vc_active_details()
+
         return {
             "enabled": bool(dnd_conf.get("enabled", True)),
             "isActive": eval_res.get("isActive", False),
@@ -243,9 +276,12 @@ class DndService:
             "until": eval_res.get("until") or None,
             "action": eval_res.get("action", "skip"),
             "whisperVolume": eval_res.get("whisperVolume", 10),
+            "stopOnMute": bool(dnd_conf.get("stopOnMute", True)),
             "activeCalendarEvent": active_cal,
             "queuedCount": q_len,
-            "queueCount": q_len
+            "queueCount": q_len,
+            "vcMutedRooms": vc_muted_rooms,
+            "vcDetails": vc_details,
         }
 
     def add_to_queue(self, payload: Dict[str, Any]):
@@ -276,70 +312,123 @@ class DndService:
         filtered = {k: v for k, v in kwargs.items() if has_var_kw or k in sig.parameters}
         return await self._speaker_executor(**filtered)
 
+    async def _flush_items(self, items: List[Dict[str, Any]], release_reason: str = "おやすみ・会議モードが終了しました") -> int:
+        if not items or not self._speaker_executor:
+            return 0
+
+        log.info(f"Flushing {len(items)} queued messages ({release_reason})...")
+        from app.services.ai_service import ai_service
+        from app.services.history_service import history_manager
+        dnd_conf = settings_manager.get().get("dnd", {})
+        ai_enabled = dnd_conf.get("aiSummaryEnabled", True)
+        threshold = int(dnd_conf.get("aiSummaryThreshold", 2))
+
+        # 宛先ごとにグループ化 (キュー投入順を保持)
+        groups: Dict[Tuple[str, ...], List[Dict[str, Any]]] = {}
+        for item in items:
+            k = _normalize_target_key(item.get("targets"))
+            if k not in groups:
+                groups[k] = []
+            groups[k].append(item)
+
+        for target_key, group_items in groups.items():
+            target_speaker = None if target_key == ("__default__",) else group_items[0].get("targets")
+            messages = [it.get("text", "") for it in group_items if it.get("text")]
+            hist_ids = [it.get("history_id") for it in group_items if it.get("history_id")]
+
+            if ai_enabled and len(messages) >= threshold:
+                try:
+                    summary_text = await ai_service.summarize_dnd_messages(messages)
+                    if summary_text:
+                        announce_text = f"{release_reason}。保留されていた {len(group_items)} 件の通知をAIが要約してお知らせします。{summary_text}"
+                        await self._call_speaker(
+                            text=announce_text,
+                            targets=target_speaker,
+                            urgent=True,
+                            source="dnd_queue",
+                            source_label="DND保留再生",
+                            was_queued=True
+                        )
+                        history_manager.mark_queued_as_released(hist_ids, note=f"AI要約により保留再生完了 ({len(group_items)}件)")
+                        await asyncio.sleep(0.5)
+                        continue
+                except Exception as e:
+                    log.warning(f"AI summarization failed for target {target_key}, falling back to sequential play: {e}")
+
+            for it in group_items:
+                t = it.get("text", "")
+                if t:
+                    await self._call_speaker(
+                        text=t,
+                        targets=it.get("targets"),
+                        urgent=True,
+                        source="dnd_queue",
+                        source_label="DND保留再生",
+                        was_queued=True,
+                        existing_history_id=it.get("history_id")
+                    )
+                    await asyncio.sleep(0.5)
+
+        return len(items)
+
     async def check_and_flush_queue(self) -> int:
         async with self._flush_lock:
             if not self.queue or not self._speaker_executor:
                 return 0
+            if self.is_in_dnd():
+                return 0
 
-            items = self.clear_queue()
-            log.info(f"Flushing {len(items)} queued messages after DND release...")
+            from app.services.client_speaker_service import client_speaker_service
+            muted_rooms = client_speaker_service.get_vc_muted_rooms()
 
-            from app.services.ai_service import ai_service
-            dnd_conf = settings_manager.get().get("dnd", {})
-            ai_enabled = dnd_conf.get("aiSummaryEnabled", True)
-            threshold = int(dnd_conf.get("aiSummaryThreshold", 2))
+            # まだ VC 参加中の部屋向けキューだけは残し、解放可能なアイテムを取り出す
+            ready_items: List[Dict[str, Any]] = []
+            remaining_items: List[Dict[str, Any]] = []
+            for item in self.queue:
+                r_tag = item.get("room_tag")
+                if r_tag and r_tag in muted_rooms:
+                    remaining_items.append(item)
+                else:
+                    ready_items.append(item)
 
-            # 宛先ごとにグループ化 (キュー投入順を保持)
-            groups: Dict[Tuple[str, ...], List[Dict[str, Any]]] = {}
-            for item in items:
-                k = _normalize_target_key(item.get("targets"))
-                if k not in groups:
-                    groups[k] = []
-                groups[k].append(item)
+            if not ready_items:
+                return 0
 
-            for target_key, group_items in groups.items():
-                # 発話宛先 (元のリクエストで指定されていた targets を尊重。未指定の場合は None のまま)
-                target_speaker = None if target_key == ("__default__",) else group_items[0].get("targets")
-                messages = [it.get("text", "") for it in group_items if it.get("text")]
-                hist_ids = [it.get("history_id") for it in group_items if it.get("history_id")]
+            self.queue = remaining_items
+            self._save_queue()
+            return await self._flush_items(ready_items, release_reason="おやすみ・会議モードが終了しました")
 
-                if ai_enabled and len(messages) >= threshold:
-                    try:
-                        summary_text = await ai_service.summarize_dnd_messages(messages)
-                        if summary_text:
-                            announce_text = f"おやすみ・会議モードが終了しました。保留されていた {len(group_items)} 件の通知をAIが要約してお知らせします。{summary_text}"
-                            await self._call_speaker(
-                                text=announce_text,
-                                targets=target_speaker,
-                                urgent=True,
-                                source="dnd_queue",
-                                source_label="DND保留再生",
-                                was_queued=True
-                            )
-                            # 保留されていた元エントリのステータスを「送信成功（DND保留再生）」に更新
-                            from app.services.history_service import history_manager
-                            history_manager.mark_queued_as_released(hist_ids, note=f"AI要約により保留再生完了 ({len(group_items)}件)")
-                            await asyncio.sleep(0.5)
-                            continue
-                    except Exception as e:
-                        log.warning(f"AI summarization failed for target {target_key}, falling back to sequential play: {e}")
+    async def check_and_flush_room_queue(self, room_tag: str) -> int:
+        """指定した部屋の VC 自動ミュート解除時に、その部屋向けに保留されていた通知をフラッシュ"""
+        if not room_tag:
+            return 0
+        async with self._flush_lock:
+            if not self.queue or not self._speaker_executor:
+                return 0
+            # 全体 DND がまだ有効中、またはまだ同部屋で別 PC が VC 中なら保留継続
+            if self.is_in_dnd():
+                return 0
+            from app.services.client_speaker_service import client_speaker_service
+            if room_tag in client_speaker_service.get_vc_muted_rooms():
+                return 0
 
-                # AI要約無効、閾値未満、または要約失敗時は個別再生
-                for it in group_items:
-                    t = it.get("text", "")
-                    if t:
-                        await self._call_speaker(
-                            text=t,
-                            targets=it.get("targets"),
-                            urgent=True,
-                            source="dnd_queue",
-                            source_label="DND保留再生",
-                            was_queued=True,
-                            existing_history_id=it.get("history_id")
-                        )
-                        await asyncio.sleep(0.5)
+            ready_items: List[Dict[str, Any]] = []
+            remaining_items: List[Dict[str, Any]] = []
+            for item in self.queue:
+                if item.get("room_tag") == room_tag:
+                    ready_items.append(item)
+                else:
+                    remaining_items.append(item)
 
-            return len(items)
+            if not ready_items:
+                return 0
+
+            self.queue = remaining_items
+            self._save_queue()
+            return await self._flush_items(
+                ready_items,
+                release_reason=f"部屋「{room_tag}」の通話・会議が終了しました"
+            )
 
     # エイリアス
     get_status = get_global_status

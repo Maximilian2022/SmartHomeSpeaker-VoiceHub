@@ -92,7 +92,13 @@ async def client_speakers_stream(
         except (asyncio.CancelledError, GeneratorExit):
             pass
         finally:
-            await client_speaker_service.unregister(client_id)
+            released_rooms = await client_speaker_service.unregister(client_id)
+            if released_rooms:
+                from app.services.dnd_service import dnd_service
+                from app.services.event_service import event_service
+                for r in released_rooms:
+                    asyncio.create_task(dnd_service.check_and_flush_room_queue(r))
+                asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
 
     return StreamingResponse(
         event_generator(),
@@ -197,4 +203,46 @@ async def rescan_and_update_client_speakers(
         "rescanSent": sent_rescan,
         "updateCheckSent": sent_update,
         "scriptHash": srv_hash
+    })
+
+
+@router.post("/api/client-speakers/vc-state")
+async def report_client_vc_state(
+    payload: Dict[str, Any] = Body(...),
+    _auth = Depends(check_admin_auth)
+):
+    """PC クライアントからの VC（Discord 等）参加状態通知を受信して部屋自動ミュートに反映"""
+    client_id = str(payload.get("clientId") or "").strip()
+    in_vc = bool(payload.get("inVc", False))
+    app_name = str(payload.get("app") or "").strip()
+    detail = str(payload.get("detail") or "").strip()
+    if not client_id:
+        return JSONResponse(status_code=400, content={"error": "clientId is required"})
+
+    res = await client_speaker_service.update_vc_state(client_id, in_vc, app=app_name, detail=detail)
+    if not res.get("found"):
+        return JSONResponse(status_code=404, content={"error": "Client speaker not connected", "clientId": client_id})
+
+    from app.services.dnd_service import dnd_service
+    from app.services.event_service import event_service
+
+    activated = res.get("activatedRooms") or []
+    released = res.get("releasedRooms") or []
+    if activated:
+        asyncio.create_task(dnd_service.notify_dnd_activated(room_tags=set(activated)))
+    if released:
+        for r in released:
+            asyncio.create_task(dnd_service.check_and_flush_room_queue(r))
+    if res.get("changed") or activated or released:
+        asyncio.create_task(event_service.broadcast("dnd_status", dnd_service.get_global_status()))
+
+    return JSONResponse(content={
+        "success": True,
+        "clientId": client_id,
+        "inVc": res.get("inVc", False),
+        "app": res.get("app", ""),
+        "clientRooms": res.get("clientRooms", []),
+        "activatedRooms": activated,
+        "releasedRooms": released,
+        "vcMutedRooms": sorted(client_speaker_service.get_vc_muted_rooms()),
     })

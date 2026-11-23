@@ -15,6 +15,7 @@ import socket
 import shutil
 import hashlib
 import tempfile
+import threading
 import argparse
 import platform
 import asyncio
@@ -68,12 +69,76 @@ def _normalize_volume(val: Optional[float]) -> tuple:
 class AudioPlayer:
     def __init__(self):
         self._miniaudio_avail = False
+        self._stop_event = threading.Event()
+        self._play_lock = threading.Lock()
+        self._play_gen = 0
+        self._active_procs: List[subprocess.Popen] = []
         if not IS_MAC:
             try:
                 import miniaudio
                 self._miniaudio_avail = True
             except ImportError:
                 self._miniaudio_avail = False
+
+    def stop(self):
+        """現在再生中の音声を即座に中断する"""
+        with self._play_lock:
+            self._play_gen += 1
+            self._stop_event.set()
+            procs = list(self._active_procs)
+        for p in procs:
+            try:
+                if p.poll() is None:
+                    p.terminate()
+            except Exception:
+                pass
+
+    def _run_interruptible_subprocess(self, cmd: List[str], my_gen: int) -> bool:
+        """停止イベントで即座に terminate 可能なサブプロセス実行ヘルパー"""
+        proc = None
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with self._play_lock:
+                self._active_procs.append(proc)
+            while proc.poll() is None:
+                if self._stop_event.is_set() or self._play_gen != my_gen:
+                    try:
+                        proc.terminate()
+                        proc.wait(timeout=1.0)
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                    return False
+                time.sleep(0.05)
+            return proc.returncode == 0
+        except Exception:
+            return False
+        finally:
+            if proc is not None:
+                with self._play_lock:
+                    if proc in self._active_procs:
+                        self._active_procs.remove(proc)
+
+    def _run_miniaudio_device(self, device, stream_or_samples, my_gen: int) -> bool:
+        """停止イベント対応 miniaudio 再生待機ループ"""
+        try:
+            device.start(stream_or_samples)
+            while device.is_running:
+                if self._stop_event.is_set() or self._play_gen != my_gen:
+                    try:
+                        device.stop()
+                    except Exception:
+                        pass
+                    return False
+                time.sleep(0.05)
+            return True
+        finally:
+            try:
+                device.close()
+            except Exception:
+                pass
 
     def get_playback_devices(self) -> List[Dict[str, Any]]:
         """OS に接続されている全オーディオ出力デバイス（物理・仮想含む）を列挙"""
@@ -128,6 +193,11 @@ class AudioPlayer:
         output_name: Optional[str] = None
     ) -> bool:
         """音声バイト列（MP3/WAV等）を指定されたローカルスピーカーで再生"""
+        with self._play_lock:
+            self._play_gen += 1
+            my_gen = self._play_gen
+            self._stop_event.clear()
+
         suffix = ".mp3"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tf:
             tf.write(audio_data)
@@ -135,11 +205,11 @@ class AudioPlayer:
 
         try:
             if IS_MAC:
-                return self._play_mac(temp_path, volume)
+                return self._play_mac(temp_path, volume, my_gen)
             elif IS_WIN:
-                return self._play_windows(temp_path, audio_data, volume, output_key=output_key, output_name=output_name)
+                return self._play_windows(temp_path, audio_data, volume, output_key=output_key, output_name=output_name, my_gen=my_gen)
             else:
-                return self._play_linux(temp_path, audio_data, volume, output_key=output_key, output_name=output_name)
+                return self._play_linux(temp_path, audio_data, volume, output_key=output_key, output_name=output_name, my_gen=my_gen)
         finally:
             try:
                 if os.path.exists(temp_path):
@@ -165,7 +235,7 @@ class AudioPlayer:
                 return d["ma_id"], d["name"]
         return devs[0]["ma_id"], devs[0]["name"]
 
-    def _play_mac(self, file_path: str, volume: Optional[float]) -> bool:
+    def _play_mac(self, file_path: str, volume: Optional[float], my_gen: int) -> bool:
         """macOS: OS標準の afplay コマンドを使用（追加依存なし・極低メモリ・超低遅延）"""
         try:
             vol_ratio, _ = _normalize_volume(volume)
@@ -173,8 +243,7 @@ class AudioPlayer:
             if volume is not None:
                 cmd.extend(["-v", str(vol_ratio)])
             cmd.append(file_path)
-            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return res.returncode == 0
+            return self._run_interruptible_subprocess(cmd, my_gen)
         except Exception as e:
             print(f"[Player] afplay error: {e}", file=sys.stderr)
             return False
@@ -185,7 +254,8 @@ class AudioPlayer:
         audio_data: bytes,
         volume: Optional[float],
         output_key: Optional[str] = None,
-        output_name: Optional[str] = None
+        output_name: Optional[str] = None,
+        my_gen: int = 0
     ) -> bool:
         """Windows: miniaudio または PowerShell MediaPlayer で音量指定再生"""
         vol_ratio, _ = _normalize_volume(volume)
@@ -204,22 +274,14 @@ class AudioPlayer:
                             a[i] = int(a[i] * vol_ratio)
                         samples = a.tobytes()
                     device = miniaudio.PlaybackDevice(device_id=target_ma_id, nchannels=decoded.nchannels, sample_rate=decoded.sample_rate, format=decoded.format) if target_ma_id is not None else miniaudio.PlaybackDevice(nchannels=decoded.nchannels, sample_rate=decoded.sample_rate, format=decoded.format)
-                    device.start(samples)
-                    while device.is_running:
-                        time.sleep(0.05)
-                    device.close()
-                    return True
+                    return self._run_miniaudio_device(device, samples, my_gen)
                 except Exception:
                     stream = miniaudio.stream_file(file_path)
                     if target_ma_id is not None:
                         device = miniaudio.PlaybackDevice(device_id=target_ma_id)
                     else:
                         device = miniaudio.PlaybackDevice()
-                    device.start(stream)
-                    while device.is_running:
-                        time.sleep(0.05)
-                    device.close()
-                    return True
+                    return self._run_miniaudio_device(device, stream, my_gen)
             except Exception as e:
                 print(f"[Player] miniaudio error: {e}, falling back to PowerShell", file=sys.stderr)
 
@@ -238,12 +300,10 @@ class AudioPlayer:
             Start-Sleep -Seconds ($dur + 0.2);
             $player.Close();
             """
-            res = subprocess.run(
+            return self._run_interruptible_subprocess(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                my_gen
             )
-            return res.returncode == 0
         except Exception as e:
             print(f"[Player] PowerShell MediaPlayer error: {e}", file=sys.stderr)
             return False
@@ -254,7 +314,8 @@ class AudioPlayer:
         audio_data: bytes,
         volume: Optional[float],
         output_key: Optional[str] = None,
-        output_name: Optional[str] = None
+        output_name: Optional[str] = None,
+        my_gen: int = 0
     ) -> bool:
         """Linux: miniaudio (デバイス指定対応) または paplay / mpv / ffplay / aplay (音量指定対応)"""
         vol_ratio, vol_percent = _normalize_volume(volume)
@@ -274,19 +335,11 @@ class AudioPlayer:
                             a[i] = int(a[i] * vol_ratio)
                         samples = a.tobytes()
                     device = miniaudio.PlaybackDevice(device_id=target_ma_id, nchannels=decoded.nchannels, sample_rate=decoded.sample_rate, format=decoded.format)
-                    device.start(samples)
-                    while device.is_running:
-                        time.sleep(0.05)
-                    device.close()
-                    return True
+                    return self._run_miniaudio_device(device, samples, my_gen)
                 except Exception:
                     stream = miniaudio.stream_file(file_path)
                     device = miniaudio.PlaybackDevice(device_id=target_ma_id) if target_ma_id is not None else miniaudio.PlaybackDevice()
-                    device.start(stream)
-                    while device.is_running:
-                        time.sleep(0.05)
-                    device.close()
-                    return True
+                    return self._run_miniaudio_device(device, stream, my_gen)
             except Exception as e:
                 print(f"[Player] Linux miniaudio targeted error: {e}", file=sys.stderr)
 
@@ -298,12 +351,10 @@ class AudioPlayer:
             ("aplay", ["aplay", "-q", file_path])
         ]:
             if shutil.which(cmd_name):
-                try:
-                    res = subprocess.run(cmd_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if res.returncode == 0:
-                        return True
-                except Exception:
-                    pass
+                if self._run_interruptible_subprocess(cmd_args, my_gen):
+                    return True
+                if self._stop_event.is_set() or self._play_gen != my_gen:
+                    return False
 
         # 3. miniaudio フォールバック
         if self._miniaudio_avail:
@@ -311,11 +362,7 @@ class AudioPlayer:
                 import miniaudio
                 stream = miniaudio.stream_file(file_path)
                 device = miniaudio.PlaybackDevice()
-                device.start(stream)
-                while device.is_running:
-                    time.sleep(0.05)
-                device.close()
-                return True
+                return self._run_miniaudio_device(device, stream, my_gen)
             except Exception as e:
                 print(f"[Player] Linux miniaudio error: {e}", file=sys.stderr)
 
@@ -705,16 +752,236 @@ WantedBy=default.target
 
 
 # ==============================================================================
+# Windows VC (Discord 聞き専含む / マイク使用) 参加検知ウォッチャ
+# ==============================================================================
+DISCORD_PROCESS_NAMES = {"discord.exe", "discordcanary.exe", "discordptb.exe"}
+IGNORED_UDP_PORTS = {0, 53, 123, 137, 138, 1900, 5353, 5355}
+VC_MIC_ALLOW_KEYWORDS = (
+    "discord", "zoom", "teams", "ms-teams", "slack", "webex", "skype",
+    "line", "chrome", "msedge", "firefox", "brave", "opera", "vivaldi",
+    "vrchat", "parsec"
+)
+VC_MIC_IGNORE_KEYWORDS = (
+    "lghub", "logi", "razer", "steelseries", "nvidia", "nvcontainer",
+    "elgato", "voicemeeter", "obs", "audacity", "voicehub", "cortana"
+)
+
+
+class WindowsVcWatcher:
+    """
+    Windows 標準 API (ctypes + winreg) のみを使って外部依存なしで
+    Discord の音声通話接続（マイク無しの聞き専含む）および主要 VC アプリを検知する。
+    """
+    def __init__(self, ignored_ports: Optional[set] = None):
+        self.ignored_ports = set(IGNORED_UDP_PORTS)
+        if ignored_ports:
+            self.ignored_ports.update(ignored_ports)
+
+    def inspect(self) -> Dict[str, Any]:
+        """現在のプロセス・UDPソケット・マイク使用状態を診断して辞書で返す"""
+        result: Dict[str, Any] = {
+            "supported": IS_WIN,
+            "in_vc": False,
+            "app": "",
+            "detail": "",
+            "discord_pids": [],
+            "discord_udp_ports": [],
+            "mic_apps": [],
+            "ignored_mic_apps": [],
+        }
+        if not IS_WIN:
+            return result
+
+        proc_map = self._list_running_processes()
+        running_exe_names = set(proc_map.values())
+        discord_pids = {pid for pid, exe in proc_map.items() if exe in DISCORD_PROCESS_NAMES}
+        result["discord_pids"] = sorted(discord_pids)
+
+        if discord_pids:
+            udp_ports = self._get_udp_ports_for_pids(discord_pids)
+            active_ports = sorted([p for p in udp_ports if p >= 1024 and p not in self.ignored_ports])
+            result["discord_udp_ports"] = sorted(udp_ports)
+            if active_ports:
+                result["in_vc"] = True
+                result["app"] = "Discord"
+                result["detail"] = f"UDP ports: {active_ports[:5]}"
+                return result
+
+        mic_apps, ignored_mic_apps = self._check_win_microphone_in_use(running_exe_names)
+        result["mic_apps"] = mic_apps
+        result["ignored_mic_apps"] = ignored_mic_apps
+        if mic_apps:
+            result["in_vc"] = True
+            result["app"] = mic_apps[0]
+            result["detail"] = "Microphone active"
+            return result
+
+        return result
+
+    @staticmethod
+    def _list_running_processes() -> Dict[int, str]:
+        """現在実行中のプロセス (pid -> 小文字exe名) 一覧を取得"""
+        procs: Dict[int, str] = {}
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            TH32CS_SNAPPROCESS = 0x00000002
+
+            class PROCESSENTRY32W(ctypes.Structure):
+                _fields_ = [
+                    ("dwSize", wintypes.DWORD),
+                    ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+                    ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", wintypes.WCHAR * 260),
+                ]
+
+            kernel32 = ctypes.windll.kernel32
+            snap = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+            if snap == wintypes.HANDLE(-1).value:
+                return procs
+            try:
+                pe = PROCESSENTRY32W()
+                pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+                if kernel32.Process32FirstW(snap, ctypes.byref(pe)):
+                    while True:
+                        exe_name = str(pe.szExeFile or "").strip().lower()
+                        if exe_name:
+                            procs[int(pe.th32ProcessID)] = exe_name
+                        if not kernel32.Process32NextW(snap, ctypes.byref(pe)):
+                            break
+            finally:
+                kernel32.CloseHandle(snap)
+        except Exception:
+            pass
+        return procs
+
+    @staticmethod
+    def _find_discord_pids() -> set:
+        return {pid for pid, exe in WindowsVcWatcher._list_running_processes().items() if exe in DISCORD_PROCESS_NAMES}
+
+    @staticmethod
+    def _get_udp_ports_for_pids(target_pids: set) -> List[int]:
+        ports: List[int] = []
+        try:
+            import ctypes
+            from ctypes import wintypes
+            import struct
+
+            iphlpapi = ctypes.windll.iphlpapi
+            UDP_TABLE_OWNER_PID = 1
+            ERROR_INSUFFICIENT_BUFFER = 122
+
+            for af, row_size, pid_offset, port_offset in (
+                (2, 12, 8, 4),    # AF_INET: dwLocalAddr(4) + dwLocalPort(4) + dwOwningPid(4)
+                (23, 28, 24, 20), # AF_INET6: ucLocalAddr(16) + dwScopeId(4) + dwLocalPort(4) + dwOwningPid(4)
+            ):
+                dw_size = wintypes.DWORD(0)
+                ret = iphlpapi.GetExtendedUdpTable(None, ctypes.byref(dw_size), False, af, UDP_TABLE_OWNER_PID, 0)
+                if ret not in (0, ERROR_INSUFFICIENT_BUFFER) or dw_size.value < 4:
+                    continue
+                buf = (ctypes.c_ubyte * dw_size.value)()
+                ret = iphlpapi.GetExtendedUdpTable(buf, ctypes.byref(dw_size), False, af, UDP_TABLE_OWNER_PID, 0)
+                if ret != 0:
+                    continue
+                raw = bytes(buf)
+                num_entries = struct.unpack_from("<I", raw, 0)[0]
+                for i in range(num_entries):
+                    base = 4 + i * row_size
+                    if base + row_size > len(raw):
+                        break
+                    owning_pid = struct.unpack_from("<I", raw, base + pid_offset)[0]
+                    if owning_pid in target_pids:
+                        raw_port = struct.unpack_from("<I", raw, base + port_offset)[0]
+                        port = socket.ntohs(raw_port & 0xFFFF)
+                        ports.append(port)
+        except Exception:
+            pass
+        return ports
+
+    @staticmethod
+    def _is_vc_mic_app(raw_name: str, is_non_packaged: bool, running_exe_names: Optional[set] = None) -> bool:
+        """マイク使用アプリが対象 VC/通話アプリであり、非常駐ドライバ等でないか判定"""
+        low = str(raw_name or "").strip().lower()
+        if not low:
+            return False
+        if any(ig in low for ig in VC_MIC_IGNORE_KEYWORDS):
+            return False
+        if not any(kw in low for kw in VC_MIC_ALLOW_KEYWORDS):
+            return False
+        # NonPackaged (デスクトップアプリ) の場合は実際にその exe が起動中かも照合（ゴースト残存排除）
+        if is_non_packaged and running_exe_names is not None and low.endswith(".exe"):
+            if low not in running_exe_names:
+                return False
+        return True
+
+    @classmethod
+    def _check_win_microphone_in_use(cls, running_exe_names: Optional[set] = None) -> tuple:
+        active_apps: List[str] = []
+        ignored_apps: List[str] = []
+        try:
+            import winreg
+            base_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone"
+            paths = [(base_path, False), (base_path + r"\NonPackaged", True)]
+            for reg_path, is_non_pkg in paths:
+                try:
+                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path) as key:
+                        idx = 0
+                        while True:
+                            try:
+                                sub_name = winreg.EnumKey(key, idx)
+                                idx += 1
+                            except OSError:
+                                break
+                            if sub_name == "NonPackaged":
+                                continue
+                            try:
+                                with winreg.OpenKey(key, sub_name) as sub_key:
+                                    val, _ = winreg.QueryValueEx(sub_key, "LastUsedTimeStop")
+                                    if int(val) == 0:
+                                        exe_part = sub_name.replace("#", "\\").split("\\")[-1]
+                                        clean_name = re.sub(r"\.exe$", "", exe_part, flags=re.IGNORECASE)
+                                        if cls._is_vc_mic_app(exe_part, is_non_pkg, running_exe_names):
+                                            active_apps.append(clean_name or "VC")
+                                        else:
+                                            ignored_apps.append(clean_name or exe_part)
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+        except Exception:
+            pass
+        return active_apps, ignored_apps
+
+
+# ==============================================================================
 # メイン SSE クライアントサービス
 # ==============================================================================
 class VoiceHubSpeakerClient:
-    def __init__(self, server_url: str, name: str, client_id: Optional[str] = None, token: Optional[str] = None):
+    def __init__(
+        self,
+        server_url: str,
+        name: str,
+        client_id: Optional[str] = None,
+        token: Optional[str] = None,
+        vc_watch: bool = True
+    ):
         self.server_url = server_url.rstrip("/")
         self.name = name
         self.platform = get_platform_id()
         self.client_id = client_id or f"{self.platform}_{socket.gethostname().replace('.', '_')}"
         self.token = token
         self.player = AudioPlayer()
+        self.vc_watch = bool(vc_watch and IS_WIN)
+        self.vc_watcher = WindowsVcWatcher() if self.vc_watch else None
+        self._vc_in_vc: Optional[bool] = None
+        self._vc_app: str = ""
         self._running = True
 
     @staticmethod
@@ -732,7 +999,11 @@ class VoiceHubSpeakerClient:
         """サーバー上の最新スクリプトをチェックし、更新があれば自動ダウンロード＆再起動"""
         import httpx
         local_hash = self._get_local_script_hash()
-        if expected_hash and local_hash and expected_hash == local_hash:
+        if expected_hash and local_hash and (
+            expected_hash == local_hash
+            or local_hash.startswith(expected_hash)
+            or expected_hash.startswith(local_hash)
+        ):
             return
 
         script_url = f"{self.server_url}/clients/speaker/voicehub_speaker.py"
@@ -828,6 +1099,7 @@ class VoiceHubSpeakerClient:
         print(f"   スピーカー名   : {self.name}")
         print(f"   クライアントID : {self.client_id}")
         print(f"   プラットフォーム: {self.platform} ({platform.system()} {platform.release()})")
+        print(f"   VC自動検知     : {'有効 (Discord UDP / マイク)' if self.vc_watch else '無効'}")
         if outputs_meta:
             print(f"   検出オーディオ出力 ({len(outputs_meta)}台):")
             for o in outputs_meta:
@@ -836,73 +1108,160 @@ class VoiceHubSpeakerClient:
         print("=" * 65)
         print("VoiceHub サーバーへの常駐接続を開始します... (Ctrl+C で終了)\n")
 
+        vc_task = None
+        if self.vc_watch:
+            vc_task = asyncio.create_task(self._vc_watch_loop())
+
         stream_url = f"{self.server_url}/api/client-speakers/stream"
         headers = {}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
 
         backoff = 2.0
-        while self._running:
-            try:
-                current_outputs = self._collect_outputs_meta()
-                params = {
-                    "name": self.name,
-                    "id": self.client_id,
-                    "platform": self.platform,
-                    "outputs": json.dumps(current_outputs, ensure_ascii=False),
-                    "script_hash": self._get_local_script_hash()
-                }
-                if self.token:
-                    params["token"] = self.token
+        try:
+            while self._running:
+                try:
+                    current_outputs = self._collect_outputs_meta()
+                    params = {
+                        "name": self.name,
+                        "id": self.client_id,
+                        "platform": self.platform,
+                        "outputs": json.dumps(current_outputs, ensure_ascii=False),
+                        "script_hash": self._get_local_script_hash()
+                    }
+                    if self.token:
+                        params["token"] = self.token
 
-                # タイムアウトなしでSSEストリーミング接続
-                async with httpx.AsyncClient(timeout=None) as client:
-                    async with client.stream("GET", stream_url, params=params, headers=headers) as resp:
-                        if resp.status_code == 401:
-                            print("❌ 認証エラー (HTTP 401): --token に正しい Webhook トークンまたは管理者パスワードを指定してください。")
-                            await asyncio.sleep(30)
-                            continue
-                        elif resp.status_code == 429:
-                            print("⚠️ レート制限中 (HTTP 429): しばらく待機してから再接続します...")
-                            await asyncio.sleep(30)
-                            continue
-                        elif resp.status_code != 200:
-                            print(f"⚠️ 接続エラー: HTTP {resp.status_code}。再試行します...")
-                            await asyncio.sleep(backoff)
-                            backoff = min(30.0, backoff * 1.5)
-                            continue
-
-                        # 正常接続
-                        backoff = 2.0
-                        print(f"[{time.strftime('%H:%M:%S')}] 🟢 VoiceHub サーバーに接続しました。アナウンス待機中...")
-
-                        current_event = "message"
-                        async for line in resp.aiter_lines():
-                            line = line.strip()
-                            if not line:
+                    # タイムアウトなしでSSEストリーミング接続
+                    async with httpx.AsyncClient(timeout=None) as client:
+                        async with client.stream("GET", stream_url, params=params, headers=headers) as resp:
+                            if resp.status_code == 401:
+                                print("❌ 認証エラー (HTTP 401): --token に正しい Webhook トークンまたは管理者パスワードを指定してください。")
+                                await asyncio.sleep(30)
                                 continue
-                            if line.startswith(":"):
-                                # keepalive コメント行
+                            elif resp.status_code == 429:
+                                print("⚠️ レート制限中 (HTTP 429): しばらく待機してから再接続します...")
+                                await asyncio.sleep(30)
+                                continue
+                            elif resp.status_code != 200:
+                                print(f"⚠️ 接続エラー: HTTP {resp.status_code}。再試行します...")
+                                await asyncio.sleep(backoff)
+                                backoff = min(30.0, backoff * 1.5)
                                 continue
 
-                            if line.startswith("event:"):
-                                current_event = line[len("event:"):].strip()
-                            elif line.startswith("data:"):
-                                data_str = line[len("data:"):].strip()
-                                await self._handle_event(current_event, data_str)
+                            # 正常接続
+                            backoff = 2.0
+                            print(f"[{time.strftime('%H:%M:%S')}] 🟢 VoiceHub サーバーに接続しました。アナウンス待機中...")
 
-            except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError) as e:
-                print(f"[{time.strftime('%H:%M:%S')}] 🟡 サーバーから切断されました: {e} ({int(backoff)}秒後に自動再接続...)")
-                await asyncio.sleep(backoff)
-                backoff = min(30.0, backoff * 1.5)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 予期しないエラー: {e} ({int(backoff)}秒後に再試行)")
-                await asyncio.sleep(backoff)
-                backoff = min(30.0, backoff * 1.5)
+                            current_event = "message"
+                            async for line in resp.aiter_lines():
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                if line.startswith(":"):
+                                    # keepalive コメント行
+                                    continue
+
+                                if line.startswith("event:"):
+                                    current_event = line[len("event:"):].strip()
+                                elif line.startswith("data:"):
+                                    data_str = line[len("data:"):].strip()
+                                    await self._handle_event(current_event, data_str)
+
+                except (httpx.ConnectError, httpx.RemoteProtocolError, httpx.ReadError) as e:
+                    print(f"[{time.strftime('%H:%M:%S')}] 🟡 サーバーから切断されました: {e} ({int(backoff)}秒後に自動再接続...)")
+                    await asyncio.sleep(backoff)
+                    backoff = min(30.0, backoff * 1.5)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    print(f"[{time.strftime('%H:%M:%S')}] ⚠️ 予期しないエラー: {e} ({int(backoff)}秒後に再試行)")
+                    await asyncio.sleep(backoff)
+                    backoff = min(30.0, backoff * 1.5)
+        finally:
+            if vc_task and not vc_task.done():
+                vc_task.cancel()
 
         print("\n👋 クライアントを終了しました。")
+
+    async def _send_vc_state(self, in_vc: bool, app_name: str = "", detail: str = ""):
+        import httpx
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        payload = {
+            "clientId": self.client_id,
+            "inVc": bool(in_vc),
+            "app": app_name,
+            "detail": detail,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{self.server_url}/api/client-speakers/vc-state",
+                    json=payload,
+                    headers=headers,
+                )
+        except Exception:
+            pass
+
+    async def _vc_watch_loop(self):
+        """Windows 上の Discord / マイク VC 参加状態を低負荷ポーリング監視しサーバーへ通知"""
+        if not self.vc_watcher:
+            return
+        loop = asyncio.get_running_loop()
+        pending_state: Optional[bool] = None
+        pending_count = 0
+        last_heartbeat = 0.0
+
+        while self._running:
+            try:
+                info = await loop.run_in_executor(None, self.vc_watcher.inspect)
+                detected = bool(info.get("in_vc"))
+                app_name = str(info.get("app") or "")
+                detail = str(info.get("detail") or "")
+
+                if self._vc_in_vc is None:
+                    # 初回起動時
+                    self._vc_in_vc = detected
+                    self._vc_app = app_name
+                    await self._send_vc_state(detected, app_name, detail)
+                    last_heartbeat = time.monotonic()
+                    if detected:
+                        print(f"[{time.strftime('%H:%M:%S')}] 🎙️ VC 参加を検知しました ({app_name}) -> 部屋自動ミュート通知送信")
+                elif detected != self._vc_in_vc:
+                    if pending_state == detected:
+                        pending_count += 1
+                    else:
+                        pending_state = detected
+                        pending_count = 1
+
+                    # 開始は2回 (約1.5〜3秒)、終了は2回 (約3秒) 連続一致で遷移確定
+                    required = 1 if detected else 2
+                    if pending_count >= required:
+                        self._vc_in_vc = detected
+                        self._vc_app = app_name
+                        pending_state = None
+                        pending_count = 0
+                        await self._send_vc_state(detected, app_name, detail)
+                        last_heartbeat = time.monotonic()
+                        if detected:
+                            print(f"[{time.strftime('%H:%M:%S')}] 🎙️ VC 参加を検知しました ({app_name}: {detail})")
+                        else:
+                            print(f"[{time.strftime('%H:%M:%S')}] 🎧 VC 退出を検知しました（自動ミュート解除）")
+                else:
+                    pending_state = None
+                    pending_count = 0
+                    # 約30秒おきに最新状態を再同期（サーバー再起動後の状態復帰用）
+                    if time.monotonic() - last_heartbeat >= 30.0:
+                        await self._send_vc_state(self._vc_in_vc, app_name if self._vc_in_vc else "", detail if self._vc_in_vc else "")
+                        last_heartbeat = time.monotonic()
+
+                await asyncio.sleep(1.5)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(3.0)
 
     async def _handle_event(self, event_type: str, data_str: str):
         try:
@@ -915,12 +1274,19 @@ class VoiceHubSpeakerClient:
             srv_hash = data.get("scriptHash")
             if srv_hash:
                 await self._check_and_self_update(srv_hash)
+            if self.vc_watch and self._vc_in_vc is not None:
+                await self._send_vc_state(self._vc_in_vc, self._vc_app, "reconnected")
 
         elif event_type == "self_update":
             await self._check_and_self_update(data.get("scriptHash"))
 
         elif event_type == "rescan":
             await self._report_outputs()
+
+        elif event_type == "stop":
+            reason = data.get("reason") or "dnd"
+            print(f"[{time.strftime('%H:%M:%S')}] ⏹️ 再生即時停止指示を受信しました ({reason})")
+            self.player.stop()
 
         elif event_type == "play":
             audio_url = data.get("audio_url")
@@ -1004,8 +1370,22 @@ def main():
     parser.add_argument("--token", default=None, help="Webhook 認証トークン (VoiceHub でトークンが設定されている場合)")
     parser.add_argument("--autostart", choices=["enable", "disable", "status"], help="OS起動時の自動バックグラウンド起動を設定/解除/確認")
     parser.add_argument("--clean", action="store_true", help="自動起動解除時にローカル設定・キャッシュフォルダ (~/.voicehub) も完全削除")
+    parser.add_argument("--no-vc-watch", action="store_true", help="Windows VC (Discord/マイク) 自動検知を無効化")
+    parser.add_argument("--vc-debug", action="store_true", help="Windows VC 検知状態（Discord UDPソケット・マイク使用）を診断出力して終了")
+    parser.add_argument("--vc-ignore-ports", default="", help="VC検知から除外するローカルUDPポート (カンマ区切り)")
 
     args = parser.parse_args()
+
+    if args.vc_debug:
+        ignored = set()
+        for tok in str(args.vc_ignore_ports or "").split(","):
+            tok = tok.strip()
+            if tok.isdigit():
+                ignored.add(int(tok))
+        watcher = WindowsVcWatcher(ignored_ports=ignored)
+        info = watcher.inspect()
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+        return
 
     # 保存済み設定の自動ロード（引数が未指定の場合に復元）
     saved_cfg = AutostartManager.load_saved_config()
@@ -1027,13 +1407,22 @@ def main():
     # 通常実行時も次回のために設定を保存
     AutostartManager.save_config(args.server, args.name, args.token)
 
+    ignored_ports = set()
+    for tok in str(args.vc_ignore_ports or "").split(","):
+        tok = tok.strip()
+        if tok.isdigit():
+            ignored_ports.add(int(tok))
+
     # 通常のクライアント実行
     client = VoiceHubSpeakerClient(
         server_url=args.server,
         name=args.name,
         client_id=args.id,
-        token=args.token
+        token=args.token,
+        vc_watch=(not args.no_vc_watch)
     )
+    if client.vc_watcher and ignored_ports:
+        client.vc_watcher.ignored_ports.update(ignored_ports)
     try:
         asyncio.run(client.run())
     except KeyboardInterrupt:

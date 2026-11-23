@@ -1,8 +1,9 @@
 import asyncio
 import os
 import time
+import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Set
 from app.services.settings_service import settings_manager
 from app.services.tts_service import tts_service
 from app.services.devices_service import device_manager
@@ -23,7 +24,100 @@ log = get_logger("Speech")
 
 class SpeechService:
     def __init__(self):
-        pass
+        self._active_playbacks: Dict[str, Dict[str, Any]] = {}
+
+    def _prune_expired_playbacks(self):
+        now = time.monotonic()
+        expired = [
+            sid for sid, sess in self._active_playbacks.items()
+            if now > sess.get("expected_end_at", 0)
+            and all(it["task"].done() for it in sess.get("items", []) if it.get("task"))
+        ]
+        for sid in expired:
+            self._active_playbacks.pop(sid, None)
+
+    async def stop_active_playbacks(self, room_tags: Optional[Set[str]] = None) -> int:
+        """
+        現在再生中・ディスパッチ中のアクティブな対象（VoiceHub が直近再生開始したもの）のみ即座に停止。
+        room_tags が指定された場合は、その部屋タグに一致する対象のみを停止する。
+        """
+        self._prune_expired_playbacks()
+        now = time.monotonic()
+        stop_coros = []
+        stopped_count = 0
+
+        for sess in list(self._active_playbacks.values()):
+            is_within_window = now <= sess.get("expected_end_at", 0)
+            audio_url = sess.get("audio_url", "")
+
+            for item in sess.get("items", []):
+                if item.get("stopped"):
+                    continue
+                task = item.get("task")
+                is_running = bool(task and not task.done())
+                if not is_running and not is_within_window:
+                    continue
+
+                dev = item.get("dev") or {}
+                item_room = item.get("room_tag") or ""
+                dtype = dev.get("type", "google")
+                is_group = bool(dev.get("isGroup"))
+
+                # 部屋タグ指定がある場合のフィルタリング
+                if room_tags is not None:
+                    # グループ再生中だった場合は、該当部屋の個別メンバーのみ停止を試みる
+                    if is_group and dtype == "google":
+                        fb_members = dev.get("_fallback_members") or []
+                        matched_members = [
+                            m for m in fb_members
+                            if (m.get("roomTag") or settings_manager.get_room_tag_for_device(m.get("id"), m.get("ip"), m.get("clientId"))) in room_tags
+                        ]
+                        if not matched_members:
+                            continue
+                        item["stopped"] = True
+                        for m in matched_members:
+                            m_host = m.get("host") or str(m.get("ip", "")).split(":")[0]
+                            m_port = int(m.get("port", 8009))
+                            if m_host:
+                                stop_coros.append(cast_service.stop_playback(m_host, m_port, expected_media_url=audio_url))
+                                stopped_count += 1
+                        continue
+                    elif item_room not in room_tags:
+                        continue
+
+                item["stopped"] = True
+                sess["stopped"] = True
+                if task and not task.done():
+                    task.cancel()
+
+                stopped_count += 1
+                if dtype == "google":
+                    host = item.get("host") or dev.get("host") or str(dev.get("ip", "")).split(":")[0]
+                    port = int(item.get("port") or dev.get("port", 8009))
+                    if host:
+                        stop_coros.append(cast_service.stop_playback(host, port, expected_media_url=audio_url))
+                elif dtype == "homepod":
+                    stop_coros.append(homepod_service.stop_playback(dev.get("ip", "")))
+                elif dtype == "dlna":
+                    stop_coros.append(dlna_service.stop_playback(dev))
+                elif dtype in ("onvif", "tapo"):
+                    stop_coros.append(onvif_service.stop_playback(dev))
+                elif dtype == "alexa":
+                    stop_coros.append(alexa_service.stop_playback(dev.get("name", "")))
+                elif dtype in ("client", "pc"):
+                    raw_cid = dev.get("clientId") or str(dev.get("ip", "")).replace("client:", "").split("@", 1)[0]
+                    if raw_cid:
+                        reason = "dnd_mute" if room_tags is None else "vc_room_mute"
+                        stop_coros.append(
+                            client_speaker_service.broadcast_control_event("stop", {"reason": reason}, target_client_id=raw_cid)
+                        )
+
+        if stop_coros:
+            await asyncio.gather(*stop_coros, return_exceptions=True)
+
+        if stopped_count > 0:
+            log.info(f"⏹️ Sent immediate stop to {stopped_count} active playback target(s) (room_filter={sorted(room_tags) if room_tags else 'ALL'})")
+        return stopped_count
 
     @property
     def server_base_url(self) -> str:
@@ -101,7 +195,42 @@ class SpeechService:
                 elif all_devices:
                     expanded_devices.append(all_devices[0])
             else:
-                found = device_manager.find_device(tgt)
+                tgt_lower = tgt.lower()
+                # 1. ID / ラベル / 名前 の完全一致（グループ名やラベル指定を優先）
+                found = next(
+                    (
+                        d for d in all_devices
+                        if str(d.get("id", "")).lower() == tgt_lower
+                        or (d.get("label") and str(d["label"]).lower() == tgt_lower)
+                        or str(d.get("name", "")).lower() == tgt_lower
+                    ),
+                    None
+                )
+                # 2. IP / host の一致（同一IPを持つCastグループに吸われないよう個別端末を優先）
+                if not found:
+                    found = next(
+                        (
+                            d for d in all_devices
+                            if not d.get("isGroup")
+                            and (
+                                str(d.get("ip", "")).lower() == tgt_lower
+                                or str(d.get("host", "")).lower() == tgt_lower
+                                or f"{str(d.get('host', d.get('ip', ''))).lower()}:{d.get('port', 8009)}" == tgt_lower
+                            )
+                        ),
+                        None
+                    )
+                if not found:
+                    found = next(
+                        (
+                            d for d in all_devices
+                            if str(d.get("ip", "")).lower() == tgt_lower
+                            or str(d.get("host", "")).lower() == tgt_lower
+                        ),
+                        None
+                    )
+                if not found:
+                    found = device_manager.find_device(tgt)
                 if found:
                     expanded_devices.append(found)
 
@@ -399,7 +528,159 @@ class SpeechService:
             })
             return {"status": "error", "message": err_msg}
 
-        unique_targets = active_targets
+        # 各ターゲットに最新の部屋タグを補完
+        def _attach_room_tag(dev_dict: Dict[str, Any]) -> Dict[str, Any]:
+            d_copy = dict(dev_dict)
+            if not d_copy.get("roomTag"):
+                d_copy["roomTag"] = settings_manager.get_room_tag_for_device(
+                    d_copy.get("id"), d_copy.get("ip"), d_copy.get("clientId")
+                )
+            return d_copy
+
+        unique_targets = [_attach_room_tag(d) for d in active_targets]
+
+        # 3.5 部屋タグ連動・PC VC 参加中自動ミュート評価 (urgent=True は貫通)
+        muted_rooms = client_speaker_service.get_vc_muted_rooms()
+        dnd_conf = settings_manager.get().get("dnd", {})
+        vc_action = dnd_conf.get("action", "skip")
+        vc_whisper_vol = dnd_conf.get("whisperVolume", 10)
+        vc_muted_summary: List[str] = []
+
+        if not urgent and muted_rooms:
+            # グループターゲット内に VC ミュート対象部屋のデバイスが含まれる場合は個別端末へ展開
+            expanded_for_vc: List[Dict[str, Any]] = []
+            for d in unique_targets:
+                if d.get("isGroup"):
+                    dtype = d.get("type", "google")
+                    if dtype == "google":
+                        members = d.get("_fallback_members") or [
+                            ad for ad in all_devices if ad.get("type") == "google" and not ad.get("isGroup")
+                        ]
+                    elif dtype == "alexa":
+                        members = [ad for ad in all_devices if ad.get("type") == "alexa" and not ad.get("isGroup")]
+                    elif dtype == "homepod":
+                        members = [ad for ad in all_devices if ad.get("type") == "homepod" and not ad.get("isGroup")]
+                    else:
+                        members = []
+
+                    enabled_members = [
+                        _attach_room_tag(m) for m in members
+                        if not settings_manager.is_device_disabled(m.get("id"), m.get("ip"), m.get("name"))
+                    ]
+                    if enabled_members and any(m.get("roomTag") in muted_rooms for m in enabled_members):
+                        log.info(f"[Speech] Expanding group '{d.get('name')}' into {len(enabled_members)} member(s) for room VC auto-mute")
+                        expanded_for_vc.extend(enabled_members)
+                        continue
+                expanded_for_vc.append(d)
+
+            # 展開後の簡易重複排除
+            seen_vc_keys = set()
+            deduped_for_vc: List[Dict[str, Any]] = []
+            for d in expanded_for_vc:
+                k = f"{d.get('type')}:{d.get('host') or d.get('ip') or d.get('id')}"
+                if k not in seen_vc_keys:
+                    seen_vc_keys.add(k)
+                    deduped_for_vc.append(d)
+
+            speak_targets: List[Dict[str, Any]] = []
+            suppressed_rooms: Dict[str, List[Dict[str, Any]]] = {}
+            for d in deduped_for_vc:
+                r_tag = d.get("roomTag") or ""
+                if r_tag and r_tag in muted_rooms:
+                    if vc_action == "whisper":
+                        w_ratio = max(0.01, min(1.0, float(vc_whisper_vol) / 100.0))
+                        d["_override_volume"] = w_ratio
+                        speak_targets.append(d)
+                        if r_tag not in vc_muted_summary:
+                            vc_muted_summary.append(r_tag)
+                    else:
+                        suppressed_rooms.setdefault(r_tag, []).append(d)
+                else:
+                    speak_targets.append(d)
+
+            # skip / queue された部屋の履歴＆保留キュー記録
+            for r_tag, room_devs in suppressed_rooms.items():
+                vc_muted_summary.append(r_tag)
+                dev_labels = [rd.get("name") or rd.get("ip") for rd in room_devs]
+                dev_targets = [rd.get("ip") or rd.get("id") or rd.get("name") for rd in room_devs if (rd.get("ip") or rd.get("id") or rd.get("name"))]
+                reason_str = f"PC VC中 (部屋: {r_tag})"
+                dnd_service.record_history(
+                    text=text,
+                    reason=reason_str,
+                    action=vc_action,
+                    target=", ".join(dev_labels)
+                )
+                if vc_action == "queue":
+                    hist_rec = self.record_history({
+                        "text": text,
+                        "source": effective_source,
+                        "sourceLabel": source_label,
+                        "clientName": client_name,
+                        "clientIp": client_ip or "",
+                        "targets": dev_labels,
+                        "voice": voice or tts_service.get_default_voice_id(),
+                        "status": "queued",
+                        "statusMessage": f"{reason_str} のため保留キューに追加しました",
+                        "urgent": urgent,
+                        "wasQueued": True,
+                        "results": []
+                    })
+                    dnd_service.add_to_queue({
+                        "history_id": hist_rec.get("id"),
+                        "text": text,
+                        "targets": dev_targets,
+                        "room_tag": r_tag,
+                        "voice": voice,
+                        "client": client_name,
+                        "client_ip": client_ip,
+                        "source": effective_source,
+                        "source_label": source_label
+                    })
+                elif not speak_targets:
+                    # 他部屋の送信先がない場合は skip 履歴をここで記録
+                    pass
+
+            if not speak_targets:
+                rooms_disp = ", ".join(sorted(suppressed_rooms.keys()))
+                if vc_action == "queue":
+                    return {
+                        "success": True,
+                        "status": "queued",
+                        "vcRoomMuted": True,
+                        "mutedRooms": sorted(suppressed_rooms.keys()),
+                        "queued": True,
+                        "message": f"Queued for VC active room(s): {rooms_disp}",
+                        "results": []
+                    }
+                else:
+                    self.record_history({
+                        "text": text,
+                        "source": effective_source,
+                        "sourceLabel": source_label,
+                        "clientName": client_name,
+                        "clientIp": client_ip or "",
+                        "targets": [d.get("name") or d.get("ip") for d in deduped_for_vc],
+                        "voice": voice or "ja-JP-NanamiNeural",
+                        "status": "suppressed",
+                        "statusMessage": f"PC VC参加中の部屋 ({rooms_disp}) のため自動ミュートしました",
+                        "urgent": urgent,
+                        "wasQueued": False,
+                        "results": []
+                    })
+                    return {
+                        "success": True,
+                        "status": "skipped",
+                        "vcRoomMuted": True,
+                        "mutedRooms": sorted(suppressed_rooms.keys()),
+                        "message": f"Suppressed by VC active room(s): {rooms_disp}",
+                        "results": []
+                    }
+
+            if suppressed_rooms and vc_action == "skip":
+                # 別部屋でも発話する場合、スキップされた部屋の分も分かりやすくログ出力
+                log.info(f"[Speech] Skipped room(s) {sorted(suppressed_rooms.keys())} due to active VC; continuing for {len(speak_targets)} other target(s)")
+
+            unique_targets = speak_targets
 
         # 4. 音声合成 (TTS)
         opt_voice = voice or tts_service.get_default_voice_id()
@@ -456,18 +737,16 @@ class SpeechService:
                 await asyncio.sleep(delay_ms / 1000.0)
             return await coro
 
-        tasks = []
         target_names = [f"{d.get('name')} ({d.get('type')}:{d.get('ip')})" for d in unique_targets]
         log.info(f"Dispatching speech '{text[:40]}' to {len(unique_targets)} device(s): {', '.join(target_names)}")
 
-        async def _dispatch_google_with_retries(dev: Dict[str, Any]) -> bool:
+        async def _dispatch_google_with_retries(dev: Dict[str, Any], target_vol: Optional[float]) -> bool:
             """
             Google Cast 送信処理:
-            - グループ: 最大2回試行 (失敗時、最新ポート/IPを再解決してリトライ)
+            - グループ: 最大3回試行 (失敗時、最新ポート/IPを再解決してリトライ)
             - 個別: 最大3回試行 (失敗時、DHCP等によるIP変動を名前から再解決してリトライ)
             """
             is_group = bool(dev.get("isGroup") or dev.get("port", 8009) != 8009)
-            # グループは複数IP候補があるため最大3回試行
             max_attempts = 3
             dev_name = dev.get("name") or dev.get("ip")
             tried_endpoints = set()
@@ -492,12 +771,11 @@ class SpeechService:
                     await asyncio.sleep(google_delay / 1000.0)
 
                 log.info(f"[Dispatch -> Google Cast] {dev_name} ({current_host}:{current_port}) URL: {audio_url} (試行 {attempt}/{max_attempts}, delay={google_delay}ms)")
-                success = await cast_service.play_audio(current_host, current_port, audio_url, effective_vol)
+                success = await cast_service.play_audio(current_host, current_port, audio_url, target_vol)
                 if success:
                     if attempt > 1:
                         log.info(f"[Speech] ✅ Google Cast '{dev_name}' はリトライ (試行 {attempt}/{max_attempts}) で再生成功しました")
                         if is_group:
-                            # 成功した別IP/ポートをグループの代表エンドポイントに昇格＆デフォルト端末を自動成り代わり更新
                             device_manager.promote_group_endpoint(dev.get("name") or dev_name, current_host, current_port)
                     return True
 
@@ -515,12 +793,10 @@ class SpeechService:
                                         matched = ld
                                         break
                                 elif not is_group and not ld.get("isGroup"):
-                                    # rawName 未設定の端末同士が None == None で一致しないよう、値がある場合のみ比較
                                     if ld.get("name") == dev.get("name") or (dev.get("rawName") and ld.get("rawName") == dev.get("rawName")):
                                         matched = ld
                                         break
 
-                        # グループの場合は保持している候補IPリストから未試行の別IPへフォールバック
                         alt_found = False
                         if is_group:
                             candidates = (matched.get("candidateEndpoints") if matched else None) or dev.get("candidateEndpoints") or []
@@ -547,31 +823,108 @@ class SpeechService:
             log.warning(f"[Speech] ❌ Google Cast '{dev_name}' への再生が全 {max_attempts} 回の試行で失敗しました")
             return False
 
+        # アクティブ再生セッション登録（DND / VC 開始時の即時停止対象トラッキング）
+        self._prune_expired_playbacks()
+        session_id = uuid.uuid4().hex[:12]
+        raw_dur = float(speech.get("duration") or 0.0)
+        est_dur = raw_dur if raw_dur > 0.0 else max(5.0, len(text) * 0.18 + 3.0)
+        session_info: Dict[str, Any] = {
+            "session_id": session_id,
+            "started_at": time.monotonic(),
+            "expected_end_at": time.monotonic() + est_dur + 4.0,
+            "audio_url": audio_url,
+            "items": [],
+            "stopped": False,
+        }
+        self._active_playbacks[session_id] = session_info
+
+        def _resolve_target_vol(d_item: Dict[str, Any]) -> Optional[float]:
+            ov = d_item.get("_override_volume")
+            if ov is not None:
+                return min(effective_vol, float(ov)) if effective_vol is not None else float(ov)
+            return effective_vol
+
+        tasks = []
         for dev in unique_targets:
             dtype = dev.get("type", "google")
             dev_name = dev.get("name") or dev.get("ip")
+            target_vol = _resolve_target_vol(dev)
+            coro = None
+            item_host = None
+            item_port = 8009
+
             if dtype == "google":
-                tasks.append(_run_delayed(google_delay, _dispatch_google_with_retries(dev)))
+                item_host = dev.get("host") or str(dev.get("ip", "")).split(":")[0]
+                item_port = int(dev.get("port", 8009))
+                coro = _run_delayed(google_delay, _dispatch_google_with_retries(dev, target_vol))
             elif dtype == "homepod":
                 log.info(f"[Dispatch -> HomePod] {dev_name} ({dev.get('ip')}) File: {speech['filepath']} (delay={homepod_delay}ms)")
-                coro = homepod_service.play_audio(dev.get("ip", ""), speech["filepath"], volume_level=effective_vol)
-                tasks.append(_run_delayed(homepod_delay, coro))
+                coro = _run_delayed(homepod_delay, homepod_service.play_audio(dev.get("ip", ""), speech["filepath"], volume_level=target_vol))
             elif dtype == "dlna":
                 log.info(f"[Dispatch -> DLNA] {dev_name} ({dev.get('ip')}) URL: {audio_url}")
-                tasks.append(dlna_service.play_audio(dev, audio_url, effective_vol))
+                coro = dlna_service.play_audio(dev, audio_url, target_vol)
             elif dtype in ("onvif", "tapo"):
                 log.info(f"[Dispatch -> {dtype.upper()}] {dev_name} ({dev.get('ip')}) file: {speech['filepath']}")
-                tasks.append(onvif_service.play_audio(dev, speech["filepath"], speech["duration"], effective_vol))
+                coro = onvif_service.play_audio(dev, speech["filepath"], speech["duration"], target_vol)
             elif dtype == "alexa":
                 log.info(f"[Dispatch -> Alexa] {dev_name} text: '{text[:30]}' (delay={alexa_delay}ms)")
-                coro = alexa_service.speak(dev.get("name", ""), text, volume_level=effective_vol)
-                tasks.append(_run_delayed(alexa_delay, coro))
+                coro = _run_delayed(alexa_delay, alexa_service.speak(dev.get("name", ""), text, volume_level=target_vol))
             elif dtype in ("client", "pc"):
                 client_id = dev.get("ip", "").replace("client:", "")
                 log.info(f"[Dispatch -> Client Speaker] {dev_name} (id={client_id}) URL: {audio_url}")
-                tasks.append(client_speaker_service.send_play_event(client_id, audio_url, text=text, volume=effective_vol))
+                coro = client_speaker_service.send_play_event(client_id, audio_url, text=text, volume=target_vol)
+
+            if coro is not None:
+                t_obj = asyncio.create_task(coro)
+                tasks.append(t_obj)
+                session_info["items"].append({
+                    "dev": dev,
+                    "room_tag": dev.get("roomTag") or "",
+                    "host": item_host,
+                    "port": item_port,
+                    "task": t_obj,
+                    "stopped": False,
+                })
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # DND / VC 開始により途中で即時停止された場合は、フォールバック・リトライを行わず中断完了とする
+        if session_info.get("stopped"):
+            stopped_results = [
+                {"target": d.get("name") or d.get("ip"), "status": "stopped", "error": "DNDまたはVC開始により中断"}
+                for d in unique_targets
+            ]
+            stop_msg = "おやすみ・会議モード (DND) または通話開始により再生を即時中断しました"
+            saved_audio_url = f"/voice/{speech['filename']}" if speech.get("filename") else ""
+            self.record_history({
+                "text": text,
+                "source": effective_source,
+                "sourceLabel": source_label,
+                "clientName": client_name,
+                "clientIp": client_ip or "",
+                "wasQueued": was_queued,
+                "targets": [d.get("name") or d.get("ip") for d in unique_targets],
+                "voice": opt_voice,
+                "actualVoice": speech.get("voice", opt_voice),
+                "fallback": bool(speech.get("fallback", False)),
+                "rate": opt_rate,
+                "pitch": opt_pitch,
+                "audioUrl": saved_audio_url,
+                "duration": speech.get("duration", 0),
+                "status": "suppressed",
+                "statusMessage": stop_msg,
+                "urgent": urgent,
+                "results": stopped_results,
+            })
+            return {
+                "success": True,
+                "status": "stopped",
+                "message": stop_msg,
+                "targets": [d.get("name") for d in unique_targets],
+                "audioUrl": saved_audio_url,
+                "duration": speech.get("duration", 0),
+                "results": stopped_results,
+            }
 
         detailed_results = []
         for i, dev in enumerate(unique_targets):
@@ -599,7 +952,7 @@ class SpeechService:
             fallback_members = dev.get("_fallback_members")
             res_val = results[i] if i < len(results) else False
             is_ok = (res_val is True or (isinstance(res_val, dict) and res_val.get("status") != "error"))
-            if fallback_members and not is_ok:
+            if fallback_members and not is_ok and not session_info.get("stopped"):
                 # 実行時にも IP 重複を完全排除（同一スピーカーへの二重送信による途中上書きキャンセルを防止）
                 seen_fb_hosts = set()
                 deduped_members = []
@@ -614,7 +967,7 @@ class SpeechService:
                 log.warning(f"[Speech] ⚠️ Google Cast グループ '{dev.get('name') or dev.get('ip')}' (全試行) 失敗のため、重複排除済み個別スピーカー {len(deduped_members)} 台へ自動フォールバックします")
                 fb_tasks = []
                 for fb_dev in deduped_members:
-                    fb_tasks.append(_run_delayed(google_delay, _dispatch_google_with_retries(fb_dev)))
+                    fb_tasks.append(_run_delayed(google_delay, _dispatch_google_with_retries(fb_dev, _resolve_target_vol(fb_dev))))
                 if fb_tasks:
                     fb_results = await asyncio.gather(*fb_tasks, return_exceptions=True)
                     has_any_fb_ok = False
@@ -647,25 +1000,36 @@ class SpeechService:
 
         # 2. 全送信が失敗した場合の全体フォールバック (fallbackSpeaker 設定: auto / default / 個別指定)
         has_any_success = any(r["status"] in ("success", "fallback_recovered") for r in detailed_results)
-        if not has_any_success:
+        if not has_any_success and not session_info.get("stopped"):
             fb_targets = await self.resolve_fallback_targets(all_devices)
             orig_ips = {d.get("ip") for d in unique_targets}
-            needed_fb = [d for d in fb_targets if d.get("ip") not in orig_ips]
+            needed_fb = []
+            for d in fb_targets:
+                if d.get("ip") in orig_ips:
+                    continue
+                d_with_tag = _attach_room_tag(d)
+                if not urgent and muted_rooms and vc_action != "whisper" and d_with_tag.get("roomTag") in muted_rooms:
+                    continue
+                needed_fb.append(d_with_tag)
             if needed_fb:
                 log.warning(f"[Speech] ⚠️ 全宛先への送信が失敗したため、設定されたフォールバック先 {[d.get('name') or d.get('ip') for d in needed_fb]} へ自動救済送信します...")
                 fb_gen_tasks = []
                 for d in needed_fb:
                     dtype = d.get("type", "google")
+                    fb_vol = effective_vol
+                    if not urgent and muted_rooms and vc_action == "whisper" and d.get("roomTag") in muted_rooms:
+                        w_ratio = max(0.01, min(1.0, float(vc_whisper_vol) / 100.0))
+                        fb_vol = min(effective_vol, w_ratio) if effective_vol is not None else w_ratio
                     if dtype == "google":
-                        fb_gen_tasks.append(_dispatch_google_with_retries(d))
+                        fb_gen_tasks.append(_dispatch_google_with_retries(d, fb_vol))
                     elif dtype == "alexa":
-                        fb_gen_tasks.append(alexa_service.speak(d.get("name", ""), text, volume_level=effective_vol))
+                        fb_gen_tasks.append(alexa_service.speak(d.get("name", ""), text, volume_level=fb_vol))
                     elif dtype == "homepod":
-                        fb_gen_tasks.append(homepod_service.play_audio(d.get("ip", ""), speech["filepath"], volume_level=effective_vol))
+                        fb_gen_tasks.append(homepod_service.play_audio(d.get("ip", ""), speech["filepath"], volume_level=fb_vol))
                     elif dtype == "dlna":
-                        fb_gen_tasks.append(dlna_service.play_audio(d, audio_url, effective_vol))
+                        fb_gen_tasks.append(dlna_service.play_audio(d, audio_url, fb_vol))
                     elif dtype in ("onvif", "tapo"):
-                        fb_gen_tasks.append(onvif_service.play_audio(d, speech["filepath"], speech["duration"], effective_vol))
+                        fb_gen_tasks.append(onvif_service.play_audio(d, speech["filepath"], speech["duration"], fb_vol))
 
                 fb_gen_results = await asyncio.gather(*fb_gen_tasks, return_exceptions=True)
                 for k, fbd in enumerate(needed_fb):

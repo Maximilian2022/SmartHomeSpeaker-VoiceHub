@@ -76,6 +76,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "action": "skip",
         "whisperVolume": 10,
         "topMuteDuration": "indefinite",
+        "stopOnMute": True,
         "aiSummaryEnabled": True,
         "aiSummaryThreshold": 2,
         "aiSummaryCustomPrompt": ""
@@ -271,7 +272,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "pcSpeakers": {
         "outputs": {},
         "primaryOutput": {}
-    }
+    },
+    "deviceRoomTags": {}
 }
 
 class SettingsManager:
@@ -531,7 +533,7 @@ class SettingsManager:
         return self.settings
 
     def update(self, new_data: Dict[str, Any]) -> Dict[str, Any]:
-        OVERWRITE_COLLECTIONS = {"deviceGroups", "ipAliases", "deviceLabels", "dndScheduleRules", "favoriteDevices"}
+        OVERWRITE_COLLECTIONS = {"deviceGroups", "ipAliases", "deviceLabels", "deviceRoomTags", "dndScheduleRules", "favoriteDevices"}
         for k, v in new_data.items():
             if k in OVERWRITE_COLLECTIONS:
                 self.settings[k] = v
@@ -769,5 +771,92 @@ class SettingsManager:
         self.settings["deviceLabels"] = labels
         self._save(self.settings)
         return True, clean_label
+
+    def get_device_room_tags(self) -> Dict[str, str]:
+        """全デバイスの部屋・設置場所タグマッピング (deviceKey -> roomTag) を取得"""
+        tags = self.settings.get("deviceRoomTags")
+        if not isinstance(tags, dict):
+            tags = {}
+            self.settings["deviceRoomTags"] = tags
+        return tags
+
+    def get_room_tag_for_device(
+        self,
+        device_id: Optional[str] = None,
+        alt_id: Optional[str] = None,
+        client_id: Optional[str] = None,
+    ) -> str:
+        """
+        指定デバイスに紐づく部屋タグを取得。
+        PCクライアント出力 (`client:<id>@<out>`) は個別出力→PC本体 (`client:<id>`) の順で継承する。
+        """
+        tags = self.get_device_room_tags()
+        candidates: List[str] = []
+        for raw in (device_id, alt_id):
+            s = str(raw or "").strip()
+            if s:
+                candidates.append(s)
+                if "@" in s:
+                    base = s.split("@", 1)[0].strip()
+                    if base:
+                        candidates.append(base)
+        if client_id:
+            cid = str(client_id).strip()
+            if cid:
+                candidates.append(f"client:{cid}")
+                candidates.append(cid)
+
+        for key in candidates:
+            val = tags.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+        return ""
+
+    def set_device_room_tag(
+        self,
+        device_id: str,
+        room_tag: Optional[str] = None,
+        alt_id: Optional[str] = None,
+        client_id: Optional[str] = None,
+    ) -> str:
+        """
+        特定のデバイス（またはPCクライアント本体）に部屋タグを設定または解除（重複可・1デバイス1タグ）。
+        設定後のタグ文字列（解除時は空文字）を返す。
+        """
+        cid = str(client_id or "").strip()
+        if cid:
+            dev_key = f"client:{cid}"
+        else:
+            dev_key = str(device_id or "").strip()
+        alt_key = str(alt_id or "").strip() if alt_id else ""
+        if not dev_key:
+            return ""
+
+        tags = self.get_device_room_tags()
+        clean_tag = str(room_tag or "").strip()
+
+        if not clean_tag:
+            removed = False
+            for k in (dev_key, str(device_id or "").strip(), alt_key, cid):
+                if k and k in tags:
+                    del tags[k]
+                    removed = True
+            if removed:
+                self.settings["deviceRoomTags"] = tags
+                self._save(self.settings)
+            return ""
+
+        tags[dev_key] = clean_tag
+        # PC本体単位で管理する場合、同一PCの古い出力個別キーがあれば整理する
+        if cid:
+            for k in list(tags.keys()):
+                if k != dev_key and (k == cid or k.startswith(f"client:{cid}@")):
+                    del tags[k]
+        elif alt_key and alt_key in tags and alt_key != dev_key:
+            del tags[alt_key]
+
+        self.settings["deviceRoomTags"] = tags
+        self._save(self.settings)
+        return clean_tag
 
 settings_manager = SettingsManager()
