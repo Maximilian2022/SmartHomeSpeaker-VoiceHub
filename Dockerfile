@@ -2,7 +2,7 @@
 FROM alexxit/go2rtc:latest AS go2rtc-src
 
 # Stage 2: Voice Hub Python 3.14 Runtime
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
